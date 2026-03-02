@@ -88,6 +88,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 await applyLocalAccount(project.path, acc, acc.token);
               }
             }
+            // Flag so the Git panel auto-focuses after the window reloads
+            await this.context.globalState.update('ultraview.git.focusOnOpen', true);
             const uri = vscode.Uri.file(project.path);
             vscode.commands.executeCommand('vscode.openFolder', uri, false);
           }
@@ -427,6 +429,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 await applyLocalAccount(project.path, acc, acc.token);
               }
             }
+            // Flag so the Git panel auto-focuses after the window reloads
+            await context.globalState.update('ultraview.git.focusOnOpen', true);
             const uri = vscode.Uri.file(project.path);
             vscode.commands.executeCommand('vscode.openFolder', uri, false);
           }
