@@ -34,12 +34,12 @@ Ultraview packs a full suite of viewers, editors, and developer tools directly i
 
 ### **Git Account Manager**
 
-- Manage multiple GitHub, GitLab, and Azure DevOps accounts from a single sidebar. Switch identities per-project or globally with zero-config.
+- Manage multiple GitHub, GitLab, and Azure DevOps accounts from a single sidebar. Accounts are bound per-project — just click to switch and credentials apply automatically. Green highlights show which account and project are active at a glance.
 
 
-### **Apply Credentials**
+### **Auto Credentials**
 
-- Automatically sync Git identities to your local config and remote URLs for transparent, password-free authentication.
+- Opening a project automatically restores its Git account and applies credentials. No manual config, no git commands — Ultraview handles everything per-project, synced across all your IDEs.
 
 
 ### **Command Runner**
@@ -175,17 +175,27 @@ Paste a PAT manually
 Generate an Ed25519 key pair, copy the public key, and open the provider's SSH settings page automatically
 
 
-### Per-Project &amp; Global Accounts
+### Per-Project Accounts
+
+Every account is bound to a project — no global or local scoping needed.
 
 
-- Set a **global** account that applies to all workspaces by default.
+- **Add an account** → it is automatically assigned to the currently open project.
 
-- Override with a **local** account for any specific project.
+- **Click any account** in the sidebar → it switches to that account for the open project.
+
+- **Open a project** → Ultraview auto-restores the last account used for that project and applies credentials.
+
+- **Green background** highlights the active account and the active project at all times.
+
+- **Two different projects** can use two different accounts simultaneously across IDE windows.
+
+- **Same project in two IDEs** — switching accounts in one IDE syncs to the other instantly.
 
 
-### Apply Credentials
+### Auto Credentials
 
-When you set an account for a project, Ultraview automatically:
+When you switch or open a project with a bound account, Ultraview automatically:
 
 
 
