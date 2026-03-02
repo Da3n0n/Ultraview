@@ -22,6 +22,8 @@ export interface SyncAccount {
     username: string;
     email?: string;
     sshKeyId?: string;
+    authMethod?: 'oauth' | 'ssh' | 'pat';
+    lastValidatedAt?: number;
     tokenExpiresAt?: number;
     createdAt: number;
 }

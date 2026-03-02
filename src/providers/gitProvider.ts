@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { buildGitHtml } from '../git/gitUi';
 import { GitProjects } from '../git/gitProjects';
 import { GitAccounts } from '../git/gitAccounts';
-import { GitProfile, GitProvider as GitProviderType } from '../git/types';
+import { GitProfile, GitProvider as GitProviderType, AuthMethod } from '../git/types';
 import { applyLocalAccount, clearLocalAccount } from '../git/gitCredentials';
 import { SharedStore } from '../sync/sharedStore';
 
@@ -34,6 +34,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
         case 'ready': {
           // On ready, auto-apply credentials for the current project
           await this._autoApplyOnOpen();
+          await this._validateAllTokensBackground();
           this.postState();
           break;
         }
@@ -166,6 +167,24 @@ export class GitProvider implements vscode.WebviewViewProvider {
           await GitProvider._handleAddToken(accountId, this.view?.webview, this.accounts);
           break;
         }
+        case 'reAuthAccount': {
+          const accountId = msg.accountId;
+          const account = this.accounts.getAccount(accountId);
+          if (!account) break;
+          await this._reAuthOAuth(account.id, account.provider);
+          break;
+        }
+        case 'validateToken': {
+          const accountId = msg.accountId;
+          const result = await this.accounts.validateToken(accountId);
+          this.postState();
+          break;
+        }
+        case 'validateAllTokens': {
+          await this._validateAllTokensBackground();
+          this.postState();
+          break;
+        }
       }
     });
 
@@ -184,11 +203,17 @@ export class GitProvider implements vscode.WebviewViewProvider {
     const activeAccountId = activeProject?.accountId ||
       (activeRepo ? this.accounts.getLocalAccount(activeRepo)?.id : undefined);
 
+    // Compute auth status for each account
+    const accountsWithStatus = accounts.map(acc => ({
+      ...acc,
+      authStatus: this.accounts.getAccountAuthStatus(acc),
+    }));
+
     this.view.webview.postMessage({
       type: 'state',
       projects,
       activeRepo,
-      accounts,
+      accounts: accountsWithStatus,
       activeAccountId: activeAccountId || null,
       activeProjectId: activeProject?.id || null,
     });
@@ -208,6 +233,39 @@ export class GitProvider implements vscode.WebviewViewProvider {
     if (acc) {
       await applyLocalAccount(activeRepo, acc, acc.token);
       console.log(`[Ultraview] Auto-applied account ${acc.username} for ${activeRepo}`);
+    }
+  }
+
+  /** Re-authenticate an existing OAuth account (refresh token). */
+  private async _reAuthOAuth(accountId: string, provider: GitProviderType): Promise<void> {
+    const browserProviders: Record<string, string> = { github: 'github', gitlab: 'gitlab', azure: 'microsoft' };
+    const vsCodeProviderId = browserProviders[provider];
+    const scopes: Record<string, string[]> = {
+      github: ['repo', 'read:user', 'user:email'],
+      gitlab: ['read_user', 'api'],
+      microsoft: ['499b84ac-1321-427f-aa17-267ca6975798/.default']
+    };
+    try {
+      const session = await vscode.authentication.getSession(vsCodeProviderId, scopes[vsCodeProviderId] || [], { forceNewSession: true });
+      this.accounts.updateAccount(accountId, {
+        token: session.accessToken,
+        lastValidatedAt: Date.now(),
+        authMethod: 'oauth',
+      });
+      vscode.window.showInformationMessage(`✓ Re-authenticated successfully.`);
+      this.postState();
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Re-auth failed: ${err?.message ?? String(err)}`);
+    }
+  }
+
+  /** Background-validate all OAuth account tokens silently. */
+  private async _validateAllTokensBackground(): Promise<void> {
+    const accounts = this.accounts.listAccounts();
+    for (const acc of accounts) {
+      if (acc.authMethod === 'oauth') {
+        await this.accounts.validateToken(acc.id);
+      }
     }
   }
 
@@ -238,9 +296,11 @@ export class GitProvider implements vscode.WebviewViewProvider {
     const username = await vscode.window.showInputBox({ prompt: `${provider.label} username` });
     if (!username) return;
 
+    const authMethodValue: AuthMethod = authMethod.label === 'ssh' ? 'ssh' : authMethod.label === 'token' ? 'pat' : 'oauth';
     const account = this.accounts.addAccount({
       provider: provider.label as GitProviderType,
       username,
+      authMethod: authMethodValue,
     });
 
     // Auto-bind to current project
@@ -323,7 +383,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
         // email is optional
       }
 
-      const account = this.accounts.addAccount({ provider: gitProvider, username, email, token });
+      const account = this.accounts.addAccount({ provider: gitProvider, username, email, token, authMethod: 'oauth' as AuthMethod, lastValidatedAt: Date.now() });
 
       // Auto-bind to current project
       const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
@@ -363,11 +423,17 @@ export class GitProvider implements vscode.WebviewViewProvider {
       const activeAccountId = activeProject?.accountId ||
         (activeRepo ? accounts.getLocalAccount(activeRepo)?.id : undefined);
 
+      // Compute auth status for each account
+      const accountsWithStatus = accountList.map(acc => ({
+        ...acc,
+        authStatus: accounts.getAccountAuthStatus(acc),
+      }));
+
       panel.webview.postMessage({
         type: 'state',
         projects,
         activeRepo,
-        accounts: accountList,
+        accounts: accountsWithStatus,
         activeAccountId: activeAccountId || null,
         activeProjectId: activeProject?.id || null,
       });
@@ -482,7 +548,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
                   if (res.ok) { const d = await res.json() as { email?: string }; email = d.email || undefined; }
                 }
               } catch { /* email optional */ }
-              const account = accounts.addAccount({ provider: provider.label as GitProviderType, username, email, token });
+              const account = accounts.addAccount({ provider: provider.label as GitProviderType, username, email, token, authMethod: 'oauth' as AuthMethod, lastValidatedAt: Date.now() });
               // Auto-bind to current project
               const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
               if (activeRepo) {
@@ -506,7 +572,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
           const username = await vscode.window.showInputBox({ prompt: `${provider.label} username` });
           if (!username) break;
-          const account = accounts.addAccount({ provider: provider.label as GitProviderType, username });
+          const authMethodValue: AuthMethod = authMethod.label === 'ssh' ? 'ssh' : authMethod.label === 'token' ? 'pat' : 'oauth';
+          const account = accounts.addAccount({ provider: provider.label as GitProviderType, username, authMethod: authMethodValue });
           // Auto-bind to current project
           const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
           if (activeRepo) {
@@ -578,6 +645,47 @@ export class GitProvider implements vscode.WebviewViewProvider {
           } else if (option?.label.includes('Token')) {
             await GitProvider._handleAddToken(accountId, panel.webview, accounts);
           }
+          break;
+        }
+        case 'reAuthAccount': {
+          const accountId = msg.accountId;
+          const account = accounts.getAccount(accountId);
+          if (!account) break;
+          const browserProviders: Record<string, string> = { github: 'github', gitlab: 'gitlab', azure: 'microsoft' };
+          const vsCodeProviderId = browserProviders[account.provider];
+          const scopes: Record<string, string[]> = {
+            github: ['repo', 'read:user', 'user:email'],
+            gitlab: ['read_user', 'api'],
+            microsoft: ['499b84ac-1321-427f-aa17-267ca6975798/.default']
+          };
+          try {
+            const session = await vscode.authentication.getSession(vsCodeProviderId, scopes[vsCodeProviderId] || [], { forceNewSession: true });
+            accounts.updateAccount(accountId, {
+              token: session.accessToken,
+              lastValidatedAt: Date.now(),
+              authMethod: 'oauth',
+            });
+            vscode.window.showInformationMessage(`✓ Re-authenticated successfully.`);
+            postPanelState();
+          } catch (err: any) {
+            vscode.window.showErrorMessage(`Re-auth failed: ${err?.message ?? String(err)}`);
+          }
+          break;
+        }
+        case 'validateToken': {
+          const accountId = msg.accountId;
+          await accounts.validateToken(accountId);
+          postPanelState();
+          break;
+        }
+        case 'validateAllTokens': {
+          const accountList2 = accounts.listAccounts();
+          for (const acc of accountList2) {
+            if (acc.authMethod === 'oauth') {
+              await accounts.validateToken(acc.id);
+            }
+          }
+          postPanelState();
           break;
         }
       }

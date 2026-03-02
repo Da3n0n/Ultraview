@@ -15,6 +15,7 @@ export interface GitProfile {
 }
 
 export type GitProvider = 'github' | 'gitlab' | 'azure';
+export type AuthMethod = 'oauth' | 'ssh' | 'pat';
 
 export interface GitAccount {
   id: string;
@@ -23,6 +24,8 @@ export interface GitAccount {
   email?: string;
   token?: string; // HTTPS token (encrypted in storage)
   sshKeyId?: string; // Reference to SSH key
+  authMethod?: AuthMethod;
+  lastValidatedAt?: number;
   tokenExpiresAt?: number;
   createdAt: number;
 }

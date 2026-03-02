@@ -78,6 +78,33 @@ export function buildGitHtml(): string {
     .account-name-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .account-provider{font-size:10px;color:var(--vscode-descriptionForeground);opacity:.7}
     .account-actions{display:flex;gap:4px;flex-shrink:0;margin-left:8px}
+    .account-item.warning{
+      background:rgba(255,193,7,.12);
+      border-color:rgba(255,193,7,.45)}
+    .account-item.expired{
+      background:rgba(220,53,69,.12);
+      border-color:rgba(220,53,69,.45)}
+    .auth-badge{
+      display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;
+      font-weight:600;letter-spacing:0.3px;text-transform:uppercase;
+      vertical-align:middle;margin-left:4px;line-height:1.4}
+    .auth-badge.oauth{background:rgba(66,133,244,.18);color:rgba(66,133,244,.9)}
+    .auth-badge.ssh{background:rgba(156,39,176,.15);color:rgba(156,39,176,.9)}
+    .auth-badge.pat{background:rgba(255,152,0,.15);color:rgba(255,152,0,.9)}
+    .status-dot{
+      display:inline-block;width:7px;height:7px;border-radius:50%;
+      vertical-align:middle;margin-right:5px;flex-shrink:0}
+    .status-dot.valid{background:#28a745}
+    .status-dot.warning{background:#ffc107}
+    .status-dot.expired{background:#dc3545}
+    .btn-reauth{
+      padding:2px 6px;font-size:9px;border-radius:3px;cursor:pointer;
+      background:rgba(255,193,7,.2);border:1px solid rgba(255,193,7,.5);
+      color:var(--vscode-editor-foreground);white-space:nowrap}
+    .btn-reauth:hover{background:rgba(255,193,7,.35)}
+    .btn-reauth.expired-btn{
+      background:rgba(220,53,69,.2);border-color:rgba(220,53,69,.5)}
+    .btn-reauth.expired-btn:hover{background:rgba(220,53,69,.35)}
     .empty-state{
       text-align:center;padding:20px;color:var(--vscode-descriptionForeground);
       font-size:11px}
@@ -196,17 +223,49 @@ function renderAccounts() {
 
   allAccounts.forEach(function(acc) {
     var isActive = activeAccountId && activeAccountId === acc.id;
+    var authStatus = acc.authStatus || 'valid';
+    var authMethod = acc.authMethod || '';
+    var statusClass = authStatus !== 'valid' ? ' ' + authStatus : '';
     var div = document.createElement('div');
-    div.className = 'account-item' + (isActive ? ' active' : '');
+    div.className = 'account-item' + (isActive ? ' active' : '') + statusClass;
+
+    // Auth method badge
+    var badgeHtml = '';
+    if (authMethod === 'oauth') badgeHtml = '<span class="auth-badge oauth">OAuth</span>';
+    else if (authMethod === 'ssh') badgeHtml = '<span class="auth-badge ssh">SSH</span>';
+    else if (authMethod === 'pat') badgeHtml = '<span class="auth-badge pat">PAT</span>';
+
+    // Status dot
+    var dotTitle = authStatus === 'valid' ? 'Token valid' : authStatus === 'warning' ? 'Token may need re-auth' : 'Token expired';
+    var dotHtml = '<span class="status-dot ' + authStatus + '" title="' + dotTitle + '"></span>';
+
+    // Auth icon based on method
+    var authIcon = authMethod === 'ssh' ? '🔑' : authMethod === 'pat' ? '🔒' : '🔐';
+
+    // Re-auth button for warning/expired OAuth
+    var reAuthHtml = '';
+    if (authMethod === 'oauth' && (authStatus === 'warning' || authStatus === 'expired')) {
+      var btnClass = authStatus === 'expired' ? 'btn-reauth expired-btn' : 'btn-reauth';
+      reAuthHtml = '<button class="' + btnClass + '" data-action="reauth" data-id="' + esc(acc.id) + '" title="Re-authenticate via browser">Re-auth</button>';
+    }
+
     div.innerHTML = 
       '<div class="account-info">' +
         '<div class="account-name">' + 
+          dotHtml +
           '<span class="account-name-text">' + esc(acc.username) + '</span>' +
-          '<span class="account-provider">' + esc(acc.provider) + '</span>' +
+          badgeHtml +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--vscode-descriptionForeground);margin-top:1px">' +
+          authIcon + ' ' + esc(acc.provider) +
+          (authStatus === 'expired' ? ' · <span style="color:#dc3545">Token expired</span>' : 
+           authStatus === 'warning' ? ' · <span style="color:#ffc107">Needs validation</span>' : 
+           ' · <span style="color:#28a745">Valid</span>') +
         '</div>' +
       '</div>' +
       '<div class="account-actions">' +
-        '<button class="btn-action btn-sm" data-action="auth" data-id="' + esc(acc.id) + '" title="Manage Authentication">🔒</button>' +
+        reAuthHtml +
+        '<button class="btn-action btn-sm" data-action="auth" data-id="' + esc(acc.id) + '" title="Manage Authentication">' + authIcon + '</button>' +
         '<button class="btn-action btn-sm" data-action="delete" data-id="' + esc(acc.id) + '" title="Remove Account">×</button>' +
       '</div>';
     div.dataset.id = acc.id;
@@ -305,6 +364,8 @@ accountList.addEventListener('click', function(e) {
     vscode.postMessage({ type: 'authOptions', accountId: id });
   } else if (action === 'delete') {
     vscode.postMessage({ type: 'removeAccount', accountId: id });
+  } else if (action === 'reauth') {
+    vscode.postMessage({ type: 'reAuthAccount', accountId: id });
   }
 });
 

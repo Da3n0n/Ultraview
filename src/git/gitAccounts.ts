@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import { GitAccount, GitProvider, SshKey } from './types';
+import { GitAccount, GitProvider, AuthMethod, SshKey } from './types';
 import { SharedStore, SyncAccount, SyncSshKey } from '../sync/sharedStore';
 
 function simpleUuid(): string {
@@ -23,6 +23,8 @@ function toGitAccount(sync: SyncAccount, token?: string): GitAccount {
     email: sync.email,
     token,
     sshKeyId: sync.sshKeyId,
+    authMethod: sync.authMethod as AuthMethod | undefined,
+    lastValidatedAt: sync.lastValidatedAt,
     tokenExpiresAt: sync.tokenExpiresAt,
     createdAt: sync.createdAt,
   };
@@ -85,6 +87,8 @@ export class GitAccounts {
       email: account.email,
       token: account.token,
       sshKeyId: account.sshKeyId,
+      authMethod: account.authMethod,
+      lastValidatedAt: account.lastValidatedAt,
       tokenExpiresAt: account.tokenExpiresAt,
       createdAt: account.createdAt || Date.now(),
     };
@@ -240,5 +244,105 @@ export class GitAccounts {
       default:
         return { sshKeyUrl: '', tokenUrl: '' };
     }
+  }
+
+  // ── Token Validation ────────────────────────────────────────────────────
+
+  /**
+   * Validate an OAuth account's token with a lightweight API call.
+   * Returns { valid, expired } and updates lastValidatedAt in the sync file.
+   */
+  async validateToken(id: string): Promise<{ valid: boolean; expired: boolean }> {
+    const token = await this.context.secrets.get(`ultraview.git.token.${id}`);
+    const account = this.getAccount(id);
+    if (!account) return { valid: false, expired: true };
+
+    // SSH and PAT accounts don't need validation (they don't expire via OAuth flow)
+    if (account.authMethod === 'ssh') {
+      this.updateAccount(id, { lastValidatedAt: Date.now() });
+      return { valid: true, expired: false };
+    }
+    if (account.authMethod === 'pat') {
+      // PATs can technically expire, but we just check if token exists
+      const hasToken = !!token;
+      if (hasToken) {
+        this.updateAccount(id, { lastValidatedAt: Date.now() });
+      }
+      return { valid: hasToken, expired: !hasToken };
+    }
+
+    // OAuth: check if token exists first
+    if (!token) {
+      return { valid: false, expired: true };
+    }
+
+    // Check tokenExpiresAt if set
+    if (account.tokenExpiresAt && account.tokenExpiresAt < Date.now()) {
+      return { valid: false, expired: true };
+    }
+
+    // Make a lightweight API call to verify the token is still valid
+    try {
+      let res: Response;
+      if (account.provider === 'github') {
+        res = await fetch('https://api.github.com/user', {
+          headers: { 'Authorization': `Bearer ${token}`, 'User-Agent': 'Ultraview-VSCode' }
+        });
+      } else if (account.provider === 'gitlab') {
+        res = await fetch('https://gitlab.com/api/v4/user', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } else {
+        // Azure or unknown — assume valid if token exists
+        this.updateAccount(id, { lastValidatedAt: Date.now() });
+        return { valid: true, expired: false };
+      }
+
+      if (res.ok) {
+        this.updateAccount(id, { lastValidatedAt: Date.now() });
+        return { valid: true, expired: false };
+      }
+      if (res.status === 401 || res.status === 403) {
+        return { valid: false, expired: true };
+      }
+      // Network error or server error — assume still valid but stale
+      return { valid: true, expired: false };
+    } catch {
+      // Network error — don't mark as expired, just can't validate
+      return { valid: true, expired: false };
+    }
+  }
+
+  /**
+   * Compute auth status for an account for UI display.
+   */
+  getAccountAuthStatus(account: GitAccount): 'valid' | 'warning' | 'expired' {
+    // SSH and PAT are always valid
+    if (account.authMethod === 'ssh' || account.authMethod === 'pat') {
+      return 'valid';
+    }
+
+    // OAuth accounts: check tokenExpiresAt
+    if (account.tokenExpiresAt) {
+      const now = Date.now();
+      if (account.tokenExpiresAt < now) {
+        return 'expired';
+      }
+      // Warn if token expires within 24 hours
+      const ONE_DAY = 24 * 60 * 60 * 1000;
+      if (account.tokenExpiresAt < now + ONE_DAY) {
+        return 'warning';
+      }
+    }
+
+    // If it's OAuth and we haven't validated in over 24 hours, show warning
+    if (account.authMethod === 'oauth') {
+      const ONE_DAY = 24 * 60 * 60 * 1000;
+      if (!account.lastValidatedAt || (Date.now() - account.lastValidatedAt > ONE_DAY)) {
+        return 'warning';
+      }
+    }
+
+    return 'valid';
   }
 }

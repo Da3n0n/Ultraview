@@ -163,14 +163,13 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // ── Force Git panel as default sidebar on every VS Code launch ──────────
-  // VS Code's File Explorer activates at unpredictable times during startup.
-  // We retry focus several times to guarantee we win the race, then stop.
+  // Fire rapidly to catch the exact moment the sidebar is ready,
+  // minimising the File Explorer flash to nearly zero.
   let focusCount = 0;
   const focusTimer = setInterval(() => {
     vscode.commands.executeCommand('ultraview.git.focus');
-    focusCount++;
-    if (focusCount >= 6) clearInterval(focusTimer);
-  }, 600);
+    if (++focusCount >= 20) clearInterval(focusTimer);
+  }, 100);
 }
 
 export function deactivate() { }
