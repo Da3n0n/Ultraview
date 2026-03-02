@@ -49,7 +49,7 @@ Ultraview packs a full suite of viewers, editors, and developer tools directly i
 
 ### **Ports &amp; Processes**
 
-- Easily manage and kill open ports and processes within a simple UI. Identify locks and free up resources instantly.
+- Easily manage and kill open ports and processes within a simple UI. Identify locks ports in use and free up resources and kill ports instantly nice simple GUI.
 
 
 ### **Cross-IDE Sync**
