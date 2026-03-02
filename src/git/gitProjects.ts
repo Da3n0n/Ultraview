@@ -91,4 +91,19 @@ export class GitProjects {
   setProjectProfile(projectId: string, profileId?: string) {
     this.updateProject(projectId, { gitProfile: profileId });
   }
+
+  setProjectAccount(projectId: string, accountId?: string) {
+    this.updateProject(projectId, { accountId });
+  }
+
+  getProjectAccount(projectId: string): string | undefined {
+    const projects = this.store.read().projects as GitProject[];
+    const proj = projects.find(p => p.id === projectId);
+    return proj?.accountId;
+  }
+
+  getProjectByPath(projectPath: string): GitProject | undefined {
+    const projects = this.store.read().projects as GitProject[];
+    return projects.find(p => p.path === projectPath);
+  }
 }

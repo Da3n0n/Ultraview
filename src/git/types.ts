@@ -4,6 +4,7 @@ export interface GitProject {
   path: string;
   repoUrl?: string;
   gitProfile?: string; // profile id used for commits
+  accountId?: string;  // bound git account id
 }
 
 export interface GitProfile {
@@ -23,7 +24,6 @@ export interface GitAccount {
   token?: string; // HTTPS token (encrypted in storage)
   sshKeyId?: string; // Reference to SSH key
   tokenExpiresAt?: number;
-  isGlobal: boolean;
   createdAt: number;
 }
 

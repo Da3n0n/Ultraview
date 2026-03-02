@@ -1,15 +1,9 @@
 {
   "name": "ultraview",
   "icon": "images/icon.png",
-<<<<<<< HEAD
-  "displayName": "Ultraview“ just a beast at this point",
-  "description": "project manager, Git account manager, and cross-IDE project sync all inside VS Code with zero setup one click and your ide is actually ready.",
-  "version": "0.2.115",
-=======
-  "displayName": "Ultraview â€“ All in One VS Code Extension",
-  "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, Git account manager, and cross-IDE project sync â€” all inside VS Code with zero setup.",
-  "version": "0.2.128",
->>>>>>> 61f85f08d6a7dc69e7f428929661a8776240d10e
+  "displayName": "Ultraview “ All in One VS Code Extension",
+  "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, Git account manager, and cross-IDE project sync — all inside VS Code with zero setup.",
+  "version": "0.2.131",
   "publisher": "Da3n0n",
   "engines": {
     "vscode": "^1.85.0"

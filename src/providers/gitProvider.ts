@@ -3,7 +3,7 @@ import { buildGitHtml } from '../git/gitUi';
 import { GitProjects } from '../git/gitProjects';
 import { GitAccounts } from '../git/gitAccounts';
 import { GitProfile, GitProvider as GitProviderType } from '../git/types';
-import { applyLocalAccount, applyGlobalAccount, clearLocalAccount } from '../git/gitCredentials';
+import { applyLocalAccount, clearLocalAccount } from '../git/gitCredentials';
 import { SharedStore } from '../sync/sharedStore';
 
 export class GitProvider implements vscode.WebviewViewProvider {
@@ -32,6 +32,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(async msg => {
       switch (msg.type) {
         case 'ready': {
+          // On ready, auto-apply credentials for the current project
+          await this._autoApplyOnOpen();
           this.postState();
           break;
         }
@@ -41,9 +43,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
             const folder = uri[0].fsPath;
             const name = await vscode.window.showInputBox({ prompt: 'Project name', value: nameFromPath(folder) });
             if (name !== undefined) {
-              const project = this.manager.addProject({ name: name || nameFromPath(folder), path: folder });
+              this.manager.addProject({ name: name || nameFromPath(folder), path: folder });
               this.postState();
-              this.view?.webview.postMessage({ type: 'projectAdded', project });
             }
           }
           break;
@@ -53,9 +54,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
           if (workspaceFolders && workspaceFolders.length > 0) {
             const folder = workspaceFolders[0].uri.fsPath;
             const name = workspaceFolders[0].name;
-            const project = this.manager.addProject({ name, path: folder });
+            this.manager.addProject({ name, path: folder });
             this.postState();
-            this.view?.webview.postMessage({ type: 'projectAdded', project });
           } else {
             vscode.window.showInformationMessage('No workspace folder open. Use "+ Add" to select a folder.');
           }
@@ -73,32 +73,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
         }
         case 'delete': {
           const id = msg.id;
-          console.log('[Ultraview] Delete project:', id);
           this.manager.removeProject(id);
-          this.postState();
-          this.view?.webview.postMessage({ type: 'projectRemoved', id });
-          break;
-        }
-        case 'manageProfiles': {
-          const profiles = this.manager.listProfiles();
-          if (profiles.length === 0) {
-            vscode.window.showInformationMessage('No profiles yet. Click "+ New" to create one.');
-          } else {
-            const items = profiles.map(p => ({ label: p.name, description: p.userEmail || '', profile: p }));
-            const selected = await vscode.window.showQuickPick(items, { placeHolder: 'Select profile to edit' });
-            if (selected) {
-              await this._editProfile(selected.profile);
-            }
-          }
-          break;
-        }
-        case 'newProfile': {
-          await this._createProfile();
-          break;
-        }
-        case 'setProfile': {
-          const pid = msg.profileId || null;
-          this.context.workspaceState.update('ultraview.git.currentProfile', pid);
           this.postState();
           break;
         }
@@ -106,13 +81,16 @@ export class GitProvider implements vscode.WebviewViewProvider {
           const id = msg.id;
           const project = this.manager.listProjects().find(p => p.id === id);
           if (project) {
+            // Apply credentials for the project's bound account before opening
+            if (project.accountId) {
+              const acc = await this.accounts.getAccountWithToken(project.accountId);
+              if (acc) {
+                await applyLocalAccount(project.path, acc, acc.token);
+              }
+            }
             const uri = vscode.Uri.file(project.path);
             vscode.commands.executeCommand('vscode.openFolder', uri, false);
           }
-          break;
-        }
-        case 'getAccounts': {
-          this.postState();
           break;
         }
         case 'addAccount': {
@@ -121,7 +99,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
         }
         case 'removeAccount': {
           const accountId = msg.accountId;
-          console.log('[Ultraview] Remove account:', accountId);
           if (accountId) {
             const keys = this.accounts.listSshKeys().filter(k => k.accountId === accountId);
             for (const key of keys) {
@@ -130,117 +107,36 @@ export class GitProvider implements vscode.WebviewViewProvider {
             }
             this.accounts.removeAccount(accountId);
             this.postState();
-            this.view?.webview.postMessage({ type: 'accountRemoved', accountId });
           }
           break;
         }
-        case 'generateSshKey': {
+        case 'switchAccount': {
           const accountId = msg.accountId;
-          const account = this.accounts.getAccount(accountId);
-          if (account) {
-            const keyName = await vscode.window.showInputBox({ prompt: 'SSH key name (optional)', value: `ultraview-${account.username}` });
-            const key = await this.accounts.generateSshKey(accountId, account.provider, keyName || undefined);
-            const { sshKeyUrl } = this.accounts.getProviderUrl(account.provider);
-            await vscode.env.clipboard.writeText(key.publicKey);
-            vscode.window.showInformationMessage(`SSH key generated and copied to clipboard! Opening ${account.provider} settings...`);
-            vscode.env.openExternal(vscode.Uri.parse(sshKeyUrl));
-            this.postState();
-            this.view?.webview.postMessage({ type: 'sshKeyGenerated', key, accountId });
-          }
-          break;
-        }
-        case 'openSshSettings': {
-          const accountId = msg.accountId;
-          const account = this.accounts.getAccount(accountId);
-          if (account) {
-            const { sshKeyUrl } = this.accounts.getProviderUrl(account.provider);
-            vscode.env.openExternal(vscode.Uri.parse(sshKeyUrl));
-          }
-          break;
-        }
-        case 'openTokenSettings': {
-          const accountId = msg.accountId;
-          const account = this.accounts.getAccount(accountId);
-          if (account) {
-            const { tokenUrl } = this.accounts.getProviderUrl(account.provider);
-            vscode.env.openExternal(vscode.Uri.parse(tokenUrl));
-          }
-          break;
-        }
-        case 'setGlobalAccount': {
-          const accountId = msg.accountId || undefined;
-          this.accounts.setGlobalAccount(accountId);
-          // Apply git identity globally
-          if (accountId) {
-            const acc = this.accounts.getAccount(accountId);
-            if (acc) {
-              await applyGlobalAccount(acc);
-            }
-          }
-          this.postState();
-          break;
-        }
-        case 'setLocalAccount': {
-          const workspaceUri = msg.workspaceUri;
-          const accountId = msg.accountId || undefined;
-          this.accounts.setLocalAccount(workspaceUri, accountId);
-          // Apply or clear git credentials in the local repo
-          if (accountId && workspaceUri) {
-            const acc = this.accounts.getAccount(accountId);
-            if (acc) {
-              await applyLocalAccount(workspaceUri, acc, acc.token);
-            }
-          } else if (workspaceUri) {
-            await clearLocalAccount(workspaceUri);
-          }
-          this.postState();
-          break;
-        }
-        case 'applyCredentials': {
-          const accountId = msg.accountId;
-          const workspaceUri = msg.workspaceUri || (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '');
-          const acc = this.accounts.getAccount(accountId);
-          if (acc && workspaceUri) {
-            await applyLocalAccount(workspaceUri, acc, acc.token);
-            vscode.window.showInformationMessage(
-              `✓ Git credentials applied for ${acc.username} in this workspace. Reload the Source Control panel.`
-            );
-          } else {
-            vscode.window.showWarningMessage('No account or workspace found to apply credentials to.');
-          }
-          break;
-        }
-        case 'addToken': {
-          const accountId = msg.accountId;
-          const account = this.accounts.getAccount(accountId);
-          if (!account) break;
-
-          if (account.provider === 'github') {
-            const method = await vscode.window.showQuickPick([
-              { label: 'browser', description: 'Sign in via browser (OAuth)' },
-              { label: 'manual', description: 'Paste personal access token' }
-            ], { placeHolder: 'How to add token?' });
-            if (!method) break;
-            if (method.label === 'browser') {
-              try {
-                const session = await vscode.authentication.getSession('github', ['repo', 'read:user', 'user:email'], { forceNewSession: true });
-                this.accounts.updateAccount(accountId, { token: session.accessToken });
-                this.postState();
-                this.view?.webview.postMessage({ type: 'accountUpdated', accountId });
-                vscode.window.showInformationMessage(`Token updated for ${account.username} via GitHub OAuth.`);
-              } catch (err: any) {
-                vscode.window.showErrorMessage(`OAuth failed: ${err?.message ?? String(err)}`);
-              }
-              break;
-            }
+          const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+          if (!activeRepo) {
+            vscode.window.showWarningMessage('No workspace open. Open a project first.');
+            break;
           }
 
-          const token = await vscode.window.showInputBox({ prompt: 'Enter personal access token (with repo scope)', password: true });
-          if (token) {
-            this.accounts.updateAccount(accountId, { token });
-            this.postState();
-            this.view?.webview.postMessage({ type: 'accountUpdated', accountId });
+          // Find or create the project for this workspace
+          let project = this.manager.getProjectByPath(activeRepo);
+          if (!project) {
+            const name = nameFromPath(activeRepo);
+            project = this.manager.addProject({ name, path: activeRepo });
           }
+
+          // Bind account to project
+          this.manager.setProjectAccount(project.id, accountId);
+          this.accounts.setLocalAccount(activeRepo, accountId);
+
+          // Apply git credentials
+          const acc = await this.accounts.getAccountWithToken(accountId);
+          if (acc) {
+            await applyLocalAccount(activeRepo, acc, acc.token);
+            vscode.window.showInformationMessage(`✓ Switched to ${acc.username} for this project.`);
+          }
+
+          this.postState();
           break;
         }
         case 'authOptions': {
@@ -258,34 +154,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
           }
           break;
         }
-        case 'accountContextMenu': {
+        case 'generateSshKey': {
           const accountId = msg.accountId;
-          const workspaceUri = msg.workspaceUri;
-          const acc = this.accounts.getAccount(accountId);
-          if (!acc) break;
-          const isGlobal = this.accounts.getGlobalAccount()?.id === accountId;
-          const isLocal = workspaceUri && this.accounts.getLocalAccount(workspaceUri)?.id === accountId;
-
-          const option = await vscode.window.showQuickPick([
-            { label: isGlobal ? '$(close) Unset Global Account' : '$(globe) Set as Global Account', description: isGlobal ? 'Remove as default for all workspaces' : 'Use as default for all workspaces' },
-            { label: isLocal ? '$(close) Unset Local Account' : '$(folder) Set as Local Account', description: isLocal ? 'Remove from this workspace' : 'Use specifically for this workspace' }
-          ], { placeHolder: `Quick Actions for ${acc.username}` });
-
-          if (option) {
-            if (option.label.includes('Global')) {
-              this.accounts.setGlobalAccount(isGlobal ? undefined : accountId);
-              if (!isGlobal) await applyGlobalAccount(acc);
-              this.postState();
-            } else if (option.label.includes('Local')) {
-              this.accounts.setLocalAccount(workspaceUri, isLocal ? undefined : accountId);
-              if (isLocal) {
-                await clearLocalAccount(workspaceUri);
-              } else {
-                await applyLocalAccount(workspaceUri, acc, acc.token);
-              }
-              this.postState();
-            }
-          }
+          await GitProvider._handleGenerateSshKey(accountId, this.view?.webview, this.accounts, () => this.postState());
+          break;
+        }
+        case 'addToken': {
+          const accountId = msg.accountId;
+          await GitProvider._handleAddToken(accountId, this.view?.webview, this.accounts);
           break;
         }
       }
@@ -298,14 +174,39 @@ export class GitProvider implements vscode.WebviewViewProvider {
   postState() {
     if (!this.view) return;
     const projects = this.manager.listProjects();
-    const profiles = this.manager.listProfiles();
-    const currentProfileId = this.context.workspaceState.get<string | null>('ultraview.git.currentProfile', null);
-    const activeRepo = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
+    const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     const accounts = this.accounts.listAccounts();
-    const globalAccount = this.accounts.getGlobalAccount();
-    const localAccount = activeRepo ? this.accounts.getLocalAccount(activeRepo) : undefined;
-    const sshKeys = this.accounts.listSshKeys();
-    this.view.webview.postMessage({ type: 'state', projects, profiles, currentProfileId, activeRepo, accounts, globalAccount, localAccount, sshKeys });
+
+    // Find active project and its account
+    const activeProject = projects.find(p => p.path === activeRepo);
+    const activeAccountId = activeProject?.accountId ||
+      (activeRepo ? this.accounts.getLocalAccount(activeRepo)?.id : undefined);
+
+    this.view.webview.postMessage({
+      type: 'state',
+      projects,
+      activeRepo,
+      accounts,
+      activeAccountId: activeAccountId || null,
+      activeProjectId: activeProject?.id || null,
+    });
+  }
+
+  /** Auto-apply credentials when the extension loads for the current workspace */
+  private async _autoApplyOnOpen() {
+    const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    if (!activeRepo) return;
+
+    // Check project-level binding first
+    const project = this.manager.getProjectByPath(activeRepo);
+    const accountId = project?.accountId || this.accounts.getLocalAccount(activeRepo)?.id;
+    if (!accountId) return;
+
+    const acc = await this.accounts.getAccountWithToken(accountId);
+    if (acc) {
+      await applyLocalAccount(activeRepo, acc, acc.token);
+      console.log(`[Ultraview] Auto-applied account ${acc.username} for ${activeRepo}`);
+    }
   }
 
   private async _addAccount(): Promise<void> {
@@ -317,7 +218,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
     if (!provider) return;
 
-    // Offer browser OAuth for supported providers
     const browserProviders: Record<string, string> = { github: 'github', gitlab: 'gitlab', azure: 'microsoft' };
     const authMethodItems: { label: string; description: string }[] = [
       { label: 'browser', description: 'Sign in via browser (OAuth) — recommended' },
@@ -336,22 +236,19 @@ export class GitProvider implements vscode.WebviewViewProvider {
     const username = await vscode.window.showInputBox({ prompt: `${provider.label} username` });
     if (!username) return;
 
-    const isGlobal = await vscode.window.showQuickPick([
-      { label: 'global', description: 'Use for all workspaces' },
-      { label: 'local', description: 'Use only for current workspace' }
-    ], { placeHolder: 'Account scope' });
-
     const account = this.accounts.addAccount({
       provider: provider.label as GitProviderType,
       username,
-      isGlobal: isGlobal?.label === 'global'
     });
 
-    const activeRepo = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
-    if (account.isGlobal) {
-      this.accounts.setGlobalAccount(account.id);
-      await applyGlobalAccount(account);
-    } else if (activeRepo) {
+    // Auto-bind to current project
+    const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    if (activeRepo) {
+      let project = this.manager.getProjectByPath(activeRepo);
+      if (!project) {
+        project = this.manager.addProject({ name: nameFromPath(activeRepo), path: activeRepo });
+      }
+      this.manager.setProjectAccount(project.id, account.id);
       this.accounts.setLocalAccount(activeRepo, account.id);
       await applyLocalAccount(activeRepo, account, account.token);
     }
@@ -372,7 +269,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
     }
 
     this.postState();
-    this.view?.webview.postMessage({ type: 'accountAdded', account });
   }
 
   private async _addAccountViaOAuth(gitProvider: GitProviderType, vsCodeProviderId: string): Promise<void> {
@@ -425,25 +321,22 @@ export class GitProvider implements vscode.WebviewViewProvider {
         // email is optional
       }
 
-      const isGlobal = await vscode.window.showQuickPick([
-        { label: 'global', description: 'Use for all workspaces' },
-        { label: 'local', description: 'Use only for current workspace' }
-      ], { placeHolder: 'Account scope' });
+      const account = this.accounts.addAccount({ provider: gitProvider, username, email, token });
 
-      const account = this.accounts.addAccount({ provider: gitProvider, username, email, token, isGlobal: isGlobal?.label === 'global' });
-
+      // Auto-bind to current project
       const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-      if (account.isGlobal) {
-        this.accounts.setGlobalAccount(account.id);
-        await applyGlobalAccount(account);
-      } else if (activeRepo) {
+      if (activeRepo) {
+        let project = this.manager.getProjectByPath(activeRepo);
+        if (!project) {
+          project = this.manager.addProject({ name: nameFromPath(activeRepo), path: activeRepo });
+        }
+        this.manager.setProjectAccount(project.id, account.id);
         this.accounts.setLocalAccount(activeRepo, account.id);
         await applyLocalAccount(activeRepo, account, token);
       }
 
       vscode.window.showInformationMessage(`Signed in as ${username} via ${gitProvider}!`);
       this.postState();
-      this.view?.webview.postMessage({ type: 'accountAdded', account });
     } catch (err: any) {
       if (err?.name === 'Error' && String(err?.message).includes('No authentication provider')) {
         vscode.window.showErrorMessage(`Browser sign-in for ${gitProvider} requires the ${gitProvider} extension to be installed. Use manual token instead.`);
@@ -460,33 +353,32 @@ export class GitProvider implements vscode.WebviewViewProvider {
     const manager = new GitProjects(context, store);
     const accounts = new GitAccounts(context, store);
 
-    // Hot-reload when another IDE writes the shared sync file
-    const onChanged = () => {
+    const postPanelState = () => {
       const projects = manager.listProjects();
-      const profiles = manager.listProfiles();
-      const currentProfileId = context.workspaceState.get<string | null>('ultraview.git.currentProfile', null);
       const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
       const accountList = accounts.listAccounts();
-      const globalAccount = accounts.getGlobalAccount();
-      const localAccount = activeRepo ? accounts.getLocalAccount(activeRepo) : undefined;
-      const sshKeys = accounts.listSshKeys();
-      panel.webview.postMessage({ type: 'state', projects, profiles, currentProfileId, activeRepo, accounts: accountList, globalAccount, localAccount, sshKeys });
+      const activeProject = projects.find(p => p.path === activeRepo);
+      const activeAccountId = activeProject?.accountId ||
+        (activeRepo ? accounts.getLocalAccount(activeRepo)?.id : undefined);
+
+      panel.webview.postMessage({
+        type: 'state',
+        projects,
+        activeRepo,
+        accounts: accountList,
+        activeAccountId: activeAccountId || null,
+        activeProjectId: activeProject?.id || null,
+      });
     };
-    store.on('changed', onChanged);
-    panel.onDidDispose(() => store.off('changed', onChanged));
+
+    // Hot-reload when another IDE writes the shared sync file
+    store.on('changed', postPanelState);
+    panel.onDidDispose(() => store.off('changed', postPanelState));
 
     panel.webview.onDidReceiveMessage(async msg => {
       switch (msg.type) {
         case 'ready': {
-          const projects = manager.listProjects();
-          const profiles = manager.listProfiles();
-          const currentProfileId = context.workspaceState.get<string | null>('ultraview.git.currentProfile', null);
-          const activeRepo = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
-          const accountList = accounts.listAccounts();
-          const globalAccount = accounts.getGlobalAccount();
-          const localAccount = activeRepo ? accounts.getLocalAccount(activeRepo) : undefined;
-          const sshKeys = accounts.listSshKeys();
-          panel.webview.postMessage({ type: 'state', projects, profiles, currentProfileId, activeRepo, accounts: accountList, globalAccount, localAccount, sshKeys });
+          postPanelState();
           break;
         }
         case 'addProject': {
@@ -495,8 +387,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
             const folder = uri[0].fsPath;
             const name = await vscode.window.showInputBox({ prompt: 'Project name', value: nameFromPath(folder) });
             if (name !== undefined) {
-              const project = manager.addProject({ name: name || nameFromPath(folder), path: folder });
-              panel.webview.postMessage({ type: 'projectAdded', project });
+              manager.addProject({ name: name || nameFromPath(folder), path: folder });
+              postPanelState();
             }
           }
           break;
@@ -506,74 +398,38 @@ export class GitProvider implements vscode.WebviewViewProvider {
           if (workspaceFolders && workspaceFolders.length > 0) {
             const folder = workspaceFolders[0].uri.fsPath;
             const name = workspaceFolders[0].name;
-            const project = manager.addProject({ name, path: folder });
-            panel.webview.postMessage({ type: 'projectAdded', project });
+            manager.addProject({ name, path: folder });
+            postPanelState();
           } else {
             vscode.window.showInformationMessage('No workspace folder open. Use "+ Add" to select a folder.');
           }
           break;
         }
         case 'addRepo': {
-          await GitProvider._handleAddRepo(panel.webview, manager, accounts, () => {
-            const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-            panel.webview.postMessage({ type: 'state', projects: manager.listProjects(), profiles: manager.listProfiles(), currentProfileId: context.workspaceState.get<string | null>('ultraview.git.currentProfile', null), activeRepo, accounts: accounts.listAccounts(), globalAccount: accounts.getGlobalAccount(), localAccount: activeRepo ? accounts.getLocalAccount(activeRepo) : undefined, sshKeys: accounts.listSshKeys() });
-          });
+          await GitProvider._handleAddRepo(panel.webview, manager, accounts, postPanelState);
           break;
         }
         case 'refresh': {
-          const projects = manager.listProjects();
-          const profiles = manager.listProfiles();
-          const currentProfileId = context.workspaceState.get<string | null>('ultraview.git.currentProfile', null);
-          const activeRepo = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
-          panel.webview.postMessage({ type: 'state', projects, profiles, currentProfileId, activeRepo });
+          postPanelState();
           break;
         }
         case 'delete': {
-          const id = msg.id;
-          manager.removeProject(id);
-          panel.webview.postMessage({ type: 'projectRemoved', id });
-          break;
-        }
-        case 'setProfile': {
-          const pid = msg.profileId || null;
-          context.workspaceState.update('ultraview.git.currentProfile', pid);
-          const projects = manager.listProjects();
-          const profiles = manager.listProfiles();
-          const currentProfileId = context.workspaceState.get<string | null>('ultraview.git.currentProfile', null);
-          const activeRepo = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
-          panel.webview.postMessage({ type: 'state', projects, profiles, currentProfileId, activeRepo });
+          manager.removeProject(msg.id);
+          postPanelState();
           break;
         }
         case 'open': {
-          const id = msg.id;
-          const project = manager.listProjects().find(p => p.id === id);
+          const project = manager.listProjects().find(p => p.id === msg.id);
           if (project) {
+            if (project.accountId) {
+              const acc = await accounts.getAccountWithToken(project.accountId);
+              if (acc) {
+                await applyLocalAccount(project.path, acc, acc.token);
+              }
+            }
             const uri = vscode.Uri.file(project.path);
             vscode.commands.executeCommand('vscode.openFolder', uri, false);
           }
-          break;
-        }
-        case 'newProfile': {
-          const name = await vscode.window.showInputBox({ prompt: 'Profile name' });
-          if (name) {
-            const userName = await vscode.window.showInputBox({ prompt: 'Git user name (optional)' });
-            const userEmail = await vscode.window.showInputBox({ prompt: 'Git user email (optional)' });
-            const profile = manager.addProfile({ name, userName: userName || undefined, userEmail: userEmail || undefined });
-            panel.webview.postMessage({ type: 'profileAdded', profile });
-          }
-          break;
-        }
-        case 'manageProfiles': {
-          vscode.window.showInformationMessage('Manage profiles from the sidebar panel');
-          break;
-        }
-        case 'getAccounts': {
-          const activeRepo = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
-          const accountList = accounts.listAccounts();
-          const globalAccount = accounts.getGlobalAccount();
-          const localAccount = activeRepo ? accounts.getLocalAccount(activeRepo) : undefined;
-          const sshKeys = accounts.listSshKeys();
-          panel.webview.postMessage({ type: 'state', projects: manager.listProjects(), profiles: manager.listProfiles(), currentProfileId: context.workspaceState.get<string | null>('ultraview.git.currentProfile', null), activeRepo, accounts: accountList, globalAccount, localAccount, sshKeys });
           break;
         }
         case 'addAccount': {
@@ -622,15 +478,18 @@ export class GitProvider implements vscode.WebviewViewProvider {
                   if (res.ok) { const d = await res.json() as { email?: string }; email = d.email || undefined; }
                 }
               } catch { /* email optional */ }
-              const isGlobal = await vscode.window.showQuickPick([
-                { label: 'global', description: 'Use for all workspaces' },
-                { label: 'local', description: 'Use only for current workspace' }
-              ], { placeHolder: 'Account scope' });
-              const account = accounts.addAccount({ provider: provider.label as GitProviderType, username, email, token, isGlobal: isGlobal?.label === 'global' });
+              const account = accounts.addAccount({ provider: provider.label as GitProviderType, username, email, token });
+              // Auto-bind to current project
               const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-              if (account.isGlobal) { accounts.setGlobalAccount(account.id); } else if (activeRepo) { accounts.setLocalAccount(activeRepo, account.id); }
+              if (activeRepo) {
+                let project = manager.getProjectByPath(activeRepo);
+                if (!project) project = manager.addProject({ name: nameFromPath(activeRepo), path: activeRepo });
+                manager.setProjectAccount(project.id, account.id);
+                accounts.setLocalAccount(activeRepo, account.id);
+                await applyLocalAccount(activeRepo, account, token);
+              }
               vscode.window.showInformationMessage(`Signed in as ${username} via ${provider.label}!`);
-              panel.webview.postMessage({ type: 'accountAdded', account });
+              postPanelState();
             } catch (err: any) {
               if (String(err?.message).includes('No authentication provider')) {
                 vscode.window.showErrorMessage(`Browser sign-in for ${provider.label} requires the ${provider.label} extension. Use manual token instead.`);
@@ -643,13 +502,16 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
           const username = await vscode.window.showInputBox({ prompt: `${provider.label} username` });
           if (!username) break;
-          const isGlobal = await vscode.window.showQuickPick([
-            { label: 'global', description: 'Use for all workspaces' },
-            { label: 'local', description: 'Use only for current workspace' }
-          ], { placeHolder: 'Account scope' });
-          const account = accounts.addAccount({ provider: provider.label as GitProviderType, username, isGlobal: isGlobal?.label === 'global' });
+          const account = accounts.addAccount({ provider: provider.label as GitProviderType, username });
+          // Auto-bind to current project
           const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-          if (account.isGlobal) { accounts.setGlobalAccount(account.id); } else if (activeRepo) { accounts.setLocalAccount(activeRepo, account.id); }
+          if (activeRepo) {
+            let project = manager.getProjectByPath(activeRepo);
+            if (!project) project = manager.addProject({ name: nameFromPath(activeRepo), path: activeRepo });
+            manager.setProjectAccount(project.id, account.id);
+            accounts.setLocalAccount(activeRepo, account.id);
+            await applyLocalAccount(activeRepo, account, account.token);
+          }
           if (authMethod.label === 'ssh') {
             const keyName = await vscode.window.showInputBox({ prompt: 'SSH key name (optional)', value: `ultraview-${username}` });
             const key = await accounts.generateSshKey(account.id, account.provider, keyName || undefined);
@@ -662,7 +524,28 @@ export class GitProvider implements vscode.WebviewViewProvider {
             const token = await vscode.window.showInputBox({ prompt: 'Enter personal access token (with repo scope)', password: true });
             if (token) { accounts.updateAccount(account.id, { token }); }
           }
-          panel.webview.postMessage({ type: 'accountAdded', account });
+          postPanelState();
+          break;
+        }
+        case 'switchAccount': {
+          const accountId = msg.accountId;
+          const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+          if (!activeRepo) {
+            vscode.window.showWarningMessage('No workspace open. Open a project first.');
+            break;
+          }
+          let project = manager.getProjectByPath(activeRepo);
+          if (!project) {
+            project = manager.addProject({ name: nameFromPath(activeRepo), path: activeRepo });
+          }
+          manager.setProjectAccount(project.id, accountId);
+          accounts.setLocalAccount(activeRepo, accountId);
+          const acc = await accounts.getAccountWithToken(accountId);
+          if (acc) {
+            await applyLocalAccount(activeRepo, acc, acc.token);
+            vscode.window.showInformationMessage(`✓ Switched to ${acc.username} for this project.`);
+          }
+          postPanelState();
           break;
         }
         case 'removeAccount': {
@@ -674,82 +557,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
               accounts.removeSshKey(key.id);
             }
             accounts.removeAccount(accountId);
-            panel.webview.postMessage({ type: 'accountRemoved', accountId });
-          }
-          break;
-        }
-        case 'generateSshKey': {
-          const accountId = msg.accountId;
-          const account = accounts.getAccount(accountId);
-          if (account) {
-            const keyName = await vscode.window.showInputBox({ prompt: 'SSH key name (optional)', value: `ultraview-${account.username}` });
-            const key = await accounts.generateSshKey(accountId, account.provider, keyName || undefined);
-            const { sshKeyUrl } = accounts.getProviderUrl(account.provider);
-            await vscode.env.clipboard.writeText(key.publicKey);
-            vscode.window.showInformationMessage(`SSH key generated and copied to clipboard! Opening ${account.provider} settings...`);
-            vscode.env.openExternal(vscode.Uri.parse(sshKeyUrl));
-            panel.webview.postMessage({ type: 'sshKeyGenerated', key, accountId });
-          }
-          break;
-        }
-        case 'openSshSettings': {
-          const accountId = msg.accountId;
-          const account = accounts.getAccount(accountId);
-          if (account) {
-            const { sshKeyUrl } = accounts.getProviderUrl(account.provider);
-            vscode.env.openExternal(vscode.Uri.parse(sshKeyUrl));
-          }
-          break;
-        }
-        case 'openTokenSettings': {
-          const accountId = msg.accountId;
-          const account = accounts.getAccount(accountId);
-          if (account) {
-            const { tokenUrl } = accounts.getProviderUrl(account.provider);
-            vscode.env.openExternal(vscode.Uri.parse(tokenUrl));
-          }
-          break;
-        }
-        case 'setGlobalAccount': {
-          const accountId = msg.accountId || undefined;
-          accounts.setGlobalAccount(accountId);
-          break;
-        }
-        case 'setLocalAccount': {
-          const workspaceUri = msg.workspaceUri;
-          const accountId = msg.accountId || undefined;
-          accounts.setLocalAccount(workspaceUri, accountId);
-          panel.webview.postMessage({ type: 'state', projects: manager.listProjects(), profiles: manager.listProfiles(), currentProfileId: context.workspaceState.get<string | null>('ultraview.git.currentProfile', null), activeRepo: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', accounts: accounts.listAccounts(), globalAccount: accounts.getGlobalAccount(), localAccount: workspaceUri ? accounts.getLocalAccount(workspaceUri) : undefined, sshKeys: accounts.listSshKeys() });
-          break;
-        }
-        case 'addToken': {
-          const accountId = msg.accountId;
-          const acct = accounts.getAccount(accountId);
-          if (!acct) break;
-
-          if (acct.provider === 'github') {
-            const method = await vscode.window.showQuickPick([
-              { label: 'browser', description: 'Sign in via browser (OAuth)' },
-              { label: 'manual', description: 'Paste personal access token' }
-            ], { placeHolder: 'How to add token?' });
-            if (!method) break;
-            if (method.label === 'browser') {
-              try {
-                const session = await vscode.authentication.getSession('github', ['repo', 'read:user', 'user:email'], { forceNewSession: true });
-                accounts.updateAccount(accountId, { token: session.accessToken });
-                panel.webview.postMessage({ type: 'accountUpdated', accountId });
-                vscode.window.showInformationMessage(`Token updated for ${acct.username} via GitHub OAuth.`);
-              } catch (err: any) {
-                vscode.window.showErrorMessage(`OAuth failed: ${err?.message ?? String(err)}`);
-              }
-              break;
-            }
-          }
-
-          const token = await vscode.window.showInputBox({ prompt: 'Enter personal access token (with repo scope)', password: true });
-          if (token) {
-            accounts.updateAccount(accountId, { token });
-            panel.webview.postMessage({ type: 'accountUpdated', accountId });
+            postPanelState();
           }
           break;
         }
@@ -762,41 +570,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
             { label: '$(key) Manage Token', description: 'Add or update personal access token' }
           ], { placeHolder: `Manage Auth for ${account.username}` });
           if (option?.label.includes('SSH')) {
-            await GitProvider._handleGenerateSshKey(accountId, panel.webview, accounts);
+            await GitProvider._handleGenerateSshKey(accountId, panel.webview, accounts, postPanelState);
           } else if (option?.label.includes('Token')) {
             await GitProvider._handleAddToken(accountId, panel.webview, accounts);
-          }
-          break;
-        }
-        case 'accountContextMenu': {
-          const accountId = msg.accountId;
-          const workspaceUri = msg.workspaceUri;
-          const acc = accounts.getAccount(accountId);
-          if (!acc) break;
-          const isGlobal = accounts.getGlobalAccount()?.id === accountId;
-          const isLocal = workspaceUri && accounts.getLocalAccount(workspaceUri)?.id === accountId;
-
-          const option = await vscode.window.showQuickPick([
-            { label: isGlobal ? '$(close) Unset Global Account' : '$(globe) Set as Global Account', description: isGlobal ? 'Remove as default for all workspaces' : 'Use as default for all workspaces' },
-            { label: isLocal ? '$(close) Unset Local Account' : '$(folder) Set as Local Account', description: isLocal ? 'Remove from this workspace' : 'Use specifically for this workspace' }
-          ], { placeHolder: `Quick Actions for ${acc.username}` });
-
-          if (option) {
-            if (option.label.includes('Global')) {
-              accounts.setGlobalAccount(isGlobal ? undefined : accountId);
-              if (!isGlobal) await applyGlobalAccount(acc);
-              // Trigger refresh
-              panel.webview.postMessage({ type: 'state', projects: manager.listProjects(), profiles: manager.listProfiles(), currentProfileId: context.workspaceState.get<string | null>('ultraview.git.currentProfile', null), activeRepo: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', accounts: accounts.listAccounts(), globalAccount: accounts.getGlobalAccount(), localAccount: workspaceUri ? accounts.getLocalAccount(workspaceUri) : undefined, sshKeys: accounts.listSshKeys() });
-            } else if (option.label.includes('Local')) {
-              accounts.setLocalAccount(workspaceUri, isLocal ? undefined : accountId);
-              if (isLocal) {
-                await clearLocalAccount(workspaceUri);
-              } else {
-                await applyLocalAccount(workspaceUri, acc, acc.token);
-              }
-              // Trigger refresh
-              panel.webview.postMessage({ type: 'state', projects: manager.listProjects(), profiles: manager.listProfiles(), currentProfileId: context.workspaceState.get<string | null>('ultraview.git.currentProfile', null), activeRepo: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '', accounts: accounts.listAccounts(), globalAccount: accounts.getGlobalAccount(), localAccount: workspaceUri ? accounts.getLocalAccount(workspaceUri) : undefined, sshKeys: accounts.listSshKeys() });
-            }
           }
           break;
         }
@@ -813,7 +589,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
     const profile = this.manager.addProfile({ name, userName: userName || undefined, userEmail: userEmail || undefined });
     this.postState();
-    this.view?.webview.postMessage({ type: 'profileAdded', profile });
   }
 
   private async _editProfile(profile: GitProfile): Promise<void> {
@@ -877,7 +652,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
   static async _handleAddRepo(webview: vscode.Webview, manager: GitProjects, accounts: GitAccounts, postStateCb: () => void) {
     const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    const activeAcc = accounts.getEffectiveAccount(activeRepo);
+    const activeAcc = activeRepo ? accounts.getLocalAccount(activeRepo) : undefined;
     if (!activeAcc) {
       vscode.window.showErrorMessage('No active Git account. Please add/select an account first.');
       return;
@@ -939,13 +714,12 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
         await execAsync(`git clone "${cloneUrl}" "${repoName}"`, { cwd: destPath });
 
-        const project = manager.addProject({ name: repoName, path: fullPath });
+        const project = manager.addProject({ name: repoName, path: fullPath, accountId: activeAcc.id });
 
         accounts.setLocalAccount(fullPath, activeAcc.id);
         await applyLocalAccount(fullPath, accWithToken, accWithToken.token!);
 
         postStateCb();
-        webview.postMessage({ type: 'projectAdded', project });
         vscode.window.showInformationMessage(`Successfully cloned and added ${selected.name}`);
       } catch (err: any) {
         vscode.window.showErrorMessage(`Failed to clone: ${err.message}`);

@@ -24,7 +24,6 @@ function toGitAccount(sync: SyncAccount, token?: string): GitAccount {
     token,
     sshKeyId: sync.sshKeyId,
     tokenExpiresAt: sync.tokenExpiresAt,
-    isGlobal: sync.isGlobal,
     createdAt: sync.createdAt,
   };
 }
@@ -87,7 +86,6 @@ export class GitAccounts {
       token: account.token,
       sshKeyId: account.sshKeyId,
       tokenExpiresAt: account.tokenExpiresAt,
-      isGlobal: account.isGlobal ?? false,
       createdAt: account.createdAt || Date.now(),
     };
     accounts.push(toSyncAccount(acc));
@@ -137,17 +135,7 @@ export class GitAccounts {
     return toGitAccount(sync, token);
   }
 
-  // ── Global / Local account selection ────────────────────────────────────
-
-  getGlobalAccount(): GitAccount | undefined {
-    const id = this.store.read().globalAccountId;
-    if (!id) return undefined;
-    return this.getAccount(id);
-  }
-
-  setGlobalAccount(accountId: string | undefined) {
-    this.store.write({ globalAccountId: accountId });
-  }
+  // ── Per-project account selection ──────────────────────────────────────
 
   setLocalAccount(workspaceUri: string, accountId: string | undefined) {
     const data = this.store.read();
@@ -169,11 +157,6 @@ export class GitAccounts {
     const entry = this.store.read().localAccounts.find(l => l.workspaceUri === workspaceUri);
     if (!entry) return undefined;
     return this.getAccount(entry.accountId);
-  }
-
-  getEffectiveAccount(workspaceUri?: string): GitAccount | undefined {
-    const local = workspaceUri ? this.getLocalAccount(workspaceUri) : undefined;
-    return local || this.getGlobalAccount();
   }
 
   // ── SSH Keys ─────────────────────────────────────────────────────────────

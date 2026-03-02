@@ -12,7 +12,6 @@ export interface SyncData {
     sshKeys: SyncSshKey[];
     projects: SyncProject[];
     profiles: SyncProfile[];
-    globalAccountId?: string;
     localAccounts: { workspaceUri: string; accountId: string }[];
 }
 
@@ -24,7 +23,6 @@ export interface SyncAccount {
     email?: string;
     sshKeyId?: string;
     tokenExpiresAt?: number;
-    isGlobal: boolean;
     createdAt: number;
 }
 
@@ -44,6 +42,7 @@ export interface SyncProject {
     path: string;
     repoUrl?: string;
     gitProfile?: string;
+    accountId?: string;
 }
 
 export interface SyncProfile {
@@ -277,7 +276,6 @@ export class SharedStore extends EventEmitter {
             sshKeys: mergeById(a.sshKeys, b.sshKeys),
             projects: mergeById(a.projects, b.projects),
             profiles: mergeById(a.profiles, b.profiles),
-            globalAccountId: a.globalAccountId ?? b.globalAccountId,
             localAccounts: mergeById(
                 a.localAccounts.map(l => ({ id: l.workspaceUri, ...l })),
                 b.localAccounts.map(l => ({ id: l.workspaceUri, ...l }))
@@ -320,7 +318,6 @@ export class SharedStore extends EventEmitter {
                     sshKeys: oldSshKeys,
                     projects: oldProjects,
                     profiles: oldProfiles,
-                    globalAccountId: oldGlobalAccount,
                     localAccounts: oldLocalAccounts,
                 },
                 this.data
