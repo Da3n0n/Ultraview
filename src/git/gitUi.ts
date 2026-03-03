@@ -10,26 +10,7 @@ export function buildGitHtml(): string {
       background:var(--vscode-sideBar-background,var(--vscode-editor-background));
       color:var(--vscode-editor-foreground);
       font:12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
-    #toolbar{
-      position:fixed;top:0;left:0;right:0;height:36px;
-      display:flex;align-items:center;gap:6px;padding:0 8px;
-      background:var(--vscode-sideBar-background,var(--vscode-editor-background));
-      border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));
-      z-index:10;flex-shrink:0}
-    .tbtn{
-      padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;
-      background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));
-      border:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));
-      color:var(--vscode-editor-foreground);white-space:nowrap}
-    .tbtn:hover{background:var(--vscode-list-hoverBackground)}
-    #search{
-      flex:1;min-width:0;padding:3px 7px;
-      background:var(--vscode-input-background);
-      color:var(--vscode-input-foreground);
-      border:1px solid var(--vscode-input-border,rgba(128,128,128,.4));
-      border-radius:4px;font-size:11px}
-    #search:focus{outline:1px solid var(--vscode-focusBorder)}
-    #content{position:fixed;top:36px;left:0;right:0;bottom:24px;overflow-y:auto;padding:8px}
+    #content{position:fixed;top:0;left:0;right:0;bottom:24px;overflow-y:auto;padding:8px}
     #status{
       position:fixed;bottom:0;left:0;right:0;height:24px;
       display:flex;align-items:center;padding:0 10px;gap:12px;
@@ -118,17 +99,12 @@ export function buildGitHtml(): string {
 </head>
 <body>
 <div id="loading"><div class="spinner"></div><span>Loading...</span></div>
-<div id="toolbar">
-  <button class="tbtn" id="btn-add" title="Add new project">+ Add</button>
-  <button class="tbtn" id="btn-refresh" title="Refresh list">↻</button>
-  <input id="search" placeholder="Filter projects..." autocomplete="off"/>
-  <button class="tbtn" id="btn-add-account" title="Add account">+ Account</button>
-</div>
 <div id="content">
 
   <div class="section" id="accounts-section">
     <div class="section-header">
       <span class="section-title">Accounts</span>
+      <button class="btn-action btn-sm" id="btn-add-account">+ Account</button>
     </div>
     <div id="account-list"></div>
   </div>
@@ -139,11 +115,12 @@ export function buildGitHtml(): string {
       <div style="display:flex;gap:4px">
         <button class="btn-action btn-sm" id="btn-add-project">+ Add Current</button>
         <button class="btn-action btn-sm" id="btn-add-repo">+ Add Repo</button>
+        <button class="btn-action btn-sm" id="btn-add" title="Browse for folder">+ Browse</button>
       </div>
     </div>
     <ul id="project-list" class="project-list"></ul>
     <div id="empty-state" class="empty-state hidden">
-      No projects yet. Click "+ Add" to add a project.
+      No projects yet. Click "+ Browse" to add a project.
     </div>
   </div>
 </div>
@@ -158,11 +135,11 @@ export function buildGitHtml(): string {
 
 var vscode = acquireVsCodeApi();
 var allProjects = [];
-var filterText = '';
 var allAccounts = [];
 var activeAccountId = null;
 var activeProjectId = null;
 var activeRepo = '';
+var activeRepoName = '';
 
 var projectList = document.getElementById('project-list');
 var emptyState = document.getElementById('empty-state');
@@ -175,18 +152,12 @@ function esc(s) {
 }
 
 function renderProjects() {
-  var q = filterText.toLowerCase();
-  var filtered = allProjects.filter(function(p) { 
-    return !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q);
-  });
+  var filtered = allProjects;
   
   projectList.innerHTML = '';
   
   if (filtered.length === 0) {
     emptyState.classList.remove('hidden');
-    if (allProjects.length > 0 && q) {
-      emptyState.textContent = 'No projects match "' + esc(q) + '"';
-    }
   } else {
     emptyState.classList.add('hidden');
     filtered.forEach(function(pr) {
@@ -289,6 +260,23 @@ function updateUI(msg) {
   activeAccountId = msg.activeAccountId || null;
   activeProjectId = msg.activeProjectId || null;
   activeRepo = msg.activeRepo || '';
+  activeRepoName = msg.activeRepoName || '';
+
+  // Update "+ Add Current" button: show project name, hide if already exists
+  var btnAddProject = document.getElementById('btn-add-project');
+  if (btnAddProject) {
+    if (!activeRepo) {
+      btnAddProject.classList.add('hidden');
+    } else {
+      var alreadyExists = allProjects.some(function(p) { return p.path === activeRepo; });
+      if (alreadyExists) {
+        btnAddProject.classList.add('hidden');
+      } else {
+        btnAddProject.classList.remove('hidden');
+        btnAddProject.textContent = '+ Add ' + (activeRepoName || 'Current');
+      }
+    }
+  }
 
   renderProjects();
   renderAccounts();
@@ -325,18 +313,8 @@ document.getElementById('btn-add-repo').addEventListener('click', function() {
   vscode.postMessage({ type: 'addRepo' });
 });
 
-document.getElementById('btn-refresh').addEventListener('click', function() {
-  document.getElementById('loading').classList.remove('hidden');
-  vscode.postMessage({ type: 'refresh' });
-});
-
 document.getElementById('btn-add-account').addEventListener('click', function() {
   vscode.postMessage({ type: 'addAccount' });
-});
-
-document.getElementById('search').addEventListener('input', function() {
-  filterText = this.value;
-  renderProjects();
 });
 
 projectList.addEventListener('click', function(e) {

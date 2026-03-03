@@ -13,6 +13,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
   private manager: GitProjects;
   private accounts: GitAccounts;
   private store: SharedStore;
+  private _overrideCallback?: () => void;
 
   constructor(context: vscode.ExtensionContext, store: SharedStore) {
     this.context = context;
@@ -21,10 +22,24 @@ export class GitProvider implements vscode.WebviewViewProvider {
     this.accounts = new GitAccounts(context, store);
   }
 
+  /** Register a callback that fires once when the user navigates away from the git panel. */
+  onUserOverride(cb: () => void) {
+    this._overrideCallback = cb;
+  }
+
   resolveWebviewView(webviewView: vscode.WebviewView) {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = buildGitHtml();
+
+    // If the user navigates away from the git panel, fire the override
+    // callback so the startup auto-focus timer stops immediately.
+    webviewView.onDidChangeVisibility(() => {
+      if (!webviewView.visible && this._overrideCallback) {
+        this._overrideCallback();
+        this._overrideCallback = undefined;   // fire only once
+      }
+    });
 
     // Hot-reload when another IDE writes the shared sync file
     this.store.on('changed', () => this.postState());
@@ -209,10 +224,13 @@ export class GitProvider implements vscode.WebviewViewProvider {
       authStatus: this.accounts.getAccountAuthStatus(acc),
     }));
 
+    const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
+
     this.view.webview.postMessage({
       type: 'state',
       projects,
       activeRepo,
+      activeRepoName,
       accounts: accountsWithStatus,
       activeAccountId: activeAccountId || null,
       activeProjectId: activeProject?.id || null,
@@ -429,10 +447,13 @@ export class GitProvider implements vscode.WebviewViewProvider {
         authStatus: accounts.getAccountAuthStatus(acc),
       }));
 
+      const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
+
       panel.webview.postMessage({
         type: 'state',
         projects,
         activeRepo,
+        activeRepoName,
         accounts: accountsWithStatus,
         activeAccountId: activeAccountId || null,
         activeProjectId: activeProject?.id || null,
