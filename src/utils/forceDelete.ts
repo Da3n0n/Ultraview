@@ -3,22 +3,30 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
+const DELETE_RETRY_COUNT = 15;
+const WINDOWS_DELETE_RETRY_DELAY_MS = 300;
+const WINDOWS_HANDLE_RELEASE_DELAY_MS = 1500;
+
 /**
  * Handles the "Force Delete" command for a file or folder.
  */
-export async function forceDelete(uri: vscode.Uri) {
-    if (!uri || uri.scheme !== 'file') {
+export async function forceDelete(uri?: vscode.Uri) {
+    const targetUri = uri ?? vscode.window.activeTextEditor?.document?.uri;
+
+    if (!targetUri || targetUri.scheme !== 'file') {
         vscode.window.showErrorMessage('Force Delete only works on local files and folders.');
         return;
     }
 
-    const filePath = uri.fsPath;
+    const filePath = path.resolve(targetUri.fsPath);
     if (!fs.existsSync(filePath)) {
         vscode.window.showErrorMessage('The selected file or folder does not exist.');
         return;
     }
 
     try {
+        await releaseKnownVsCodeLocks(filePath);
+
         // 1. Identify locking processes
         const processes = await getLockingProcesses(filePath);
 
@@ -38,49 +46,314 @@ export async function forceDelete(uri: vscode.Uri) {
             await killProcesses(processes.map(p => p.pid));
 
             // Give the OS a moment to release handles
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            await delay(WINDOWS_HANDLE_RELEASE_DELAY_MS);
         }
 
         // 3. Delete the file or folder with retries
-        let lastError: Error | null = null;
-        const isWindows = process.platform === 'win32';
-        
-        for (let i = 0; i < 15; i++) {
-            try {
-                if (!fs.existsSync(filePath)) {
-                    break;
-                }
-                const stats = fs.lstatSync(filePath);
-                if (stats.isDirectory()) {
-                    if (isWindows) {
-                        cp.execSync(`cmd /c rmdir /s /q "${filePath}"`, { stdio: 'ignore' });
-                    } else {
-                        fs.rmSync(filePath, { recursive: true, force: true });
-                    }
-                } else {
-                    fs.unlinkSync(filePath);
-                }
-                lastError = null;
-                break;
-            } catch (error: any) {
-                lastError = error;
-                if (error.code === 'EBUSY' || error.code === 'EPERM' || error.code === 'ENOTEMPTY' || error.code === 'EACCES') {
-                    // Wait and retry with increasing delay
-                    await new Promise(resolve => setTimeout(resolve, 300 + (i * 100)));
-                    continue;
-                }
-                throw error;
-            }
-        }
+        const result = await deletePathWithRetries(filePath);
 
-        if (lastError) {
-            throw lastError;
+        if (result === 'scheduled') {
+            vscode.window.showInformationMessage(`Force delete queued for "${path.basename(filePath)}". It will be removed as soon as the last lock releases.`);
+        } else {
+            vscode.window.showInformationMessage(`Successfully force deleted "${path.basename(filePath)}".`);
         }
-
-        vscode.window.showInformationMessage(`Successfully force deleted "${path.basename(filePath)}".`);
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to force delete: ${error.message}`);
     }
+}
+
+async function deletePathWithRetries(originalPath: string): Promise<'deleted' | 'scheduled'> {
+    let currentPath = originalPath;
+    let movedAside = false;
+    let lastError: NodeJS.ErrnoException | Error | null = null;
+
+    for (let attempt = 0; attempt < DELETE_RETRY_COUNT; attempt++) {
+        if (!fs.existsSync(currentPath)) {
+            return 'deleted';
+        }
+
+        try {
+            if (attempt === 1) {
+                await releaseKnownVsCodeLocks(currentPath);
+            }
+
+            if (!movedAside) {
+                currentPath = await movePathAsideIfPossible(currentPath);
+                movedAside = currentPath !== originalPath;
+            }
+
+            clearReadonlyRecursive(currentPath);
+            removePath(currentPath);
+
+            if (!fs.existsSync(currentPath)) {
+                return 'deleted';
+            }
+        } catch (error: any) {
+            lastError = error;
+
+            if (!isRetryableDeleteError(error)) {
+                break;
+            }
+        }
+
+        await delay(WINDOWS_DELETE_RETRY_DELAY_MS + (attempt * 100));
+    }
+
+    if (fs.existsSync(currentPath) && process.platform === 'win32') {
+        await deletePathWithPowerShell(currentPath);
+        if (!fs.existsSync(currentPath)) {
+            return 'deleted';
+        }
+    }
+
+    if (fs.existsSync(currentPath) && process.platform === 'win32') {
+        await scheduleBackgroundDelete(currentPath);
+        return 'scheduled';
+    }
+
+    if (lastError) {
+        throw lastError;
+    }
+
+    throw new Error(`Unable to delete "${originalPath}".`);
+}
+
+async function movePathAsideIfPossible(targetPath: string): Promise<string> {
+    const parentPath = path.dirname(targetPath);
+    const baseName = path.basename(targetPath);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const candidatePath = path.join(
+            parentPath,
+            `.ultraview-delete-${baseName}-${process.pid}-${Date.now()}-${attempt}`
+        );
+
+        try {
+            fs.renameSync(targetPath, candidatePath);
+            return candidatePath;
+        } catch (error: any) {
+            if (!isRetryableDeleteError(error)) {
+                return targetPath;
+            }
+
+            await delay(75 * (attempt + 1));
+        }
+    }
+
+    return targetPath;
+}
+
+function clearReadonlyRecursive(targetPath: string): void {
+    if (!fs.existsSync(targetPath)) {
+        return;
+    }
+
+    const stats = fs.lstatSync(targetPath);
+    safelyChmod(targetPath, stats);
+
+    if (!stats.isDirectory() || stats.isSymbolicLink()) {
+        return;
+    }
+
+    for (const entry of fs.readdirSync(targetPath)) {
+        clearReadonlyRecursive(path.join(targetPath, entry));
+    }
+}
+
+function safelyChmod(targetPath: string, stats: fs.Stats): void {
+    try {
+        const mode = stats.isDirectory() ? 0o777 : 0o666;
+        fs.chmodSync(targetPath, mode);
+    } catch {
+        // Best-effort only.
+    }
+}
+
+function removePath(targetPath: string): void {
+    fs.rmSync(targetPath, {
+        recursive: true,
+        force: true,
+        maxRetries: 2,
+        retryDelay: 100,
+    });
+}
+
+function isRetryableDeleteError(error: NodeJS.ErrnoException | undefined): boolean {
+    return error?.code === 'EBUSY'
+        || error?.code === 'EPERM'
+        || error?.code === 'ENOTEMPTY'
+        || error?.code === 'EACCES'
+        || error?.code === 'EMFILE'
+        || error?.code === 'ENFILE';
+}
+
+async function deletePathWithPowerShell(targetPath: string): Promise<void> {
+    const script = `
+$target = '${escapePowerShellString(targetPath)}'
+if (-not (Test-Path -LiteralPath $target)) {
+    exit 0
+}
+
+try {
+    Get-ChildItem -LiteralPath $target -Force -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            $_.Attributes = 'Normal'
+        } catch {}
+    }
+} catch {}
+
+try {
+    $item = Get-Item -LiteralPath $target -Force -ErrorAction Stop
+    try {
+        $item.Attributes = 'Normal'
+    } catch {}
+    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+} catch {
+    Write-Error $_
+    exit 1
+}
+`;
+
+    await new Promise<void>((resolve, reject) => {
+        cp.execFile(
+            'powershell',
+            ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+            (error, _stdout, stderr) => {
+                if (error) {
+                    reject(new Error(stderr.trim() || error.message));
+                    return;
+                }
+
+                resolve();
+            }
+        );
+    });
+}
+
+async function scheduleBackgroundDelete(targetPath: string): Promise<void> {
+    const script = `
+$target = '${escapePowerShellString(targetPath)}'
+for ($attempt = 0; $attempt -lt 600; $attempt++) {
+    if (-not (Test-Path -LiteralPath $target)) {
+        exit 0
+    }
+
+    try {
+        Get-ChildItem -LiteralPath $target -Force -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                $_.Attributes = 'Normal'
+            } catch {}
+        }
+    } catch {}
+
+    try {
+        $item = Get-Item -LiteralPath $target -Force -ErrorAction Stop
+        try {
+            $item.Attributes = 'Normal'
+        } catch {}
+        Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
+    } catch {}
+
+    Start-Sleep -Milliseconds 1000
+}
+exit 1
+`;
+
+    await new Promise<void>((resolve, reject) => {
+        const child = cp.spawn(
+            'powershell',
+            ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', script],
+            {
+                detached: true,
+                stdio: 'ignore',
+            }
+        );
+
+        child.once('error', (error) => {
+            reject(error);
+        });
+
+        child.unref();
+        resolve();
+    });
+}
+
+async function releaseKnownVsCodeLocks(targetPath: string): Promise<void> {
+    await closeTabsForTarget(targetPath);
+    removeMatchingWorkspaceFolders(targetPath);
+
+    if (isDirectoryPath(targetPath)) {
+        for (const terminal of vscode.window.terminals) {
+            try {
+                terminal.dispose();
+            } catch {
+                // Best-effort only.
+            }
+        }
+    }
+
+    await delay(250);
+}
+
+async function closeTabsForTarget(targetPath: string): Promise<void> {
+    const tabsToClose = vscode.window.tabGroups.all
+        .flatMap(group => group.tabs)
+        .filter(tab => !tab.isDirty)
+        .filter(tab => isTabInsideTarget(tab, targetPath));
+
+    if (tabsToClose.length > 0) {
+        await vscode.window.tabGroups.close(tabsToClose, true);
+    }
+}
+
+function isTabInsideTarget(tab: vscode.Tab, targetPath: string): boolean {
+    const input = tab.input;
+
+    if (input instanceof vscode.TabInputText || input instanceof vscode.TabInputCustom || input instanceof vscode.TabInputNotebook) {
+        return isPathInsideTarget(input.uri.fsPath, targetPath);
+    }
+
+    if (input instanceof vscode.TabInputTextDiff || input instanceof vscode.TabInputNotebookDiff) {
+        return isPathInsideTarget(input.original.fsPath, targetPath)
+            || isPathInsideTarget(input.modified.fsPath, targetPath);
+    }
+
+    return false;
+}
+
+function removeMatchingWorkspaceFolders(targetPath: string): void {
+    const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+    const indexesToRemove = workspaceFolders
+        .map((folder, index) => ({ folder, index }))
+        .filter(({ folder }) => isPathInsideTarget(folder.uri.fsPath, targetPath));
+
+    for (const { index } of indexesToRemove.sort((left, right) => right.index - left.index)) {
+        vscode.workspace.updateWorkspaceFolders(index, 1);
+    }
+}
+
+function isDirectoryPath(targetPath: string): boolean {
+    try {
+        return fs.lstatSync(targetPath).isDirectory();
+    } catch {
+        return false;
+    }
+}
+
+function isPathInsideTarget(candidatePath: string, targetPath: string): boolean {
+    const normalizedCandidate = path.resolve(candidatePath);
+    const normalizedTarget = path.resolve(targetPath);
+    const relative = path.relative(normalizedTarget, normalizedCandidate);
+
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function escapePowerShellString(value: string): string {
+    return value.replace(/'/g, "''");
+}
+
+function delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 interface ProcessInfo {
@@ -251,8 +524,12 @@ async function killProcesses(pids: number[]): Promise<void> {
 
     for (const pid of uniquePids) {
         try {
+            if (pid === process.pid) {
+                continue;
+            }
+
             if (isWindows) {
-                cp.execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+                cp.execSync(`taskkill /T /F /PID ${pid}`, { stdio: 'ignore' });
             } else {
                 cp.execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
             }
