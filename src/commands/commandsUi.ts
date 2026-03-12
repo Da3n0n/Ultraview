@@ -50,8 +50,8 @@ export function buildCommandsHtml(): string {
     color:var(--vscode-badge-foreground);
     padding:1px 5px;border-radius:8px}
   .cmd-item{
-    display:flex;align-items:center;
-    padding:8px 10px;margin-bottom:5px;
+    display:flex;align-items:flex-start;
+    padding:10px 12px;margin-bottom:8px;
     background:var(--vscode-editor-background,rgba(30,30,30,.5));
     border:1px solid var(--vscode-panel-border,rgba(128,128,128,.2));
     border-radius:6px;transition:background .15s;
@@ -61,23 +61,38 @@ export function buildCommandsHtml(): string {
     border-color:var(--vscode-focusBorder,rgba(128,128,128,.4))}
   .cmd-badge{
     font-family:monospace;font-weight:700;font-size:10px;
-    padding:2px 5px;border-radius:3px;flex-shrink:0;
+    padding:3px 6px;border-radius:3px;flex-shrink:0;
     text-transform:uppercase;letter-spacing:0.3px}
   .badge-npm { background:rgba(115,201,145,.2);color:#73C991;border:1px solid rgba(115,201,145,.35) }
   .badge-just{ background:rgba(197,134,192,.2);color:#C586C0;border:1px solid rgba(197,134,192,.35) }
   .badge-task{ background:rgba(78,201,176,.2); color:#4EC9B0;border:1px solid rgba(78,201,176,.35)  }
   .badge-make{ background:rgba(206,145,120,.2);color:#CE9178;border:1px solid rgba(206,145,120,.35) }
   .cmd-info{flex:1;min-width:0}
+  .cmd-meta{
+    display:flex;align-items:center;gap:8px;
+    margin-bottom:4px;flex-wrap:wrap}
+  .cmd-folder{
+    font-size:10px;font-family:Consolas,'Courier New',monospace;
+    color:var(--vscode-descriptionForeground);
+    opacity:.95;
+    background:var(--vscode-textCodeBlock-background,rgba(128,128,128,.12));
+    border-radius:4px;padding:2px 6px}
   .cmd-name{
-    font-weight:600;font-size:12px;
+    font-weight:600;font-size:11px;
+    color:var(--vscode-descriptionForeground);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmd-run{
+    font-family:Consolas,'Courier New',monospace;
+    font-weight:700;font-size:13px;line-height:1.45;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cmd-desc{
-    font-size:10px;margin-top:2px;
+    font-size:10px;margin-top:4px;
     color:var(--vscode-descriptionForeground);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-    font-family:monospace;opacity:.8}
+    font-family:Consolas,'Courier New',monospace;opacity:.85}
   .btn-run{
-    padding:3px 9px;border-radius:4px;cursor:pointer;font-size:11px;
+    margin-left:auto;
+    padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;
     background:var(--vscode-button-background,rgba(0,120,212,.85));
     color:var(--vscode-button-foreground,#fff);
     border:1px solid transparent;white-space:nowrap;flex-shrink:0}
@@ -136,8 +151,8 @@ window.addEventListener('message', e => {
   }
 });
 
-function runCmd(cmd, name) {
-  vscode.postMessage({ type: 'run', cmd, name });
+function runCmd(command) {
+  vscode.postMessage({ type: 'run', command });
 }
 
 function escHtml(s) {
@@ -149,7 +164,14 @@ function escHtml(s) {
 function render(cmds) {
   const q = filterText;
   const visible = q
-    ? cmds.filter(c => c.name.toLowerCase().includes(q) || (c.description||'').toLowerCase().includes(q) || c.type.includes(q))
+    ? cmds.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.displayName || '').toLowerCase().includes(q) ||
+        (c.description||'').toLowerCase().includes(q) ||
+        (c.folderLabel || '').toLowerCase().includes(q) ||
+        (c.runCmd || '').toLowerCase().includes(q) ||
+        c.type.includes(q)
+      )
     : cmds;
 
   const el = document.getElementById('content');
@@ -197,21 +219,26 @@ function render(cmds) {
       item.title = 'Click to run: ' + escHtml(c.runCmd);
 
       item.innerHTML =
-        '<span class="cmd-badge badge-' + escHtml(c.type) + '">' + escHtml(c.type) + '</span>' +
         '<div class="cmd-info">' +
-          '<div class="cmd-name">' + escHtml(c.name) + '</div>' +
+          '<div class="cmd-meta">' +
+            '<span class="cmd-badge badge-' + escHtml(c.type) + '">' + escHtml(c.type) + '</span>' +
+            '<span class="cmd-folder">' + escHtml(c.folderLabel || c.workspaceLabel || '') + '</span>' +
+            '<div class="cmd-name">' + escHtml(c.displayName || c.name) + '</div>' +
+          '</div>' +
+          '<div class="cmd-run">' + escHtml(c.runCmd) + '</div>' +
+          '<div class="cmd-desc">cwd: ' + escHtml(c.cwd || '') + '</div>' +
           (c.description ? '<div class="cmd-desc">' + escHtml(c.description) + '</div>' : '') +
         '</div>' +
-        '<button class="btn-run" title="Run in terminal: ' + escHtml(c.runCmd) + '">▶ Run</button>';
+        '<button class="btn-run" title="Run in terminal: ' + escHtml(c.runCmd) + '">Run</button>';
 
       // clicking the row (not the button) also runs
       item.addEventListener('click', function(e) {
         if (e.target.classList.contains('btn-run')) return;
-        runCmd(c.runCmd, c.name);
+        runCmd(c);
       });
       item.querySelector('.btn-run').addEventListener('click', function(e) {
         e.stopPropagation();
-        runCmd(c.runCmd, c.name);
+        runCmd(c);
       });
 
       section.appendChild(item);

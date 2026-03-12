@@ -3,23 +3,79 @@ import * as path from 'path';
 
 export type CommandType = 'npm' | 'just' | 'task' | 'make';
 
+const MANIFEST_FILE_NAMES = new Set([
+  'package.json',
+  'justfile',
+  'Justfile',
+  '.justfile',
+  'Taskfile.yml',
+  'Taskfile.yaml',
+  'taskfile.yml',
+  'taskfile.yaml',
+  'Makefile',
+]);
+
+const IGNORED_DIRECTORIES = new Set([
+  '.git',
+  '.hg',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  '.turbo',
+  '.yarn',
+  'bin',
+  'build',
+  'coverage',
+  'dist',
+  'node_modules',
+  'out',
+  'target',
+]);
+
 export interface ProjectCommand {
   id: string;
   type: CommandType;
   name: string;
   description?: string;
   runCmd: string;
+  cwd: string;
+  folderLabel: string;
+  workspaceLabel: string;
+  displayName: string;
 }
 
 export async function scanCommands(rootPath: string): Promise<ProjectCommand[]> {
-  if (!rootPath) return [];
+  if (!rootPath) {
+    return [];
+  }
+
   const all: ProjectCommand[] = [];
-  await Promise.allSettled([
-    scanNpm(rootPath, all),
-    scanJust(rootPath, all),
-    scanTask(rootPath, all),
-    scanMake(rootPath, all),
-  ]);
+  const seenIds = new Set<string>();
+  const commandRoots = collectCommandRoots(rootPath);
+
+  for (const commandRoot of commandRoots) {
+    await Promise.allSettled([
+      scanNpm(rootPath, commandRoot, all, seenIds),
+      scanJust(rootPath, commandRoot, all, seenIds),
+      scanTask(rootPath, commandRoot, all, seenIds),
+      scanMake(rootPath, commandRoot, all, seenIds),
+    ]);
+  }
+
+  return all.sort((left, right) => {
+    return left.folderLabel.localeCompare(right.folderLabel)
+      || left.type.localeCompare(right.type)
+      || left.name.localeCompare(right.name);
+  });
+}
+
+export async function scanWorkspaceCommands(rootPaths: readonly string[]): Promise<ProjectCommand[]> {
+  const all: ProjectCommand[] = [];
+  for (const rootPath of rootPaths) {
+    const commands = await scanCommands(rootPath);
+    all.push(...commands);
+  }
+
   return all;
 }
 
@@ -30,25 +86,99 @@ function readFile(filePath: string): string | null {
   catch { return null; }
 }
 
+function collectCommandRoots(rootPath: string): string[] {
+  const roots: string[] = [];
+  const visited = new Set<string>();
+
+  const visit = (dirPath: string): void => {
+    const normalizedPath = path.resolve(dirPath);
+    if (visited.has(normalizedPath)) {
+      return;
+    }
+    visited.add(normalizedPath);
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(normalizedPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    if (entries.some(entry => entry.isFile() && MANIFEST_FILE_NAMES.has(entry.name))) {
+      roots.push(normalizedPath);
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) {
+        continue;
+      }
+
+      if (IGNORED_DIRECTORIES.has(entry.name)) {
+        continue;
+      }
+
+      visit(path.join(normalizedPath, entry.name));
+    }
+  };
+
+  visit(rootPath);
+  return roots;
+}
+
+function buildCommand(
+  workspaceRoot: string,
+  cwd: string,
+  type: CommandType,
+  name: string,
+  runCmd: string,
+  description?: string,
+): ProjectCommand {
+  const relativePath = path.relative(workspaceRoot, cwd);
+  const workspaceLabel = path.basename(workspaceRoot) || workspaceRoot;
+  const folderLabel = relativePath ? `${workspaceLabel}/${relativePath.split(path.sep).join('/')}` : workspaceLabel;
+
+  return {
+    id: `${type}:${folderLabel}:${name}`,
+    type,
+    name,
+    description,
+    runCmd,
+    cwd,
+    folderLabel,
+    workspaceLabel,
+    displayName: `${type} ${name}`,
+  };
+}
+
+function pushCommand(out: ProjectCommand[], seenIds: Set<string>, command: ProjectCommand): void {
+  if (seenIds.has(command.id)) {
+    return;
+  }
+
+  seenIds.add(command.id);
+  out.push(command);
+}
+
 // ─── NPM ─────────────────────────────────────────────────────────────────────
 
-async function scanNpm(root: string, out: ProjectCommand[]): Promise<void> {
-  const content = readFile(path.join(root, 'package.json'));
+async function scanNpm(workspaceRoot: string, cwd: string, out: ProjectCommand[], seenIds: Set<string>): Promise<void> {
+  const content = readFile(path.join(cwd, 'package.json'));
   if (!content) return;
   let pkg: any;
   try { pkg = JSON.parse(content); } catch { return; }
   const scripts = pkg.scripts;
   if (!scripts || typeof scripts !== 'object') return;
 
-  const runner = detectNpmRunner(root);
+  const runner = detectNpmRunner(cwd);
   for (const [name, cmd] of Object.entries(scripts)) {
-    out.push({
-      id: `npm:${name}`,
-      type: 'npm',
+    pushCommand(out, seenIds, buildCommand(
+      workspaceRoot,
+      cwd,
+      'npm',
       name,
-      description: String(cmd),
-      runCmd: `${runner} ${name}`,
-    });
+      `${runner} ${name}`,
+      String(cmd),
+    ));
   }
 }
 
@@ -67,10 +197,10 @@ function detectNpmRunner(root: string): string {
 
 // ─── Just ────────────────────────────────────────────────────────────────────
 
-async function scanJust(root: string, out: ProjectCommand[]): Promise<void> {
+async function scanJust(workspaceRoot: string, cwd: string, out: ProjectCommand[], seenIds: Set<string>): Promise<void> {
   let content: string | null = null;
   for (const name of ['justfile', 'Justfile', '.justfile']) {
-    content = readFile(path.join(root, name));
+    content = readFile(path.join(cwd, name));
     if (content) break;
   }
   if (!content) return;
@@ -96,16 +226,16 @@ async function scanJust(root: string, out: ProjectCommand[]): Promise<void> {
       }
     }
 
-    out.push({ id: `just:${name}`, type: 'just', name, description: desc, runCmd: `just ${name}` });
+    pushCommand(out, seenIds, buildCommand(workspaceRoot, cwd, 'just', name, `just ${name}`, desc));
   }
 }
 
 // ─── Task ────────────────────────────────────────────────────────────────────
 
-async function scanTask(root: string, out: ProjectCommand[]): Promise<void> {
+async function scanTask(workspaceRoot: string, cwd: string, out: ProjectCommand[], seenIds: Set<string>): Promise<void> {
   let content: string | null = null;
   for (const name of ['Taskfile.yml', 'Taskfile.yaml', 'taskfile.yml', 'taskfile.yaml']) {
-    content = readFile(path.join(root, name));
+    content = readFile(path.join(cwd, name));
     if (content) break;
   }
   if (!content) return;
@@ -119,7 +249,7 @@ async function scanTask(root: string, out: ProjectCommand[]): Promise<void> {
 
   const flush = () => {
     if (!currentTask) return;
-    out.push({ id: `task:${currentTask}`, type: 'task', name: currentTask, description: currentDesc, runCmd: `task ${currentTask}` });
+    pushCommand(out, seenIds, buildCommand(workspaceRoot, cwd, 'task', currentTask, `task ${currentTask}`, currentDesc));
     currentTask = null;
     currentDesc = undefined;
   };
@@ -162,8 +292,8 @@ async function scanTask(root: string, out: ProjectCommand[]): Promise<void> {
 
 // ─── Make ────────────────────────────────────────────────────────────────────
 
-async function scanMake(root: string, out: ProjectCommand[]): Promise<void> {
-  const content = readFile(path.join(root, 'Makefile'));
+async function scanMake(workspaceRoot: string, cwd: string, out: ProjectCommand[], seenIds: Set<string>): Promise<void> {
+  const content = readFile(path.join(cwd, 'Makefile'));
   if (!content) return;
 
   const lines = content.split('\n');
@@ -194,6 +324,6 @@ async function scanMake(root: string, out: ProjectCommand[]): Promise<void> {
       if (prev.startsWith('#')) desc = prev.replace(/^#+\s*/, '').trim() || undefined;
     }
 
-    out.push({ id: `make:${name}`, type: 'make', name, description: desc, runCmd: `make ${name}` });
+    pushCommand(out, seenIds, buildCommand(workspaceRoot, cwd, 'make', name, `make ${name}`, desc));
   }
 }
