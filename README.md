@@ -44,7 +44,7 @@ Ultraview packs a full suite of viewers, editors, and developer tools directly i
 
 ### **Command Runner**
 
-- Automatically detect and run commands/scripts that are available in your project. Features a Run button and supports NPM, Just, Task, Shell, Make, etc. Run any command directly from the sidebar or a full-width panel. Auto-detects per project, so only commands available in that project will show for a cleaner experience.
+- Automatically detect runnable commands across the whole workspace, including monorepos and nested app folders. Supports NPM, Yarn, PNPM, Bun, Just, Task, and Make, shows the exact terminal command plus the folder it belongs to, and runs each command from the correct working directory. Refresh stays in sync as command files change.
 
 
 ### **Ports &amp; Processes**
@@ -74,7 +74,7 @@ Ultraview packs a full suite of viewers, editors, and developer tools directly i
 
 ### **Force Delete**
 
-- Identify and kill processes locking a file or folder before deleting it — cross-platform support built into the Explorer context menu.
+- Aggressively remove locked files and folders from the Explorer context menu. Ultraview closes known IDE handles, identifies and kills locking processes, retries deletion across platforms, and on Windows can keep retrying in the background until the last lock releases.
 
 
 
@@ -544,7 +544,7 @@ Ultraview scans up to 10,000 files. Excluded automatically: `node_modules`, `dis
 
 # Command Runner
 
-Ultraview scans your workspace for task runners and scripts, presenting them in a clean list for quick execution. No more hunting through `package.json` or trying to remember `just` recipe names.
+Ultraview scans your workspace for task runners and scripts, including nested apps and packages inside monorepos, then presents them in a clean list for quick execution. No more hunting through multiple `package.json` files or trying to remember which folder a `just` recipe lives in.
 
 
 ### Supported Runners
@@ -559,15 +559,32 @@ Ultraview scans your workspace for task runners and scripts, presenting them in 
 - **Make**: Detects `Makefile` and lists targets (supports `.PHONY` and documentation comments).
 
 
+### Workspace-Aware Scanning
+
+
+- **Monorepo support**: Recursively scans workspace folders and picks up command files in nested projects, packages, apps, and tools folders.
+
+- **Folder labels**: Every command shows which workspace folder or subfolder it belongs to.
+
+- **Live refresh**: The Commands view updates when `package.json`, `justfile`, `Taskfile`, or `Makefile` entries change.
+
+
 ### Execution
 
-Click the **▶ Run** button next to any command to execute it in a dedicated "UltraView: Commands" terminal. You can also click the command row itself to run it immediately.
+Click the **Run** button next to any command to execute it in a dedicated terminal. You can also click the command row itself to run it immediately.
+
+
+- **Exact command preview**: Each row shows the full terminal command Ultraview will run, such as `pnpm run dev`, `bun run build`, or `task api:serve`.
+
+- **Correct working directory**: Commands run from the folder they were discovered in, so nested workspace packages behave correctly.
+
+- **Per-command terminal title**: The created terminal includes the command name and folder label for clearer context.
 
 
 ### Filtering &amp; Views
 
 
-- **Live Search**: Filter through dozens of commands by name or description instantly.
+- **Live Search**: Filter by command name, description, folder path, runner type, or the exact terminal command.
 
 - **Categories**: Commands are automatically grouped by runner type (NPM, Just, etc.).
 
@@ -576,7 +593,7 @@ Click the **▶ Run** button next to any command to execute it in a dedicated "U
 
 # Force Delete
 
-Ever tried to delete a file or folder only to be told it's "in use"? Ultraview's **Force Delete** identifies the culprit processes and kills them for you before proceeding with the deletion — inspired by PowerToys File Locksmith, but built directly into your IDE.
+Ever tried to delete a file or folder only to be told it's "in use"? Ultraview's **Force Delete** goes after the actual lock chain before deleting: it closes known VS Code handles, finds locking processes, kills them when you confirm, retries deletion, and uses stronger platform-specific fallbacks when a normal delete still fails.
 
 
 Right-click any file or folder in the Explorer and select **Force Delete**.
@@ -590,7 +607,19 @@ Right-click any file or folder in the Explorer and select **Force Delete**.
 - **macOS &amp; Linux**: Uses the industry-standard `lsof` tool to list open files and directories.
 
 
-Ultraview will always show a confirmation dialog listing the names and PIDs of the locking processes before killing them, ensuring you don't accidentally close something important.
+### What It Does Before Delete
+
+
+- **Releases IDE-side locks**: Closes matching editor tabs, removes matching workspace folders, and clears terminal handles that may be keeping a folder busy.
+
+- **Kills process trees**: On Windows, child processes are terminated along with the parent when you confirm force delete.
+
+- **Retries stubborn deletes**: Read-only files, busy folders, and transient lock errors are retried automatically.
+
+- **Background retry on Windows**: If a folder is still locked after the immediate delete attempts, Ultraview can queue a hidden background retry so the folder is removed as soon as the final lock is released.
+
+
+Ultraview shows a confirmation dialog listing detected locking process names and PIDs before killing them, so you can see exactly what is holding the file or folder open.
 
 
 # Settings
@@ -772,7 +801,7 @@ Open the Ports &amp; Processes panel as a full-width editor
 
 
 `Ultraview: Open Commands`
-Open the Commands panel as a full-width editor (scan &amp; run workspace commands)
+Open the Commands panel as a full-width editor (scan monorepo/workspace commands and run them from the correct folder)
 
 
 `Ultraview: Open URL`
@@ -812,7 +841,7 @@ Toggle custom comment font on/off
 
 - **View ports &amp; processes** — open the Ports &amp; Processes sidebar or run `Ultraview: Open Ports &amp; Processes` to bring it up as a full‑width panel
 
-- **Run workspace commands** — open the Commands sidebar or use `Ultraview: Open Commands` to scan your project and execute scripts from a terminal
+- **Run workspace commands** — open the Commands sidebar or use `Ultraview: Open Commands` to scan nested project folders, see the exact command to be run, and execute it from the correct terminal folder
 
 - **Add an account** — click **+ Add Account** and choose OAuth, PAT, or SSH
 
