@@ -140,3 +140,4 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
   }
 
   return { nodes, edges: dedupedEdges };
+}

@@ -17,6 +17,23 @@ export function buildCommandsHtml(): string {
     background:var(--vscode-sideBar-background,var(--vscode-editor-background));
     border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));
     z-index:10;flex-shrink:0}
+  #tabs{
+    position:fixed;top:36px;left:0;right:0;height:32px;
+    display:flex;align-items:center;gap:2px;padding:0 4px;
+    background:var(--vscode-sideBar-background,var(--vscode-editor-background));
+    border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));
+    z-index:9;flex-shrink:0;overflow-x:auto}
+  .tab{
+    padding:4px 10px;border-radius:4px;cursor:pointer;font-size:10px;
+    background:transparent;border:1px solid transparent;
+    color:var(--vscode-descriptionForeground);
+    white-space:nowrap;flex-shrink:0;transition:all .15s}
+  .tab:hover{
+    background:var(--vscode-list-hoverBackground,rgba(255,255,255,.05))}
+  .tab.active{
+    background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));
+    border-color:var(--vscode-focusBorder,rgba(128,128,128,.4));
+    color:var(--vscode-editor-foreground);font-weight:600}
   .tbtn{
     padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;
     background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));
@@ -30,7 +47,7 @@ export function buildCommandsHtml(): string {
     border:1px solid var(--vscode-input-border,rgba(128,128,128,.4));
     border-radius:4px;font-size:11px}
   #search:focus{outline:1px solid var(--vscode-focusBorder)}
-  #content{position:fixed;top:36px;left:0;right:0;bottom:24px;overflow-y:auto;padding:8px}
+  #content{position:fixed;top:68px;left:0;right:0;bottom:24px;overflow-y:auto;padding:8px}
   #status{
     position:fixed;bottom:0;left:0;right:0;height:24px;
     display:flex;align-items:center;padding:0 10px;
@@ -67,6 +84,14 @@ export function buildCommandsHtml(): string {
   .badge-just{ background:rgba(197,134,192,.2);color:#C586C0;border:1px solid rgba(197,134,192,.35) }
   .badge-task{ background:rgba(78,201,176,.2); color:#4EC9B0;border:1px solid rgba(78,201,176,.35)  }
   .badge-make{ background:rgba(206,145,120,.2);color:#CE9178;border:1px solid rgba(206,145,120,.35) }
+  .badge-python{ background:rgba(86,156,214,.2);color:#569CD6;border:1px solid rgba(86,156,214,.35) }
+  .badge-go{ background:rgba(0,136,255,.2);color:#0088FF;border:1px solid rgba(0,136,255,.35) }
+  .badge-powershell{ background:rgba(13,125,189,.2);color:#0D7DBD;border:1px solid rgba(13,125,189,.35) }
+  .badge-shell{ background:rgba(0,153,102,.2);color:#009966;border:1px solid rgba(0,153,102,.35) }
+  .badge-bun{ background:rgba(245,158,11,.2);color:#F59E0B;border:1px solid rgba(245,158,11,.35) }
+  .badge-deno{ background:rgba(34,197,94,.2);color:#22C55E;border:1px solid rgba(34,197,94,.35) }
+  .badge-npx{ background:rgba(99,102,241,.2);color:#6366F1;border:1px solid rgba(99,102,241,.35) }
+  .badge-pnpm{ background:rgba(236,72,153,.2);color:#EC4899;border:1px solid rgba(236,72,153,.35) }
   .cmd-info{flex:1;min-width:0}
   .cmd-meta{
     display:flex;align-items:center;gap:8px;
@@ -112,6 +137,7 @@ export function buildCommandsHtml(): string {
   <input id="search" placeholder="Filter commands…" autocomplete="off"/>
   <button class="tbtn" id="btn-panel" title="Open as full panel">⬡</button>
 </div>
+<div id="tabs"></div>
 <div id="content">
   <div class="empty">Scanning project…</div>
 </div>
@@ -125,9 +151,23 @@ export function buildCommandsHtml(): string {
 const vscode = acquireVsCodeApi();
 let allCmds = [];
 let filterText = '';
+let selectedTab = 'All';
 
-const TYPE_ORDER = ['npm','just','task','make'];
-const TYPE_LABEL = { npm:'NPM Scripts', just:'Just Recipes', task:'Task Targets', make:'Make Targets' };
+const TYPE_ORDER = ['npm','bun','deno','pnpm','npx','python','go','just','task','make','powershell','shell'];
+const TYPE_LABEL = {
+  npm:'NPM Scripts',
+  bun:'Bun Commands',
+  deno:'Deno Commands',
+  pnpm:'pnpm Commands',
+  npx:'npx Commands',
+  python:'Python Commands',
+  go:'Go Commands',
+  just:'Just Recipes',
+  task:'Task Targets',
+  make:'Make Targets',
+  powershell:'PowerShell Scripts',
+  shell:'Shell Scripts'
+};
 
 document.getElementById('btn-refresh').addEventListener('click', () => {
   document.getElementById('content').innerHTML = '<div class="empty">Scanning…</div>';
@@ -143,10 +183,46 @@ document.getElementById('search').addEventListener('input', function() {
   render(allCmds);
 });
 
+function renderTabs() {
+  const tabsContainer = document.getElementById('tabs');
+  tabsContainer.innerHTML = '';
+
+  // Get unique types from all commands
+  const types = new Set<string>();
+  for (const cmd of allCmds) {
+    if (cmd.type) types.add(cmd.type);
+  }
+
+  // Create "All" tab
+  const allTab = createTab('All', 'All', selectedTab === 'All');
+  tabsContainer.appendChild(allTab);
+
+  // Create tabs for each type in order
+  for (const type of TYPE_ORDER) {
+    if (types.has(type)) {
+      const tab = createTab(TYPE_LABEL[type] || type, type, selectedTab === type);
+      tabsContainer.appendChild(tab);
+    }
+  }
+}
+
+function createTab(label: string, value: string, isActive: boolean): HTMLElement {
+  const tab = document.createElement('div');
+  tab.className = 'tab' + (isActive ? ' active' : '');
+  tab.textContent = label;
+  tab.addEventListener('click', () => {
+    selectedTab = value;
+    renderTabs();
+    render(allCmds);
+  });
+  return tab;
+}
+
 window.addEventListener('message', e => {
   const msg = e.data;
   if (msg.type === 'state') {
     allCmds = msg.commands || [];
+    renderTabs();
     render(allCmds);
   }
 });
@@ -163,8 +239,16 @@ function escHtml(s) {
 
 function render(cmds) {
   const q = filterText;
+
+  // First filter by selected tab
+  let tabFiltered = cmds;
+  if (selectedTab !== 'All') {
+    tabFiltered = cmds.filter(c => c.type === selectedTab);
+  }
+
+  // Then apply search filter
   const visible = q
-    ? cmds.filter(c =>
+    ? tabFiltered.filter(c =>
         c.name.toLowerCase().includes(q) ||
         (c.displayName || '').toLowerCase().includes(q) ||
         (c.description||'').toLowerCase().includes(q) ||
@@ -172,24 +256,32 @@ function render(cmds) {
         (c.runCmd || '').toLowerCase().includes(q) ||
         c.type.includes(q)
       )
-    : cmds;
+    : tabFiltered;
 
   const el = document.getElementById('content');
   const st = document.getElementById('st-count');
 
   if (!cmds.length) {
-    el.innerHTML = '<div class="no-workspace">No commands found.<br/>Open a project with a<br/><code>package.json</code>, <code>justfile</code>, <code>Taskfile.yml</code> or <code>Makefile</code>.</div>';
+    el.innerHTML = '<div class="no-workspace">No commands found.<br/>Open a project with a<br/><code>package.json</code>, <code>pyproject.toml</code>, <code>go.mod</code>,<br/><code>deno.json</code>, <code>bun.lock</code>, <code>pnpm-lock.yaml</code>,<br/><code>justfile</code>, <code>Taskfile.yml</code>, <code>Makefile</code><br/>or scripts in <code>scripts/</code> directory.</div>';
     st.textContent = 'No commands';
     return;
   }
 
-  if (!visible.length) {
-    el.innerHTML = '<div class="empty">No matches for filter.</div>';
-    st.textContent = visible.length + ' / ' + cmds.length + ' commands';
+  // If tab has no commands
+  if (selectedTab !== 'All' && !tabFiltered.length) {
+    el.innerHTML = '<div class="empty">No ' + selectedTab + ' commands found in this workspace.</div>';
+    st.textContent = '0 ' + selectedTab + ' commands';
     return;
   }
 
-  // Group by type
+  if (!visible.length) {
+    const tabMsg = selectedTab === 'All' ? '' : ' in ' + selectedTab;
+    el.innerHTML = '<div class="empty">No matches for filter' + tabMsg + '.</div>';
+    st.textContent = visible.length + ' / ' + tabFiltered.length + ' commands';
+    return;
+  }
+
+  // Group by type (only when "All" tab is selected, otherwise single group)
   const groups = {};
   for (const type of TYPE_ORDER) groups[type] = [];
   for (const c of visible) {
@@ -199,21 +291,9 @@ function render(cmds) {
 
   el.innerHTML = '';
 
-  for (const type of TYPE_ORDER) {
-    const group = groups[type];
-    if (!group || !group.length) continue;
-
-    const section = document.createElement('div');
-    section.className = 'section';
-
-    const header = document.createElement('div');
-    header.className = 'section-header';
-    header.innerHTML =
-      '<span class="section-title">' + escHtml(TYPE_LABEL[type] || type) + '</span>' +
-      '<span class="section-count">' + group.length + '</span>';
-    section.appendChild(header);
-
-    for (const c of group) {
+  // If specific tab selected, show as single group without section header
+  if (selectedTab !== 'All') {
+    for (const c of visible) {
       const item = document.createElement('div');
       item.className = 'cmd-item';
       item.title = 'Click to run: ' + escHtml(c.runCmd);
@@ -231,7 +311,6 @@ function render(cmds) {
         '</div>' +
         '<button class="btn-run" title="Run in terminal: ' + escHtml(c.runCmd) + '">Run</button>';
 
-      // clicking the row (not the button) also runs
       item.addEventListener('click', function(e) {
         if (e.target.classList.contains('btn-run')) return;
         runCmd(c);
@@ -241,15 +320,63 @@ function render(cmds) {
         runCmd(c);
       });
 
-      section.appendChild(item);
+      el.appendChild(item);
     }
+  } else {
+    // "All" tab - show grouped sections
+    for (const type of TYPE_ORDER) {
+      const group = groups[type];
+      if (!group || !group.length) continue;
 
-    el.appendChild(section);
+      const section = document.createElement('div');
+      section.className = 'section';
+
+      const header = document.createElement('div');
+      header.className = 'section-header';
+      header.innerHTML =
+        '<span class="section-title">' + escHtml(TYPE_LABEL[type] || type) + '</span>' +
+        '<span class="section-count">' + group.length + '</span>';
+      section.appendChild(header);
+
+      for (const c of group) {
+      const item = document.createElement('div');
+      item.className = 'cmd-item';
+      item.title = 'Click to run: ' + escHtml(c.runCmd);
+
+        item.innerHTML =
+          '<div class="cmd-info">' +
+            '<div class="cmd-meta">' +
+              '<span class="cmd-badge badge-' + escHtml(c.type) + '">' + escHtml(c.type) + '</span>' +
+              '<span class="cmd-folder">' + escHtml(c.folderLabel || c.workspaceLabel || '') + '</span>' +
+              '<div class="cmd-name">' + escHtml(c.displayName || c.name) + '</div>' +
+            '</div>' +
+            '<div class="cmd-run">' + escHtml(c.runCmd) + '</div>' +
+            '<div class="cmd-desc">cwd: ' + escHtml(c.cwd || '') + '</div>' +
+            (c.description ? '<div class="cmd-desc">' + escHtml(c.description) + '</div>' : '') +
+          '</div>' +
+          '<button class="btn-run" title="Run in terminal: ' + escHtml(c.runCmd) + '">Run</button>';
+
+        // clicking the row (not the button) also runs
+        item.addEventListener('click', function(e) {
+          if (e.target.classList.contains('btn-run')) return;
+          runCmd(c);
+        });
+        item.querySelector('.btn-run').addEventListener('click', function(e) {
+          e.stopPropagation();
+          runCmd(c);
+        });
+
+        section.appendChild(item);
+      }
+
+      el.appendChild(section);
+  }
   }
 
   const total = cmds.length;
+  const tabInfo = selectedTab === 'All' ? '' : ' [' + selectedTab + ']';
   st.textContent = visible.length + (visible.length === 1 ? ' command' : ' commands') +
-    (q ? ' (filtered of ' + total + ')' : '');
+    tabInfo + (q ? ' (filtered of ' + total + ')' : '');
 }
 
 vscode.postMessage({ type: 'ready' });

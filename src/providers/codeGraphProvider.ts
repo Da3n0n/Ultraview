@@ -187,7 +187,11 @@ function buildHtml(wsPath: string): string {
   .ui-hidden #settings-panel{display:none !important;}
   .leg{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 6px;border-radius:4px}
   .leg:hover{background:var(--vscode-list-hoverBackground,rgba(255,255,255,.1))}
+  .leg.hidden{opacity:0.4}
   .dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(255,255,255,.25)}
+  .eye-toggle{width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;border-radius:3px;transition:background .15s;font-size:11px}
+  .eye-toggle:hover{background:var(--vscode-list-hoverBackground,rgba(255,255,255,.15))}
+  .eye-toggle.hidden{opacity:0.5}
   .setting-row{display:flex;flex-direction:column;gap:3px}
   .setting-row label{font-size:10px;opacity:.8;display:flex;justify-content:space-between}
   .setting-row input[type="range"]{
@@ -320,15 +324,18 @@ let alpha  = 1.0;
 let rafId  = null;
 let hovered = -1;
 let selected = -1;
+let selectedNodes = new Set();  // multiple selected nodes (for box selection)
 let filterText = '';
 let showFns  = false;
 let allNodes = [];  // full unfiltered
+let hiddenTypes = new Set();  // types that are hidden
 let allEdges = [];
 let pressing = false;
 let panStart = null;
 let dragNode = -1;
 let lastMouse = { x: 0, y: 0 };
 let simRunning = false;
+let boxSelect = null;  // { startX, startY, currentX, currentY } for right-click box selection
 
 const vscode = acquireVsCodeApi();
 const canvas = document.getElementById('c');
@@ -363,6 +370,12 @@ window.addEventListener('message', e => {
       updateLegendColors();
       needsUpdate = true;
     }
+    if (msg.hiddenTypes) {
+      hiddenTypes = new Set(msg.hiddenTypes);
+      updateLegendVisibility();
+      applyFilter();
+      needsUpdate = true;
+    }
     if (needsUpdate && alpha <= MIN_ALPHA) {
       kickSim(0.05);
     }
@@ -379,6 +392,9 @@ window.addEventListener('message', e => {
       COLORS = { ...COLORS, ...msg.colors };
       updateLegendColors();
     }
+    if (msg.hiddenTypes) {
+      hiddenTypes = new Set(msg.hiddenTypes);
+    }
     loadGraph(msg.nodes, msg.edges);
     document.getElementById('loading').style.display = 'none';
   }
@@ -392,6 +408,28 @@ function updateLegendColors() {
   });
   // Also refresh live node colours so a settings change is visible immediately
   nodes.forEach(function(nd) { if (COLORS[nd.type]) nd.col = COLORS[nd.type]; });
+  updateLegendVisibility();
+}
+
+function updateLegendVisibility() {
+  document.querySelectorAll('.leg').forEach(leg => {
+    const type = leg.dataset.type;
+    const eye = leg.querySelector('.eye-toggle');
+    const isHidden = hiddenTypes.has(type);
+    if (isHidden) {
+      leg.classList.add('hidden');
+      if (eye) {
+        eye.textContent = '👁‍🗨';
+        eye.classList.add('hidden');
+      }
+    } else {
+      leg.classList.remove('hidden');
+      if (eye) {
+        eye.textContent = '👁';
+        eye.classList.remove('hidden');
+      }
+    }
+  });
 }
 
 // ── Dynamic legend + colour pickers ─────────────────────────────────────────
@@ -413,13 +451,81 @@ function buildLegend(presentTypes) {
     // Use previously-saved colour override if present, otherwise palette default
     if (!COLORS[t]) COLORS[t] = TYPE_DEFAULTS[t] ? TYPE_DEFAULTS[t].color : typeColor(t);
     const lbl = TYPE_DEFAULTS[t] ? TYPE_DEFAULTS[t].label : t.toUpperCase();
+    const isHidden = hiddenTypes.has(t);
     const div = document.createElement('div');
-    div.className = 'leg';
+    div.className = 'leg' + (isHidden ? ' hidden' : '');
     div.dataset.type = t;
-    div.innerHTML = '<div class="dot" style="background:' + COLORS[t] + '"></div><span>' + lbl + '</span>';
+    div.innerHTML =
+      '<div class="eye-toggle' + (isHidden ? ' hidden' : '') + '" data-type="' + t + '">' + (isHidden ? '👁‍🗨' : '👁') + '</div>' +
+      '<div class="dot" style="background:' + COLORS[t] + '"></div>' +
+      '<span>' + lbl + '</span>';
     legend.appendChild(div);
   }
+  bindLegendInteractions();
   bindColorPickers();
+}
+
+function bindLegendInteractions() {
+  // Bind eye toggle clicks
+  document.querySelectorAll('.eye-toggle').forEach(function(toggle) {
+    // Remove old listeners by cloning
+    const clone = toggle.cloneNode(true);
+    toggle.parentNode.replaceChild(clone, toggle);
+  });
+
+  document.querySelectorAll('.eye-toggle').forEach(function(toggle) {
+    toggle.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const type = toggle.dataset.type;
+      const leg = toggle.closest('.leg');
+
+      if (hiddenTypes.has(type)) {
+        hiddenTypes.delete(type);
+        toggle.textContent = '👁';
+        toggle.classList.remove('hidden');
+        leg.classList.remove('hidden');
+      } else {
+        hiddenTypes.add(type);
+        toggle.textContent = '👁‍🗨';
+        toggle.classList.add('hidden');
+        leg.classList.add('hidden');
+      }
+
+      applyFilter();
+      saveHiddenTypes();
+    });
+  });
+
+  // Allow clicking on the legend item itself to toggle (but not on dot or eye)
+  document.querySelectorAll('.leg').forEach(function(leg) {
+    leg.addEventListener('click', function(e) {
+      if (e.target.classList.contains('dot') || e.target.classList.contains('eye-toggle')) {
+        return;
+      }
+      const type = leg.dataset.type;
+      const toggle = leg.querySelector('.eye-toggle');
+      if (hiddenTypes.has(type)) {
+        hiddenTypes.delete(type);
+        toggle.textContent = '👁';
+        toggle.classList.remove('hidden');
+        leg.classList.remove('hidden');
+      } else {
+        hiddenTypes.add(type);
+        toggle.textContent = '👁‍🗨';
+        toggle.classList.add('hidden');
+        leg.classList.add('hidden');
+      }
+      applyFilter();
+      saveHiddenTypes();
+    });
+  });
+}
+
+function saveHiddenTypes() {
+  vscode.postMessage({
+    type: 'saveHiddenTypes',
+    hiddenTypes: Array.from(hiddenTypes)
+  });
 }
 
 function bindColorPickers() {
@@ -469,6 +575,7 @@ function applyFilter() {
 
   let visNodes = allNodes.filter(n => {
     if (!showFns && n.type === 'fn') return false;
+    if (hiddenTypes.has(n.type)) return false;
     if (q && !n.label.toLowerCase().includes(q) && !n.filePath.toLowerCase().includes(q)) return false;
     return true;
   });
@@ -610,7 +717,7 @@ function render() {
 
   for (let i = 0; i < nodes.length; i++) {
     const nd = nodes[i];
-    const isSel = i === selected;
+    const isSel = selectedNodes.has(i) || i === selected;
     const isHov = i === hovered;
 
     // Glow for selected
@@ -649,6 +756,29 @@ function render() {
     }
   }
 
+  // Draw box selection rectangle
+  if (boxSelect) {
+    const dpr = devicePixelRatio;
+    const cx  = canvas.width  / 2 / dpr + camera.x;
+    const cy  = canvas.height / 2 / dpr + camera.y;
+
+    const startX = (boxSelect.startX - cx) / camera.zoom;
+    const startY = (boxSelect.startY - cy) / camera.zoom;
+    const currentX = (boxSelect.currentX - cx) / camera.zoom;
+    const currentY = (boxSelect.currentY - cy) / camera.zoom;
+
+    const minX = Math.min(startX, currentX);
+    const maxX = Math.max(startX, currentX);
+    const minY = Math.min(startY, currentY);
+    const maxY = Math.max(startY, currentY);
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1 / z;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+    ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+  }
+
   ctx.restore();
 }
 
@@ -656,6 +786,19 @@ function render() {
 function updateStatus() {
   document.getElementById('st-nodes').textContent = nodes.length + ' nodes';
   document.getElementById('st-edges').textContent = edges.length + ' edges';
+}
+
+function updateSelectedStatus() {
+  const st = document.getElementById('st-selected');
+  if (selectedNodes.size === 0) {
+    st.textContent = '';
+  } else if (selectedNodes.size === 1) {
+    const idx = Array.from(selectedNodes)[0];
+    const nd = nodes[idx];
+    st.textContent = '● ' + nd.label;
+  } else {
+    st.textContent = '● ' + selectedNodes.size + ' nodes selected';
+  }
 }
 
 // ── Hit test ─────────────────────────────────────────────────────────────────
@@ -682,40 +825,67 @@ canvas.addEventListener('mousemove', e => {
   const my = e.clientY - rect.top;
   lastMouse = { x: mx, y: my };
 
+  // Handle box selection (right click drag)
+  if (boxSelect) {
+    boxSelect.currentX = mx;
+    boxSelect.currentY = my;
+    return;
+  }
+
+  // Handle node dragging (left click on selected nodes)
   if (dragNode >= 0) {
     const dpr = devicePixelRatio;
     const cx  = canvas.width  / 2 / dpr + camera.x;
     const cy  = canvas.height / 2 / dpr + camera.y;
-    nodes[dragNode].x = (mx - cx) / camera.zoom;
-    nodes[dragNode].y = (my - cy) / camera.zoom;
-    nodes[dragNode].vx = 0;
-    nodes[dragNode].vy = 0;
+
+    // If dragging a selected node, move all selected nodes together
+    if (selectedNodes.has(dragNode)) {
+      const dx = ((mx - cx) / camera.zoom) - nodes[dragNode].x;
+      const dy = ((my - cy) / camera.zoom) - nodes[dragNode].y;
+
+      for (const idx of selectedNodes) {
+        nodes[idx].x += dx;
+        nodes[idx].y += dy;
+        nodes[idx].vx = 0;
+        nodes[idx].vy = 0;
+      }
+    } else {
+      // Drag single node
+      nodes[dragNode].x = (mx - cx) / camera.zoom;
+      nodes[dragNode].y = (my - cy) / camera.zoom;
+      nodes[dragNode].vx = 0;
+      nodes[dragNode].vy = 0;
+    }
     kickSim(0.3);
     return;
   }
 
+  // Handle panning
   if (panStart) {
     camera.x = panStart.cx + (mx - panStart.sx);
     camera.y = panStart.cy + (my - panStart.sy);
     return;
   }
 
-  const hit = hitNode(mx, my);
-  if (hit !== hovered) {
-    hovered = hit;
-    canvas.style.cursor = hit >= 0 ? 'pointer' : 'grab';
-  }
+  // Only update hover if not pressing (not dragging)
+  if (!pressing) {
+    const hit = hitNode(mx, my);
+    if (hit !== hovered) {
+      hovered = hit;
+      canvas.style.cursor = hit >= 0 ? 'pointer' : 'grab';
+    }
 
-  if (hit >= 0) {
-    const nd = nodes[hit];
-    const rel = nd.filePath.replace(${JSON.stringify(wsPath)}.replace(/\\\\/g,'/') + '/', '').replace(/\\\\/g,'/');
-    tooltip.innerHTML = '<b>' + nd.label + '</b><br/>'
-      + '<span style="opacity:.65;font-size:10px">' + rel + '</span>';
-    tooltip.style.display = 'block';
-    tooltip.style.left = (e.clientX + 14) + 'px';
-    tooltip.style.top  = (e.clientY - 6)  + 'px';
-  } else {
-    tooltip.style.display = 'none';
+    if (hit >= 0) {
+      const nd = nodes[hit];
+      const rel = nd.filePath.replace(${JSON.stringify(wsPath)}.replace(/\\\\/g,'/') + '/', '').replace(/\\\\/g,'/');
+      tooltip.innerHTML = '<b>' + nd.label + '</b><br/>'
+        + '<span style="opacity:.65;font-size:10px">' + rel + '</span>';
+      tooltip.style.display = 'block';
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top  = (e.clientY - 6)  + 'px';
+    } else {
+      tooltip.style.display = 'none';
+    }
   }
 });
 
@@ -727,15 +897,50 @@ canvas.addEventListener('mousedown', e => {
   pressing = true;
   canvas._dragStart = { x: mx, y: my };
 
-  if (hit >= 0) {
-    dragNode = hit;
-    nodes[hit].pinned = true;
-    kickSim(0.5);
-  } else {
+  // Middle mouse button (button 1) - always pan
+  if (e.button === 1) {
     panStart = { sx: mx, sy: my, cx: camera.x, cy: camera.y };
     canvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  // Right mouse button (button 2) - box selection
+  if (e.button === 2) {
+    e.preventDefault();
+    boxSelect = { startX: mx, startY: my, currentX: mx, currentY: my };
+    canvas.style.cursor = 'crosshair';
+    return;
+  }
+
+  // Left mouse button (button 0) - normal interaction
+  if (e.button === 0) {
+    if (hit >= 0) {
+      // If clicking on an already selected node, prepare to drag all selected nodes
+      if (selectedNodes.has(hit)) {
+        dragNode = hit;
+        for (const idx of selectedNodes) {
+          nodes[idx].pinned = true;
+        }
+        kickSim(0.5);
+      } else {
+        // If clicking on a new node, clear selection and select just this node
+        selectedNodes.clear();
+        selectedNodes.add(hit);
+        dragNode = hit;
+        nodes[hit].pinned = true;
+        kickSim(0.5);
+      }
+    } else {
+      // Clicked on empty space - clear selection and start pan
+      selectedNodes.clear();
+      panStart = { sx: mx, sy: my, cx: camera.x, cy: camera.y };
+      canvas.style.cursor = 'grabbing';
+    }
   }
 });
+
+// Prevent context menu on right click (for box selection)
+canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 window.addEventListener('mouseup', e => {
   const rect = canvas.getBoundingClientRect();
@@ -743,9 +948,50 @@ window.addEventListener('mouseup', e => {
   const my = e.clientY - rect.top;
   const moved = canvas._dragStart && Math.hypot(mx - canvas._dragStart.x, my - canvas._dragStart.y) > 5;
   canvas._dragStart = undefined;
-  
+
+  // Handle box selection completion
+  if (boxSelect) {
+    const dpr = devicePixelRatio;
+    const cx  = canvas.width  / 2 / dpr + camera.x;
+    const cy  = canvas.height / 2 / dpr + camera.y;
+
+    // Convert screen coordinates to world coordinates
+    const startX = (boxSelect.startX - cx) / camera.zoom;
+    const startY = (boxSelect.startY - cy) / camera.zoom;
+    const endX = (boxSelect.currentX - cx) / camera.zoom;
+    const endY = (boxSelect.currentY - cy) / camera.zoom;
+
+    // Calculate bounding box
+    const minX = Math.min(startX, endX);
+    const maxX = Math.max(startX, endX);
+    const minY = Math.min(startY, endY);
+    const maxY = Math.max(startY, endY);
+
+    // If box was actually drawn (not just a click), select nodes inside
+    if (moved) {
+      selectedNodes.clear();
+      for (let i = 0; i < nodes.length; i++) {
+        const nd = nodes[i];
+        if (nd.x >= minX && nd.x <= maxX && nd.y >= minY && nd.y <= maxY) {
+          selectedNodes.add(i);
+        }
+      }
+      selected = selectedNodes.size > 0 ? Array.from(selectedNodes)[0] : -1;
+      updateSelectedStatus();
+    }
+
+    boxSelect = null;
+    canvas.style.cursor = hovered >= 0 ? 'pointer' : 'grab';
+    pressing = false;
+    canvas._didDrag = moved;
+    return;
+  }
+
   if (dragNode >= 0) {
-    nodes[dragNode].pinned = false;
+    // Unpin all dragged nodes
+    for (const idx of selectedNodes) {
+      nodes[idx].pinned = false;
+    }
     dragNode = -1;
   }
   if (panStart) {
@@ -761,19 +1007,16 @@ canvas.addEventListener('click', e => {
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
   const hit = hitNode(mx, my);
-  selected = hit;
-  if (hit >= 0) {
-    const nd = nodes[hit];
-    document.getElementById('st-selected').textContent = '● ' + nd.label;
-    if (!canvas._didDrag) {
-      if (nd.type === 'url') {
-        vscode.postMessage({ type: 'openUrl', url: nd.filePath });
-      } else {
-        vscode.postMessage({ type: 'openFile', path: nd.filePath });
-      }
+
+  // Only open file if it's a single node click (not box selection) and not dragged
+  if (selectedNodes.size === 1 && hit >= 0 && !canvas._didDrag) {
+    const idx = Array.from(selectedNodes)[0];
+    const nd = nodes[idx];
+    if (nd.type === 'url') {
+      vscode.postMessage({ type: 'openUrl', url: nd.filePath });
+    } else {
+      vscode.postMessage({ type: 'openFile', path: nd.filePath });
     }
-  } else {
-    document.getElementById('st-selected').textContent = '';
   }
   canvas._didDrag = false;
 });
@@ -988,6 +1231,9 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
       case 'toggleUI':
         this._saveToggleUI(msg.hideUI as boolean);
         break;
+      case 'saveHiddenTypes':
+        this._saveHiddenTypes(msg.hiddenTypes as string[]);
+        break;
     }
   }
 
@@ -1004,6 +1250,16 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
     await config.update('codeGraph.nodeColors', mergedColors, vscode.ConfigurationTarget.Global);
   }
 
+  private async _saveHiddenTypes(hiddenTypes: string[]): Promise<void> {
+    const config = vscode.workspace.getConfiguration('ultraview');
+    await config.update('codeGraph.hiddenTypes', hiddenTypes, vscode.ConfigurationTarget.Global);
+  }
+
+  private _loadHiddenTypes(): string[] {
+    const config = vscode.workspace.getConfiguration('ultraview');
+    return config.get<string[]>('codeGraph.hiddenTypes') || [];
+  }
+
   private _loadColors(): Record<string, string> {
     const config = vscode.workspace.getConfiguration('ultraview');
     return config.get<Record<string, string>>('codeGraph.nodeColors')
@@ -1014,13 +1270,19 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
     const colors = getColors();
     const config = vscode.workspace.getConfiguration('ultraview');
     const hideUI = config.get<boolean>('codeGraph.hideUI') ?? false;
+    const hiddenTypes = getHiddenTypes();
     for (const webview of CodeGraphProvider.activeWebviews) {
-      webview.postMessage({ type: 'configUpdate', colors, hideUI });
+      webview.postMessage({ type: 'configUpdate', colors, hideUI, hiddenTypes });
     }
   }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getHiddenTypes(): string[] {
+  const config = vscode.workspace.getConfiguration('ultraview');
+  return config.get<string[]>('codeGraph.hiddenTypes') || [];
+}
 
 function getColors(): Record<string, string> {
   const config = vscode.workspace.getConfiguration('ultraview');
@@ -1034,7 +1296,8 @@ async function sendGraph(webview: vscode.Webview, showFns: boolean): Promise<voi
     const colors = getColors();
     const config = vscode.workspace.getConfiguration('ultraview');
     const hideUI = config.get<boolean>('codeGraph.hideUI') ?? false;
-    webview.postMessage({ type: 'graphData', ...data, colors, hideUI });
+    const hiddenTypes = getHiddenTypes();
+    webview.postMessage({ type: 'graphData', ...data, colors, hideUI, hiddenTypes });
   } catch (err) {
     vscode.window.showErrorMessage('Code Graph error: ' + String(err));
   }

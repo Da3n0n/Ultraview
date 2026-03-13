@@ -73,6 +73,46 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
       '**/taskfile.yml',
       '**/taskfile.yaml',
       '**/Makefile',
+      '**/setup.py',
+      '**/pyproject.toml',
+      '**/requirements.txt',
+      '**/Pipfile',
+      '**/poetry.lock',
+      '**/go.mod',
+      '**/go.sum',
+      '**/bun.lock',
+      '**/bun.lockb',
+      '**/bunfig.toml',
+      '**/deno.json',
+      '**/deno.jsonc',
+      '**/deno.lock',
+      '**/import_map.json',
+      '**/pnpm-lock.yaml',
+      '**/pnpm-workspace.yaml',
+      '**/scripts/**/*.py',
+      '**/scripts/**/*.ps1',
+      '**/scripts/**/*.sh',
+      '**/scripts/**/*.ts',
+      '**/scripts/**/*.js',
+      '**/tools/**/*.py',
+      '**/tools/**/*.ps1',
+      '**/tools/**/*.sh',
+      '**/tools/**/*.ts',
+      '**/tools/**/*.js',
+      '**/bin/**/*.py',
+      '**/bin/**/*.ps1',
+      '**/bin/**/*.sh',
+      '**/test/**/*.ts',
+      '**/test/**/*.js',
+      '**/tests/**/*.ts',
+      '**/tests/**/*.js',
+      '**/__tests__/**/*.ts',
+      '**/__tests__/**/*.js',
+      '**/*.py',
+      '**/*.ps1',
+      '**/*.sh',
+      '**/*.ts',
+      '**/*.js',
     ];
 
     for (const pattern of patterns) {
@@ -98,6 +138,8 @@ function runInTerminal(command: ProjectCommand): void {
   });
   terminal.show();
   terminal.sendText(command.runCmd);
+  // Track command usage
+  recordCommandUsage(command);
 }
 
 async function postCommands(webview: vscode.Webview): Promise<void> {
@@ -107,5 +149,66 @@ async function postCommands(webview: vscode.Webview): Promise<void> {
 
 async function getWorkspaceCommands(): Promise<ProjectCommand[]> {
   const rootPaths = (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath);
-  return scanWorkspaceCommands(rootPaths);
+  const commands = await scanWorkspaceCommands(rootPaths);
+  // Sort by most recently used
+  return sortCommandsByUsage(commands);
+}
+
+// Command usage tracking
+interface CommandUsage {
+  commandId: string;
+  lastRun: number;
+  runCount: number;
+}
+
+function recordCommandUsage(command: ProjectCommand): void {
+  const config = vscode.workspace.getConfiguration('ultraview');
+  const usageData = config.get<Record<string, CommandUsage>>('commands.usage') || {};
+
+  const commandId = `${command.type}:${command.name}:${command.cwd}`;
+  const now = Date.now();
+
+  if (usageData[commandId]) {
+    usageData[commandId].lastRun = now;
+    usageData[commandId].runCount++;
+  } else {
+    usageData[commandId] = {
+      commandId,
+      lastRun: now,
+      runCount: 1
+    };
+  }
+
+  config.update('commands.usage', usageData, vscode.ConfigurationTarget.Global);
+}
+
+function sortCommandsByUsage(commands: ProjectCommand[]): ProjectCommand[] {
+  const config = vscode.workspace.getConfiguration('ultraview');
+  const usageData = config.get<Record<string, CommandUsage>>('commands.usage') || {};
+
+  return commands.sort((a, b) => {
+    const aId = `${a.type}:${a.name}:${a.cwd}`;
+    const bId = `${b.type}:${b.name}:${b.cwd}`;
+
+    const aUsage = usageData[aId];
+    const bUsage = usageData[bId];
+
+    const aLastRun = aUsage?.lastRun || 0;
+    const bLastRun = bUsage?.lastRun || 0;
+
+    // Sort by last run time (most recent first)
+    if (aLastRun !== bLastRun) {
+      return bLastRun - aLastRun;
+    }
+
+    // If same last run time, sort by run count
+    const aRunCount = aUsage?.runCount || 0;
+    const bRunCount = bUsage?.runCount || 0;
+    if (aRunCount !== bRunCount) {
+      return bRunCount - aRunCount;
+    }
+
+    // If same usage, sort alphabetically by name
+    return a.name.localeCompare(b.name);
+  });
 }
