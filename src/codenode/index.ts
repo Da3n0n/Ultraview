@@ -25,7 +25,7 @@ export interface CodeGraph {
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { detectTs } from './tsDetector';
+import { detectTs, getNamedImports } from './tsDetector';
 import { detectMd } from './mdDetector';
 import { detectDb } from './dbDetector';
 
@@ -96,5 +96,47 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
     if (!edgeSet.has(key)) { edgeSet.add(key); dedupedEdges.push(e); }
   }
 
+  // ── Second pass: cross-file function-call edges ──────────────────────────
+  // Build a map: fn nodeId (file::name) → exists, plus file → exported fn names
+  const fileExports = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    if (node.type === 'fn' && node.meta?.parent) {
+      const parent = node.meta.parent as string;
+      if (!fileExports.has(parent)) fileExports.set(parent, new Set());
+      fileExports.get(parent)!.add(node.label);
+    }
+  }
+
+  const CALL_RE = /\b(\w+)\s*\(/g;
+
+  for (const uri of uris) {
+    const fp = uri.fsPath;
+    const ext = path.extname(fp).toLowerCase();
+    if (!['.ts', '.tsx', '.js', '.jsx'].includes(ext)) continue;
+    let text2 = '';
+    try { text2 = fs.readFileSync(fp, 'utf8'); } catch { continue; }
+
+    // Map localName → `sourceFile::exportedName`
+    const importedFns = getNamedImports(fp, text2, allFiles);
+    // Keep only names that correspond to actual fn nodes
+    for (const [local, qualifiedId] of importedFns) {
+      const [srcFile, fnName] = qualifiedId.split('::');
+      if (!fileExports.get(srcFile)?.has(fnName)) importedFns.delete(local);
+    }
+    if (importedFns.size === 0) continue;
+
+    CALL_RE.lastIndex = 0;
+    let m2: RegExpExecArray | null;
+    while ((m2 = CALL_RE.exec(text2)) !== null) {
+      const localName = m2[1];
+      const targetId = importedFns.get(localName);
+      if (!targetId) continue;
+      const edgeKey = `${fp}→${targetId}→call`;
+      if (!edgeSet.has(edgeKey)) {
+        edgeSet.add(edgeKey);
+        dedupedEdges.push({ source: fp, target: targetId, kind: 'call' });
+      }
+    }
+  }
+
   return { nodes, edges: dedupedEdges };
-}

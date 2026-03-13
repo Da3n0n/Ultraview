@@ -10,7 +10,7 @@ import { colorPickerStyle, colorPickerScript } from '../ui/colorPicker';
 interface GNode {
   id: string;
   label: string;
-  type: 'ts' | 'md' | 'other' | 'fn' | 'url';
+  type: string;  // 'ts'|'js'|'md'|'fn'|'url'|'cpp'|'py'|'rs'|'go'|… (extension or special type)
   filePath: string;
   parentId?: string;    // for function nodes, parent file id
 }
@@ -18,7 +18,7 @@ interface GNode {
 interface GEdge {
   source: string;
   target: string;
-  kind: 'import' | 'link';
+  kind: 'import' | 'link' | 'call';
 }
 
 interface GraphData {
@@ -79,10 +79,20 @@ async function buildGraph(includeFns: boolean): Promise<GraphData> {
       } as GNode;
     }
 
+    // Normalise variants → canonical type names
+    let t = n.type;
+    if (t === 'tsx')                                    t = 'ts';
+    else if (['jsx', 'mjs', 'cjs'].includes(t))        t = 'js';
+    else if (['mdx', 'markdown'].includes(t))          t = 'md';
+    else if (['sqlite3', 'db3', 'ddb', 'mdb', 'accdb'].includes(t)) t = 'db';
+    else if (['cc', 'cxx', 'cpp', 'hh', 'hpp'].includes(t)) t = 'cpp';
+    else if (t === 'h')                                 t = 'c';
+    else if (t === 'yml')                               t = 'yaml';
+    else if (['bash', 'zsh'].includes(t))              t = 'sh';
     return {
       id: n.id,
       label: n.label,
-      type: n.type === 'fn' ? 'fn' : n.type === 'md' ? 'md' : n.type === 'db' ? 'other' : (['ts', 'js', 'tsx', 'jsx'].includes(n.type) ? 'ts' : 'other'),
+      type: t,
       filePath: n.filePath ?? '',
       parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined
     } as GNode;
@@ -90,7 +100,9 @@ async function buildGraph(includeFns: boolean): Promise<GraphData> {
   const edges: GEdge[] = cg.edges.map(e => ({
     source: e.source,
     target: e.target,
-    kind: e.kind === 'import' || e.kind === 'declares' ? 'import' : 'link'
+    kind: ['import', 'declares'].includes(e.kind) ? 'import'
+        : e.kind === 'call' ? 'call'
+        : 'link'
   }));
   return { nodes, edges };
 }
@@ -210,10 +222,7 @@ function buildHtml(wsPath: string): string {
 </div>
 <div id="tooltip"></div>
 <div id="legend">
-  <div class="leg" data-type="ts"><div class="dot" style="background:#4EC9B0"></div><span>TypeScript</span></div>
-  <div class="leg" data-type="other"><div class="dot" style="background:#9CDCFE"></div><span>JavaScript</span></div>
-  <div class="leg" data-type="md"><div class="dot" style="background:#C586C0"></div><span>Markdown</span></div>
-  <div class="leg" data-type="fn"><div class="dot" style="background:#DCDCAA"></div><span>Function</span></div>
+  <!-- populated dynamically by buildLegend() based on what node types exist in this project -->
 </div>
 
 <div id="settings-panel">
@@ -244,25 +253,63 @@ ${colorPickerScript}
 
 
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Type palette & colour helpers ───────────────────────────────────────────
+const TYPE_DEFAULTS = {
+  ts:    { color: '#4EC9B0', label: 'TypeScript' },
+  js:    { color: '#F0DB4F', label: 'JavaScript' },
+  md:    { color: '#C586C0', label: 'Markdown' },
+  fn:    { color: '#DCDCAA', label: 'Function' },
+  url:   { color: '#569CD6', label: 'URL' },
+  db:    { color: '#CE9178', label: 'Database' },
+  py:    { color: '#3572A5', label: 'Python' },
+  rs:    { color: '#DEA584', label: 'Rust' },
+  go:    { color: '#00ADD8', label: 'Go' },
+  cpp:   { color: '#F34B7D', label: 'C++' },
+  c:     { color: '#A97BFF', label: 'C' },
+  cs:    { color: '#178600', label: 'C#' },
+  java:  { color: '#B07219', label: 'Java' },
+  rb:    { color: '#CC342D', label: 'Ruby' },
+  php:   { color: '#4F5D95', label: 'PHP' },
+  swift: { color: '#FA7343', label: 'Swift' },
+  kt:    { color: '#A97BFF', label: 'Kotlin' },
+  html:  { color: '#E34C26', label: 'HTML' },
+  css:   { color: '#563D7C', label: 'CSS' },
+  scss:  { color: '#C6538C', label: 'SCSS' },
+  json:  { color: '#8BC34A', label: 'JSON' },
+  yaml:  { color: '#FFA000', label: 'YAML' },
+  sql:   { color: '#FF7043', label: 'SQL' },
+  sh:    { color: '#4CAF50', label: 'Shell' },
+  ps1:   { color: '#012456', label: 'PowerShell' },
+  toml:  { color: '#9B59B6', label: 'TOML' },
+};
+function typeColor(t) {
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) & 0xFFFF;
+  return 'hsl(' + ((h * 137.5) % 360 | 0) + ',60%,62%)';
+}
+function getTypeColor(t) {
+  return COLORS[t] || (TYPE_DEFAULTS[t] && TYPE_DEFAULTS[t].color) || typeColor(t);
+}
+const RADIUS_DEFAULTS = { ts: 9, js: 8, md: 9, fn: 6, url: 7, db: 8, cpp: 8, c: 8, py: 8 };
+function getTypeRadius(t) { return RADIUS_DEFAULTS[t] || 7; }
+
+// ── Runtime colour table (edge colours + user overrides; type colours seeded by buildLegend) ──
 let COLORS = {
-  ts:    '#4EC9B0',
-  other: '#9CDCFE',
-  md:    '#C586C0',
-  fn:    '#DCDCAA',
   edge_import: 'rgba(78,201,176,0.25)',
   edge_link:   'rgba(197,134,192,0.30)',
+  edge_call:   'rgba(220,180,120,0.28)',
   selected: '#FFFFFF',
   hovered:  'rgba(255,255,255,0.85)',
 };
-const RADIUS = { ts: 9, other: 8, md: 9, fn: 6 };
+// Pre-seed defaults so COLOR[type] works before the first buildLegend call
+Object.keys(TYPE_DEFAULTS).forEach(function(t){ COLORS[t] = TYPE_DEFAULTS[t].color; });
 let REPULSION   = 9000;
-let SPRING_LEN  = { import: 130, link: 150, fn: 55 };
+let SPRING_LEN  = { import: 130, link: 150, fn: 55, call: 90 };
 let SPRING_K    = 0.20;
 let DAMPING     = 0.65;
 let CENTER_K    = 0.008;
 const REPEL_CUTOFF= 350;
-const ALPHA_DECAY = 0.994;
+let ALPHA_DECAY = 0.994;  // may be tightened for large graphs
 const MIN_ALPHA   = 0.001;
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -317,12 +364,7 @@ window.addEventListener('message', e => {
       needsUpdate = true;
     }
     if (needsUpdate && alpha <= MIN_ALPHA) {
-      // Small kick to update the colors immediately without a full reload
-      alpha = 0.05;
-      if (!simRunning) {
-        simRunning = true;
-        rafId = requestAnimationFrame(tick);
-      }
+      kickSim(0.05);
     }
     return;
   }
@@ -346,16 +388,80 @@ function updateLegendColors() {
   document.querySelectorAll('.leg').forEach(leg => {
     const type = leg.dataset.type;
     const dot = leg.querySelector('.dot');
-    if (dot && COLORS[type]) {
-      dot.style.background = COLORS[type];
-    }
+    if (dot && COLORS[type]) dot.style.background = COLORS[type];
+  });
+  // Also refresh live node colours so a settings change is visible immediately
+  nodes.forEach(function(nd) { if (COLORS[nd.type]) nd.col = COLORS[nd.type]; });
+}
+
+// ── Dynamic legend + colour pickers ─────────────────────────────────────────
+const _LEGEND_ORDER = ['ts','js','md','fn','url','db','py','rs','go','cpp','c','cs',
+                       'java','rb','php','swift','kt','html','css','scss','json',
+                       'yaml','sql','sh','ps1','toml'];
+
+function buildLegend(presentTypes) {
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  const sorted = [...presentTypes].sort(function(a, b) {
+    const ai = _LEGEND_ORDER.indexOf(a), bi = _LEGEND_ORDER.indexOf(b);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return  1;
+    return a.localeCompare(b);
+  });
+  for (const t of sorted) {
+    // Use previously-saved colour override if present, otherwise palette default
+    if (!COLORS[t]) COLORS[t] = TYPE_DEFAULTS[t] ? TYPE_DEFAULTS[t].color : typeColor(t);
+    const lbl = TYPE_DEFAULTS[t] ? TYPE_DEFAULTS[t].label : t.toUpperCase();
+    const div = document.createElement('div');
+    div.className = 'leg';
+    div.dataset.type = t;
+    div.innerHTML = '<div class="dot" style="background:' + COLORS[t] + '"></div><span>' + lbl + '</span>';
+    legend.appendChild(div);
+  }
+  bindColorPickers();
+}
+
+function bindColorPickers() {
+  // Clone dots to drop old listeners cleanly
+  document.querySelectorAll('.leg .dot').forEach(function(dot) {
+    const clone = dot.cloneNode(true);
+    dot.parentNode.replaceChild(clone, dot);
+  });
+  document.querySelectorAll('.leg .dot').forEach(function(dot) {
+    dot.style.cursor = 'pointer';
+    dot.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const leg = dot.closest('.leg');
+      const type = leg.dataset.type;
+      if (activeColorPicker) { activeColorPicker.destroy(); activeColorPicker = null; }
+      activeColorPicker = createColorPicker(document.body, {
+        value: COLORS[type] || typeColor(type),
+        onChange: function(color) {
+          COLORS[type] = color;
+          dot.style.background = color;
+          nodes.forEach(function(nd) { if (nd.type === type) nd.col = color; });
+          render();
+          const co = {};
+          co[type] = color;
+          vscode.postMessage({ type: 'saveColors', colors: co });
+        }
+      });
+    });
   });
 }
 
 function loadGraph(rawNodes, rawEdges) {
   allNodes = rawNodes;
   allEdges = rawEdges;
+  // Build legend dynamically from whatever types are actually in this project
+  const presentTypes = new Set(rawNodes.map(function(n) { return n.type; }));
+  buildLegend(presentTypes);
+  // Use faster alpha decay for very large graphs
+  ALPHA_DECAY = rawNodes.length > 500 ? 0.985 : 0.994;
   applyFilter();
+  // Auto-fit once the simulation has had a moment to settle
+  setTimeout(fitView, rawNodes.length > 500 ? 3000 : 1600);
 }
 
 function applyFilter() {
@@ -390,8 +496,8 @@ function applyFilter() {
       x: old ? old.x : Math.cos(angle) * spread * (0.5 + Math.random() * 0.5),
       y: old ? old.y : Math.sin(angle) * spread * (0.5 + Math.random() * 0.5),
       vx: 0, vy: 0,
-      r: RADIUS[n.type] || 8,
-      col: COLORS[n.type] || '#858585',
+      r: getTypeRadius(n.type),
+      col: getTypeColor(n.type),
       pinned: false,
     };
   });
@@ -492,8 +598,8 @@ function render() {
     ctx.moveTo(A.x, A.y);
     ctx.lineTo(B.x, B.y);
     ctx.strokeStyle = isSel
-      ? (e.kind === 'import' ? 'rgba(78,201,176,0.75)' : 'rgba(197,134,192,0.75)')
-      : COLORS['edge_' + e.kind];
+      ? (e.kind === 'import' ? 'rgba(78,201,176,0.75)' : e.kind === 'call' ? 'rgba(220,180,120,0.80)' : 'rgba(197,134,192,0.75)')
+      : (COLORS['edge_' + e.kind] || 'rgba(150,150,150,0.18)');
     ctx.lineWidth = isSel ? 1.5 / z : 0.8 / z;
     ctx.stroke();
   }
@@ -584,7 +690,7 @@ canvas.addEventListener('mousemove', e => {
     nodes[dragNode].y = (my - cy) / camera.zoom;
     nodes[dragNode].vx = 0;
     nodes[dragNode].vy = 0;
-    alpha = Math.max(alpha, 0.3);
+    kickSim(0.3);
     return;
   }
 
@@ -624,7 +730,7 @@ canvas.addEventListener('mousedown', e => {
   if (hit >= 0) {
     dragNode = hit;
     nodes[hit].pinned = true;
-    alpha = Math.max(alpha, 0.5);
+    kickSim(0.5);
   } else {
     panStart = { sx: mx, sy: my, cx: camera.x, cy: camera.y };
     canvas.style.cursor = 'grabbing';
@@ -705,14 +811,14 @@ document.getElementById('btn-eye').addEventListener('click', function() {
 document.getElementById('slider-repel').addEventListener('input', function() {
   REPULSION = parseFloat(this.value);
   document.getElementById('val-repel').textContent = REPULSION;
-  alpha = Math.max(alpha, 0.3);
+  kickSim(0.3);
 });
 
 document.getElementById('slider-spring').addEventListener('input', function() {
   const val = parseFloat(this.value);
-  SPRING_LEN = { import: val, link: val * 1.15, fn: val * 0.42 };
+  SPRING_LEN = { import: val, link: val * 1.15, fn: val * 0.42, call: val * 0.69 };
   document.getElementById('val-spring').textContent = val;
-  alpha = Math.max(alpha, 0.3);
+  kickSim(0.3);
 });
 
 document.getElementById('slider-damp').addEventListener('input', function() {
@@ -723,7 +829,7 @@ document.getElementById('slider-damp').addEventListener('input', function() {
 document.getElementById('slider-center').addEventListener('input', function() {
   CENTER_K = parseFloat(this.value);
   document.getElementById('val-center').textContent = CENTER_K.toFixed(3);
-  alpha = Math.max(alpha, 0.2);
+  kickSim(0.2);
 });
 
 document.getElementById('btn-refresh').addEventListener('click', () => {
@@ -748,33 +854,8 @@ document.getElementById('search').addEventListener('input', function() {
   applyFilter();
 });
 
-// Color picker
+// Color picker – activeColorPicker declared here; pickers are wired by bindColorPickers()
 var activeColorPicker = null;
-
-document.querySelectorAll('.leg .dot').forEach(dot => {
-  dot.style.cursor = 'pointer';
-  dot.addEventListener('click', function(e) {
-    e.stopPropagation();
-    var leg = dot.closest('.leg');
-    var type = leg.dataset.type;
-    
-    if (activeColorPicker) {
-      activeColorPicker.destroy();
-    }
-    
-    activeColorPicker = createColorPicker(document.body, {
-      value: COLORS[type],
-      onChange: function(color) {
-        COLORS[type] = color;
-        dot.style.background = color;
-        applyFilter();
-        var colorsObj = {};
-        colorsObj[type] = color;
-        vscode.postMessage({ type: 'saveColors', colors: colorsObj });
-      }
-    });
-  });
-});
 
 document.addEventListener('click', function(e) {
   if (activeColorPicker && !e.target.closest('.leg') && !e.target.closest('.color-picker-popup')) {
