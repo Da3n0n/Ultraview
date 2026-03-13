@@ -165,7 +165,8 @@ function recordCommandUsage(command: ProjectCommand): void {
   const config = vscode.workspace.getConfiguration('ultraview');
   const usageData = config.get<Record<string, CommandUsage>>('commands.usage') || {};
 
-  const commandId = `${command.type}:${command.name}:${command.cwd}`;
+  // Use workspace/folder-specific ID so each project has its own usage tracking
+  const commandId = `${command.workspaceLabel}:${command.type}:${command.name}:${command.cwd}`;
   const now = Date.now();
 
   if (usageData[commandId]) {
@@ -187,8 +188,9 @@ function sortCommandsByUsage(commands: ProjectCommand[]): ProjectCommand[] {
   const usageData = config.get<Record<string, CommandUsage>>('commands.usage') || {};
 
   return commands.sort((a, b) => {
-    const aId = `${a.type}:${a.name}:${a.cwd}`;
-    const bId = `${b.type}:${b.name}:${b.cwd}`;
+    // Use workspace-specific ID to match project tracking
+    const aId = `${a.workspaceLabel}:${a.type}:${a.name}:${a.cwd}`;
+    const bId = `${b.workspaceLabel}:${b.type}:${b.name}:${b.cwd}`;
 
     const aUsage = usageData[aId];
     const bUsage = usageData[bId];
