@@ -268,11 +268,11 @@ export class GitProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  /** Background-validate all OAuth account tokens silently. */
+  /** Background-validate all token-based account tokens silently. */
   private async _validateAllTokensBackground(): Promise<void> {
     const accounts = this.accounts.listAccounts();
     for (const acc of accounts) {
-      if (acc.authMethod === 'oauth') {
+      if (acc.authMethod === 'oauth' || acc.authMethod === 'pat') {
         await this.accounts.validateToken(acc.id);
       }
     }
@@ -817,21 +817,121 @@ export class GitProvider implements vscode.WebviewViewProvider {
       repos.push({ name: manualUrl.split('/').pop()?.replace('.git', '') || manualUrl, url: manualUrl, private: false });
     }
 
-    const items = repos.map(r => ({ label: `$(repo) ${r.name}`, description: r.private ? 'Private' : 'Public', url: r.url, name: r.name }));
+    const CREATE_NEW = '__create_new__';
+    const items: { label: string; description?: string; url?: string; name?: string; kind?: vscode.QuickPickItemKind }[] = [
+      { label: '$(add) Create new repo…', description: 'Create a brand-new repository on ' + activeAcc.provider, url: CREATE_NEW, name: CREATE_NEW },
+      { label: '', kind: vscode.QuickPickItemKind.Separator },
+      ...repos.map(r => ({ label: `$(repo) ${r.name}`, description: r.private ? 'Private' : 'Public', url: r.url, name: r.name }))
+    ];
     const selected = await vscode.window.showQuickPick(items, { placeHolder: 'Select a repository to clone', matchOnDescription: true });
     if (!selected) return;
+
+    // ── Create new repo branch ────────────────────────────────────────────
+    if (selected.url === CREATE_NEW) {
+      if (accWithToken.provider !== 'github' && accWithToken.provider !== 'gitlab') {
+        vscode.window.showInformationMessage('Creating repos is currently supported for GitHub and GitLab only.');
+        return;
+      }
+
+      const newName = await vscode.window.showInputBox({
+        prompt: 'New repository name',
+        placeHolder: 'my-project',
+        validateInput: v => (v && v.trim()) ? undefined : 'Repository name is required',
+      });
+      if (!newName) return;
+      const safeName = newName.trim().replace(/\s+/g, '-');
+
+      const visibilityPick = await vscode.window.showQuickPick([
+        { label: '$(unlock) Public', description: 'Anyone can see this repository', isPrivate: false },
+        { label: '$(lock) Private', description: 'Only you and collaborators can see this repository', isPrivate: true },
+      ], { placeHolder: 'Repository visibility' });
+      if (!visibilityPick) return;
+      const isPrivate = (visibilityPick as any).isPrivate as boolean;
+
+      const newDestUri = await vscode.window.showOpenDialog({
+        canSelectFolders: true, canSelectFiles: false, openLabel: 'Select parent folder for new repo',
+      });
+      if (!newDestUri || !newDestUri[0]) return;
+      const newDestPath = newDestUri[0].fsPath;
+      const nodePath = require('path') as typeof import('path');
+      const nodeFs = require('fs') as typeof import('fs');
+      const fullPath = nodePath.join(newDestPath, safeName);
+
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Creating ${safeName}...`, cancellable: false },
+        async () => {
+          const execAsync = require('util').promisify(require('child_process').exec);
+          const run = (cmd: string) => execAsync(cmd, { cwd: fullPath, env: process.env });
+          try {
+            let cloneUrl = '';
+            if (accWithToken.provider === 'github') {
+              const res = await fetch('https://api.github.com/user/repos', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accWithToken.token}`, 'User-Agent': 'Ultraview-VSCode', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: safeName, private: isPrivate, auto_init: false }),
+              });
+              if (!res.ok) { const e = await res.json() as any; throw new Error(e.message || `GitHub API ${res.status}`); }
+              cloneUrl = (await res.json() as any).clone_url;
+            } else {
+              const res = await fetch('https://gitlab.com/api/v4/projects', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accWithToken.token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: safeName, path: safeName, visibility: isPrivate ? 'private' : 'public' }),
+              });
+              if (!res.ok) {
+                const e = await res.json() as any;
+                throw new Error(Array.isArray(e.message) ? e.message.join(', ') : (e.message || `GitLab API ${res.status}`));
+              }
+              cloneUrl = (await res.json() as any).http_url_to_repo;
+            }
+
+            if (!nodeFs.existsSync(fullPath)) { nodeFs.mkdirSync(fullPath, { recursive: true }); }
+            await run('git init');
+            await run('git checkout -b main').catch(() => run('git checkout -b master'));
+            nodeFs.writeFileSync(nodePath.join(fullPath, 'README.md'), `# ${safeName}\n`);
+            await run('git add .');
+            const userEmail = accWithToken.email ||
+              `${accWithToken.username}@users.noreply.${accWithToken.provider === 'github' ? 'github.com' : 'gitlab.com'}`;
+            await run(`git config user.name "${accWithToken.username}"`);
+            await run(`git config user.email "${userEmail}"`);
+            await run('git commit -m "Initial commit"');
+
+            // Use http.extraHeader for credentials — more reliable than embedding in URL
+            const b64creds = Buffer.from(`${accWithToken.username}:${accWithToken.token}`).toString('base64');
+            const authHeader = `Authorization: Basic ${b64creds}`;
+            await run(`git remote add origin "${cloneUrl}"`);
+
+            // Register project now — remote was created, local is ready; push is best-effort
+            manager.addProject({ name: safeName, path: fullPath, accountId: activeAcc.id, repoUrl: cloneUrl, lastOpened: Date.now() });
+            accounts.setLocalAccount(fullPath, activeAcc.id);
+            await applyLocalAccount(fullPath, accWithToken, accWithToken.token!);
+            postStateCb();
+
+            try {
+              await run(`git -c http.extraHeader="${authHeader}" push -u origin HEAD`);
+              vscode.window.showInformationMessage(`✓ Created and pushed ${safeName}`);
+            } catch (pushErr: any) {
+              vscode.window.showWarningMessage(`Repo created and added, but push failed: ${pushErr.message}. Open the folder and push manually.`);
+            }
+          } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to create repo: ${err.message}`);
+          }
+        }
+      );
+      return;
+    }
 
     const destUri = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: 'Select clone destination folder' });
     if (!destUri || !destUri[0]) return;
     const destPath = destUri[0].fsPath;
 
-    const repoName = selected.name.split('/').pop()?.replace('.git', '') || 'repo';
+    const repoName = (selected.name ?? '').split('/').pop()?.replace('.git', '') || 'repo';
     const fullPath = require('path').join(destPath, repoName);
 
-    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Cloning ${selected.name}...` }, async () => {
+    await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Cloning ${selected.name ?? repoName}...` }, async () => {
       const execAsync = require('util').promisify(require('child_process').exec);
       try {
-        const urlObj = new URL(selected.url);
+        const urlObj = new URL(selected.url!);
         urlObj.username = accWithToken.username;
         urlObj.password = accWithToken.token!;
         const cloneUrl = urlObj.toString();

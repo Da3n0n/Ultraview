@@ -257,18 +257,43 @@ export class GitAccounts {
     const account = this.getAccount(id);
     if (!account) return { valid: false, expired: true };
 
-    // SSH and PAT accounts don't need validation (they don't expire via OAuth flow)
+    // SSH never expires
     if (account.authMethod === 'ssh') {
       this.updateAccount(id, { lastValidatedAt: Date.now() });
       return { valid: true, expired: false };
     }
     if (account.authMethod === 'pat') {
-      // PATs can technically expire, but we just check if token exists
-      const hasToken = !!token;
-      if (hasToken) {
-        this.updateAccount(id, { lastValidatedAt: Date.now() });
+      if (!token) {
+        this.updateAccount(id, { tokenExpiresAt: Date.now() - 1 });
+        return { valid: false, expired: true };
       }
-      return { valid: hasToken, expired: !hasToken };
+      // Do a real API check for PAT too
+      try {
+        let res: Response;
+        if (account.provider === 'github') {
+          res = await fetch('https://api.github.com/user', {
+            headers: { 'Authorization': `Bearer ${token}`, 'User-Agent': 'Ultraview-VSCode' }
+          });
+        } else if (account.provider === 'gitlab') {
+          res = await fetch('https://gitlab.com/api/v4/user', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+        } else {
+          this.updateAccount(id, { lastValidatedAt: Date.now() });
+          return { valid: true, expired: false };
+        }
+        if (res.ok) {
+          this.updateAccount(id, { lastValidatedAt: Date.now() });
+          return { valid: true, expired: false };
+        }
+        if (res.status === 401 || res.status === 403) {
+          this.updateAccount(id, { tokenExpiresAt: Date.now() - 1 });
+          return { valid: false, expired: true };
+        }
+        return { valid: true, expired: false };
+      } catch {
+        return { valid: true, expired: false };
+      }
     }
 
     // OAuth: check if token exists first
@@ -303,6 +328,8 @@ export class GitAccounts {
         return { valid: true, expired: false };
       }
       if (res.status === 401 || res.status === 403) {
+        // Persist the expired state so getAccountAuthStatus reflects it immediately
+        this.updateAccount(id, { tokenExpiresAt: Date.now() - 1 });
         return { valid: false, expired: true };
       }
       // Network error or server error — assume still valid but stale
@@ -317,25 +344,24 @@ export class GitAccounts {
    * Compute auth status for an account for UI display.
    */
   getAccountAuthStatus(account: GitAccount): 'valid' | 'warning' | 'expired' {
-    // SSH and PAT are always valid
-    if (account.authMethod === 'ssh' || account.authMethod === 'pat') {
+    // SSH never expires
+    if (account.authMethod === 'ssh') {
       return 'valid';
     }
 
-    // OAuth accounts: check tokenExpiresAt
+    // Check tokenExpiresAt for all token-based methods (oauth + pat)
     if (account.tokenExpiresAt) {
       const now = Date.now();
       if (account.tokenExpiresAt < now) {
         return 'expired';
       }
-      // Warn if token expires within 24 hours
       const ONE_DAY = 24 * 60 * 60 * 1000;
       if (account.tokenExpiresAt < now + ONE_DAY) {
         return 'warning';
       }
     }
 
-    // If it's OAuth and we haven't validated in over 24 hours, show warning
+    // If OAuth and not validated recently, show warning
     if (account.authMethod === 'oauth') {
       const ONE_DAY = 24 * 60 * 60 * 1000;
       if (!account.lastValidatedAt || (Date.now() - account.lastValidatedAt > ONE_DAY)) {
