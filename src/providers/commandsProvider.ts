@@ -4,6 +4,7 @@ import { ProjectCommand, scanWorkspaceCommands } from '../commands/commandScanne
 
 export class CommandsProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'ultraview.commands';
+  private static readonly activeWebviews = new Set<vscode.Webview>();
   private view?: vscode.WebviewView;
 
   constructor(private context: vscode.ExtensionContext) {
@@ -17,6 +18,7 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
       vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: true }
     );
+    CommandsProvider.trackWebview(panel.webview, panel.onDidDispose);
     panel.webview.html = buildCommandsHtml();
     panel.webview.onDidReceiveMessage(async msg => {
       switch (msg.type) {
@@ -25,7 +27,7 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
           await postCommands(panel.webview);
           break;
         case 'run':
-          runInTerminal(msg.command as ProjectCommand);
+          await runInTerminal(msg.command as ProjectCommand);
           break;
       }
     });
@@ -33,6 +35,7 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
+    CommandsProvider.trackWebview(webviewView.webview, webviewView.onDidDispose);
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = buildCommandsHtml();
 
@@ -43,7 +46,7 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
           await this.postState();
           break;
         case 'run':
-          runInTerminal(msg.command as ProjectCommand);
+          await runInTerminal(msg.command as ProjectCommand);
           break;
         case 'openPanel':
           vscode.commands.executeCommand('ultraview.openCommands');
@@ -60,6 +63,23 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
     if (!this.view) return;
     const commands = await getWorkspaceCommands();
     this.view.webview.postMessage({ type: 'state', commands });
+  }
+
+  private static trackWebview(
+    webview: vscode.Webview,
+    registerDispose: (listener: () => any) => vscode.Disposable,
+  ): void {
+    CommandsProvider.activeWebviews.add(webview);
+    registerDispose(() => {
+      CommandsProvider.activeWebviews.delete(webview);
+    });
+  }
+
+  static async refreshAllViews(): Promise<void> {
+    const commands = await getWorkspaceCommands();
+    for (const webview of CommandsProvider.activeWebviews) {
+      webview.postMessage({ type: 'state', commands });
+    }
   }
 
   private registerRefreshWatchers(): void {
@@ -131,15 +151,20 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
   }
 }
 
-function runInTerminal(command: ProjectCommand): void {
-  const terminal = vscode.window.createTerminal({
-    name: `UltraView: ${command.name} (${command.folderLabel})`,
-    cwd: command.cwd,
-  });
+async function runInTerminal(command: ProjectCommand): Promise<void> {
+  const termName = 'UltraView';
+  let terminal = vscode.window.terminals.find(
+    t => t.name === termName && t.exitStatus === undefined
+  );
+  if (!terminal) {
+    terminal = vscode.window.createTerminal({ name: termName });
+  }
   terminal.show();
+  terminal.sendText(`cd "${command.cwd}"`);
   terminal.sendText(command.runCmd);
-  // Track command usage
   recordCommandUsage(command);
+  await CommandsProvider.refreshAllViews();
+  void vscode.commands.executeCommand('ultraview.commands.focus');
 }
 
 async function postCommands(webview: vscode.Webview): Promise<void> {
@@ -161,56 +186,46 @@ interface CommandUsage {
   runCount: number;
 }
 
-function recordCommandUsage(command: ProjectCommand): void {
-  const config = vscode.workspace.getConfiguration('ultraview');
-  const usageData = config.get<Record<string, CommandUsage>>('commands.usage') || {};
+// In-memory map so sorts are always instant — config is only used for persistence across sessions.
+let usageCache: Record<string, CommandUsage> | null = null;
 
-  // Use workspace/folder-specific ID so each project has its own usage tracking
+function getUsageCache(): Record<string, CommandUsage> {
+  if (usageCache === null) {
+    const config = vscode.workspace.getConfiguration('ultraview');
+    usageCache = config.get<Record<string, CommandUsage>>('commands.usage') || {};
+  }
+  return usageCache;
+}
+
+function recordCommandUsage(command: ProjectCommand): void {
+  const cache = getUsageCache();
   const commandId = `${command.workspaceLabel}:${command.type}:${command.name}:${command.cwd}`;
   const now = Date.now();
 
-  if (usageData[commandId]) {
-    usageData[commandId].lastRun = now;
-    usageData[commandId].runCount++;
+  if (cache[commandId]) {
+    cache[commandId].lastRun = now;
+    cache[commandId].runCount++;
   } else {
-    usageData[commandId] = {
-      commandId,
-      lastRun: now,
-      runCount: 1
-    };
+    cache[commandId] = { commandId, lastRun: now, runCount: 1 };
   }
 
-  config.update('commands.usage', usageData, vscode.ConfigurationTarget.Global);
+  // Persist in background — don't await so the sort sees the update immediately
+  const config = vscode.workspace.getConfiguration('ultraview');
+  void config.update('commands.usage', cache, vscode.ConfigurationTarget.Global);
 }
 
 function sortCommandsByUsage(commands: ProjectCommand[]): ProjectCommand[] {
-  const config = vscode.workspace.getConfiguration('ultraview');
-  const usageData = config.get<Record<string, CommandUsage>>('commands.usage') || {};
+  const usageData = getUsageCache();
 
-  return commands.sort((a, b) => {
-    // Use workspace-specific ID to match project tracking
-    const aId = `${a.workspaceLabel}:${a.type}:${a.name}:${a.cwd}`;
-    const bId = `${b.workspaceLabel}:${b.type}:${b.name}:${b.cwd}`;
-
-    const aUsage = usageData[aId];
-    const bUsage = usageData[bId];
-
-    const aLastRun = aUsage?.lastRun || 0;
-    const bLastRun = bUsage?.lastRun || 0;
-
-    // Sort by last run time (most recent first)
-    if (aLastRun !== bLastRun) {
-      return bLastRun - aLastRun;
-    }
-
-    // If same last run time, sort by run count
-    const aRunCount = aUsage?.runCount || 0;
-    const bRunCount = bUsage?.runCount || 0;
-    if (aRunCount !== bRunCount) {
-      return bRunCount - aRunCount;
-    }
-
-    // If same usage, sort alphabetically by name
-    return a.name.localeCompare(b.name);
-  });
+  return commands
+    .map(command => {
+      const commandId = `${command.workspaceLabel}:${command.type}:${command.name}:${command.cwd}`;
+      const usage = usageData[commandId];
+      return { ...command, lastRun: usage?.lastRun || 0, runCount: usage?.runCount || 0 };
+    })
+    .sort((a, b) => {
+      if (a.lastRun !== b.lastRun) { return b.lastRun - a.lastRun; }
+      if (a.runCount !== b.runCount) { return b.runCount - a.runCount; }
+      return a.name.localeCompare(b.name);
+    });
 }

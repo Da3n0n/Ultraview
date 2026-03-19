@@ -39,6 +39,9 @@ const MANIFEST_FILE_NAMES = new Set([
   'pnpm-lock.yaml',
 ]);
 
+const COMMAND_ROOT_DIRECTORIES = ['scripts', 'tools', 'bin', 'ps', 'powershell', 'sh', 'shell'];
+const COMMAND_ROOT_FILE_EXTENSIONS = ['.ps1', '.sh'];
+
 const IGNORED_DIRECTORIES = new Set([
   '.git',
   '.hg',
@@ -81,6 +84,7 @@ export async function scanCommands(rootPath: string): Promise<ProjectCommand[]> 
     await Promise.allSettled([
       scanNpm(rootPath, commandRoot, all, seenIds),
       scanJust(rootPath, commandRoot, all, seenIds),
+      scanVsCodeTasks(rootPath, commandRoot, all, seenIds),
       scanTask(rootPath, commandRoot, all, seenIds),
       scanMake(rootPath, commandRoot, all, seenIds),
       scanPython(rootPath, commandRoot, all, seenIds),
@@ -119,8 +123,10 @@ function readFile(filePath: string): string | null {
 }
 
 function collectCommandRoots(rootPath: string): string[] {
-  const roots: string[] = [];
+  const workspaceRoot = path.resolve(rootPath);
+  const roots: string[] = [workspaceRoot];
   const visited = new Set<string>();
+  const registeredRoots = new Set<string>(roots);
 
   const visit = (dirPath: string): void => {
     const normalizedPath = path.resolve(dirPath);
@@ -136,8 +142,9 @@ function collectCommandRoots(rootPath: string): string[] {
       return;
     }
 
-    if (entries.some(entry => entry.isFile() && MANIFEST_FILE_NAMES.has(entry.name))) {
+    if (shouldScanDirectory(normalizedPath, entries, workspaceRoot) && !registeredRoots.has(normalizedPath)) {
       roots.push(normalizedPath);
+      registeredRoots.add(normalizedPath);
     }
 
     for (const entry of entries) {
@@ -155,6 +162,26 @@ function collectCommandRoots(rootPath: string): string[] {
 
   visit(rootPath);
   return roots;
+}
+
+function shouldScanDirectory(dirPath: string, entries: fs.Dirent[], workspaceRoot: string): boolean {
+  if (dirPath === workspaceRoot) {
+    return true;
+  }
+
+  if (entries.some(entry => entry.isFile() && MANIFEST_FILE_NAMES.has(entry.name))) {
+    return true;
+  }
+
+  if (entries.some(entry => entry.isFile() && COMMAND_ROOT_FILE_EXTENSIONS.some(ext => entry.name.endsWith(ext)))) {
+    return true;
+  }
+
+  if (entries.some(entry => entry.isDirectory() && COMMAND_ROOT_DIRECTORIES.includes(entry.name))) {
+    return true;
+  }
+
+  return fs.existsSync(path.join(dirPath, '.vscode', 'tasks.json'));
 }
 
 function buildCommand(
@@ -320,6 +347,96 @@ async function scanTask(workspaceRoot: string, cwd: string, out: ProjectCommand[
     }
   }
   flush();
+}
+
+async function scanVsCodeTasks(workspaceRoot: string, cwd: string, out: ProjectCommand[], seenIds: Set<string>): Promise<void> {
+  const tasksPath = path.join(cwd, '.vscode', 'tasks.json');
+  const content = readFile(tasksPath);
+  if (!content) return;
+
+  let config: any;
+  try {
+    config = JSON.parse(content);
+  } catch {
+    return;
+  }
+
+  const tasks = Array.isArray(config?.tasks) ? config.tasks : [];
+  for (const task of tasks) {
+    if (!task || typeof task !== 'object') {
+      continue;
+    }
+
+    const label = typeof task.label === 'string' && task.label.trim()
+      ? task.label.trim()
+      : typeof task.task === 'string' && task.task.trim()
+        ? task.task.trim()
+        : undefined;
+    if (!label) {
+      continue;
+    }
+
+    const runCmd = buildVsCodeTaskCommand(task);
+    if (!runCmd) {
+      continue;
+    }
+
+    const taskCwd = resolveVsCodeTaskCwd(task, workspaceRoot, cwd);
+    const detail = typeof task.detail === 'string' && task.detail.trim()
+      ? task.detail.trim()
+      : typeof task.type === 'string' && task.type.trim()
+        ? `${task.type} task`
+        : 'VS Code task';
+
+    pushCommand(out, seenIds, buildCommand(
+      workspaceRoot,
+      taskCwd,
+      'task',
+      `vscode:${label}`,
+      runCmd,
+      detail,
+    ));
+  }
+}
+
+function buildVsCodeTaskCommand(task: any): string | undefined {
+  if (typeof task.command !== 'string' || !task.command.trim()) {
+    return undefined;
+  }
+
+  const command = task.command.trim();
+  const args = Array.isArray(task.args)
+    ? task.args
+        .map((arg: unknown) => stringifyTaskArg(arg))
+        .filter((arg: string | undefined): arg is string => Boolean(arg))
+    : [];
+
+  return [command, ...args].join(' ').trim() || undefined;
+}
+
+function stringifyTaskArg(arg: unknown): string | undefined {
+  if (typeof arg === 'string') {
+    return arg;
+  }
+
+  if (typeof arg === 'number' || typeof arg === 'boolean') {
+    return String(arg);
+  }
+
+  return undefined;
+}
+
+function resolveVsCodeTaskCwd(task: any, workspaceRoot: string, fallbackCwd: string): string {
+  const cwdValue = task?.options?.cwd;
+  if (typeof cwdValue !== 'string' || !cwdValue.trim()) {
+    return fallbackCwd;
+  }
+
+  const resolved = cwdValue
+    .replace(/\$\{workspaceFolder(?::[^}]+)?\}/g, workspaceRoot)
+    .replace(/\$\{workspaceFolderBasename\}/g, path.basename(workspaceRoot));
+
+  return path.isAbsolute(resolved) ? resolved : path.resolve(workspaceRoot, resolved);
 }
 
 // ─── Make ────────────────────────────────────────────────────────────────────
@@ -772,8 +889,8 @@ async function scanPowerShell(workspaceRoot: string, cwd: string, out: ProjectCo
   }
 
   // Check for PowerShell manifest files
-  const hasPsd1 = fs.existsSync(path.join(cwd, '*.psd1'));
-  const hasPs1Xml = fs.existsSync(path.join(cwd, '*.ps1xml'));
+  const hasPsd1 = rootEntries.some(entry => entry.isFile() && entry.name.endsWith('.psd1'));
+  const hasPs1Xml = rootEntries.some(entry => entry.isFile() && entry.name.endsWith('.ps1xml'));
 
   if (hasPsd1 || hasPs1Xml) {
     pushCommand(out, seenIds, buildCommand(

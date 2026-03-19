@@ -17,23 +17,6 @@ export function buildCommandsHtml(): string {
     background:var(--vscode-sideBar-background,var(--vscode-editor-background));
     border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));
     z-index:10;flex-shrink:0}
-  #tabs{
-    position:fixed;top:36px;left:0;right:0;height:32px;
-    display:flex;align-items:center;gap:2px;padding:0 4px;
-    background:var(--vscode-sideBar-background,var(--vscode-editor-background));
-    border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));
-    z-index:9;flex-shrink:0;overflow-x:auto}
-  .tab{
-    padding:4px 10px;border-radius:4px;cursor:pointer;font-size:10px;
-    background:transparent;border:1px solid transparent;
-    color:var(--vscode-descriptionForeground);
-    white-space:nowrap;flex-shrink:0;transition:all .15s}
-  .tab:hover{
-    background:var(--vscode-list-hoverBackground,rgba(255,255,255,.05))}
-  .tab.active{
-    background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));
-    border-color:var(--vscode-focusBorder,rgba(128,128,128,.4));
-    color:var(--vscode-editor-foreground);font-weight:600}
   .tbtn{
     padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;
     background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));
@@ -47,25 +30,20 @@ export function buildCommandsHtml(): string {
     border:1px solid var(--vscode-input-border,rgba(128,128,128,.4));
     border-radius:4px;font-size:11px}
   #search:focus{outline:1px solid var(--vscode-focusBorder)}
-  #content{position:fixed;top:68px;left:0;right:0;bottom:24px;overflow-y:auto;padding:8px}
+  #type-filter{
+    padding:3px 6px;
+    background:var(--vscode-dropdown-background,var(--vscode-input-background));
+    color:var(--vscode-dropdown-foreground,var(--vscode-input-foreground));
+    border:1px solid var(--vscode-dropdown-border,var(--vscode-input-border,rgba(128,128,128,.4)));
+    border-radius:4px;font-size:11px;cursor:pointer;flex-shrink:0}
+  #type-filter:focus{outline:1px solid var(--vscode-focusBorder)}
+  #content{position:fixed;top:36px;left:0;right:0;bottom:24px;overflow-y:auto;padding:8px}
   #status{
     position:fixed;bottom:0;left:0;right:0;height:24px;
     display:flex;align-items:center;padding:0 10px;
     font-size:10px;color:var(--vscode-descriptionForeground);
     background:var(--vscode-statusBar-background,var(--vscode-sideBar-background));
     border-top:1px solid var(--vscode-panel-border,rgba(128,128,128,.2))}
-  .section{margin-bottom:14px}
-  .section-header{
-    display:flex;align-items:center;gap:6px;
-    margin-bottom:6px;padding:0 2px}
-  .section-title{
-    font-size:11px;font-weight:600;opacity:.7;
-    text-transform:uppercase;letter-spacing:0.5px}
-  .section-count{
-    font-size:10px;color:var(--vscode-descriptionForeground);
-    background:var(--vscode-badge-background,rgba(128,128,128,.25));
-    color:var(--vscode-badge-foreground);
-    padding:1px 5px;border-radius:8px}
   .cmd-item{
     display:flex;align-items:flex-start;
     padding:10px 12px;margin-bottom:8px;
@@ -135,9 +113,23 @@ export function buildCommandsHtml(): string {
 <div id="toolbar">
   <button class="tbtn" id="btn-refresh" title="Refresh">↻</button>
   <input id="search" placeholder="Filter commands…" autocomplete="off"/>
+  <select id="type-filter" title="Filter by type">
+    <option value="">All</option>
+    <option value="npm">npm</option>
+    <option value="bun">bun</option>
+    <option value="pnpm">pnpm</option>
+    <option value="npx">npx</option>
+    <option value="deno">deno</option>
+    <option value="just">just</option>
+    <option value="task">task</option>
+    <option value="make">make</option>
+    <option value="python">python</option>
+    <option value="go">go</option>
+    <option value="powershell">pwsh</option>
+    <option value="shell">shell</option>
+  </select>
   <button class="tbtn" id="btn-panel" title="Open as full panel">⬡</button>
 </div>
-<div id="tabs"></div>
 <div id="content">
   <div class="empty">Scanning project…</div>
 </div>
@@ -151,23 +143,7 @@ export function buildCommandsHtml(): string {
 const vscode = acquireVsCodeApi();
 let allCmds = [];
 let filterText = '';
-let selectedTab = 'All';
-
-const TYPE_ORDER = ['npm','bun','deno','pnpm','npx','python','go','just','task','make','powershell','shell'];
-const TYPE_LABEL = {
-  npm:'NPM Scripts',
-  bun:'Bun Commands',
-  deno:'Deno Commands',
-  pnpm:'pnpm Commands',
-  npx:'npx Commands',
-  python:'Python Commands',
-  go:'Go Commands',
-  just:'Just Recipes',
-  task:'Task Targets',
-  make:'Make Targets',
-  powershell:'PowerShell Scripts',
-  shell:'Shell Scripts'
-};
+let filterType = '';
 
 document.getElementById('btn-refresh').addEventListener('click', () => {
   document.getElementById('content').innerHTML = '<div class="empty">Scanning…</div>';
@@ -183,46 +159,15 @@ document.getElementById('search').addEventListener('input', function() {
   render(allCmds);
 });
 
-function renderTabs() {
-  const tabsContainer = document.getElementById('tabs');
-  tabsContainer.innerHTML = '';
-
-  // Get unique types from all commands
-  const types = new Set<string>();
-  for (const cmd of allCmds) {
-    if (cmd.type) types.add(cmd.type);
-  }
-
-  // Create "All" tab
-  const allTab = createTab('All', 'All', selectedTab === 'All');
-  tabsContainer.appendChild(allTab);
-
-  // Create tabs for each type in order
-  for (const type of TYPE_ORDER) {
-    if (types.has(type)) {
-      const tab = createTab(TYPE_LABEL[type] || type, type, selectedTab === type);
-      tabsContainer.appendChild(tab);
-    }
-  }
-}
-
-function createTab(label: string, value: string, isActive: boolean): HTMLElement {
-  const tab = document.createElement('div');
-  tab.className = 'tab' + (isActive ? ' active' : '');
-  tab.textContent = label;
-  tab.addEventListener('click', () => {
-    selectedTab = value;
-    renderTabs();
-    render(allCmds);
-  });
-  return tab;
-}
+document.getElementById('type-filter').addEventListener('change', function() {
+  filterType = this.value;
+  render(allCmds);
+});
 
 window.addEventListener('message', e => {
   const msg = e.data;
   if (msg.type === 'state') {
     allCmds = msg.commands || [];
-    renderTabs();
     render(allCmds);
   }
 });
@@ -237,18 +182,45 @@ function escHtml(s) {
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function render(cmds) {
-  const q = filterText;
+function buildCommandItem(c) {
+  const item = document.createElement('div');
+  item.className = 'cmd-item';
+  item.title = 'Click to run: ' + escHtml(c.runCmd);
 
-  // First filter by selected tab
-  let tabFiltered = cmds;
-  if (selectedTab !== 'All') {
-    tabFiltered = cmds.filter(c => c.type === selectedTab);
+  item.innerHTML =
+    '<div class="cmd-info">' +
+      '<div class="cmd-meta">' +
+        '<span class="cmd-badge badge-' + escHtml(c.type) + '">' + escHtml(c.type) + '</span>' +
+        '<span class="cmd-folder">' + escHtml(c.folderLabel || c.workspaceLabel || '') + '</span>' +
+        '<div class="cmd-name">' + escHtml(c.displayName || c.name) + '</div>' +
+      '</div>' +
+      '<div class="cmd-run">' + escHtml(c.runCmd) + '</div>' +
+      '<div class="cmd-desc">cwd: ' + escHtml(c.cwd || '') + '</div>' +
+      (c.description ? '<div class="cmd-desc">' + escHtml(c.description) + '</div>' : '') +
+    '</div>' +
+    '<button class="btn-run" title="Run in terminal: ' + escHtml(c.runCmd) + '">Run</button>';
+
+  item.addEventListener('click', function(e) {
+    if (e.target.classList.contains('btn-run')) return;
+    runCmd(c);
+  });
+
+  const runButton = item.querySelector('.btn-run');
+  if (runButton) {
+    runButton.addEventListener('click', function(e) {
+      e.stopPropagation();
+      runCmd(c);
+    });
   }
 
-  // Then apply search filter
-  const visible = q
-    ? tabFiltered.filter(c =>
+  return item;
+}
+function render(cmds) {
+  const q = filterText;
+  const t = filterType;
+
+  let visible = q
+    ? cmds.filter(c =>
         c.name.toLowerCase().includes(q) ||
         (c.displayName || '').toLowerCase().includes(q) ||
         (c.description||'').toLowerCase().includes(q) ||
@@ -256,7 +228,11 @@ function render(cmds) {
         (c.runCmd || '').toLowerCase().includes(q) ||
         c.type.includes(q)
       )
-    : tabFiltered;
+    : cmds.slice();
+
+  if (t) {
+    visible = visible.filter(c => c.type === t);
+  }
 
   const el = document.getElementById('content');
   const st = document.getElementById('st-count');
@@ -267,116 +243,21 @@ function render(cmds) {
     return;
   }
 
-  // If tab has no commands
-  if (selectedTab !== 'All' && !tabFiltered.length) {
-    el.innerHTML = '<div class="empty">No ' + selectedTab + ' commands found in this workspace.</div>';
-    st.textContent = '0 ' + selectedTab + ' commands';
-    return;
-  }
-
   if (!visible.length) {
-    const tabMsg = selectedTab === 'All' ? '' : ' in ' + selectedTab;
-    el.innerHTML = '<div class="empty">No matches for filter' + tabMsg + '.</div>';
-    st.textContent = visible.length + ' / ' + tabFiltered.length + ' commands';
+    el.innerHTML = '<div class="empty">No matches for filter.</div>';
+    st.textContent = '0 / ' + cmds.length + ' commands';
     return;
-  }
-
-  // Group by type (only when "All" tab is selected, otherwise single group)
-  const groups = {};
-  for (const type of TYPE_ORDER) groups[type] = [];
-  for (const c of visible) {
-    if (groups[c.type]) groups[c.type].push(c);
-    else { if (!groups[c.type]) groups[c.type] = []; groups[c.type].push(c); }
   }
 
   el.innerHTML = '';
 
-  // If specific tab selected, show as single group without section header
-  if (selectedTab !== 'All') {
-    for (const c of visible) {
-      const item = document.createElement('div');
-      item.className = 'cmd-item';
-      item.title = 'Click to run: ' + escHtml(c.runCmd);
-
-      item.innerHTML =
-        '<div class="cmd-info">' +
-          '<div class="cmd-meta">' +
-            '<span class="cmd-badge badge-' + escHtml(c.type) + '">' + escHtml(c.type) + '</span>' +
-            '<span class="cmd-folder">' + escHtml(c.folderLabel || c.workspaceLabel || '') + '</span>' +
-            '<div class="cmd-name">' + escHtml(c.displayName || c.name) + '</div>' +
-          '</div>' +
-          '<div class="cmd-run">' + escHtml(c.runCmd) + '</div>' +
-          '<div class="cmd-desc">cwd: ' + escHtml(c.cwd || '') + '</div>' +
-          (c.description ? '<div class="cmd-desc">' + escHtml(c.description) + '</div>' : '') +
-        '</div>' +
-        '<button class="btn-run" title="Run in terminal: ' + escHtml(c.runCmd) + '">Run</button>';
-
-      item.addEventListener('click', function(e) {
-        if (e.target.classList.contains('btn-run')) return;
-        runCmd(c);
-      });
-      item.querySelector('.btn-run').addEventListener('click', function(e) {
-        e.stopPropagation();
-        runCmd(c);
-      });
-
-      el.appendChild(item);
-    }
-  } else {
-    // "All" tab - show grouped sections
-    for (const type of TYPE_ORDER) {
-      const group = groups[type];
-      if (!group || !group.length) continue;
-
-      const section = document.createElement('div');
-      section.className = 'section';
-
-      const header = document.createElement('div');
-      header.className = 'section-header';
-      header.innerHTML =
-        '<span class="section-title">' + escHtml(TYPE_LABEL[type] || type) + '</span>' +
-        '<span class="section-count">' + group.length + '</span>';
-      section.appendChild(header);
-
-      for (const c of group) {
-      const item = document.createElement('div');
-      item.className = 'cmd-item';
-      item.title = 'Click to run: ' + escHtml(c.runCmd);
-
-        item.innerHTML =
-          '<div class="cmd-info">' +
-            '<div class="cmd-meta">' +
-              '<span class="cmd-badge badge-' + escHtml(c.type) + '">' + escHtml(c.type) + '</span>' +
-              '<span class="cmd-folder">' + escHtml(c.folderLabel || c.workspaceLabel || '') + '</span>' +
-              '<div class="cmd-name">' + escHtml(c.displayName || c.name) + '</div>' +
-            '</div>' +
-            '<div class="cmd-run">' + escHtml(c.runCmd) + '</div>' +
-            '<div class="cmd-desc">cwd: ' + escHtml(c.cwd || '') + '</div>' +
-            (c.description ? '<div class="cmd-desc">' + escHtml(c.description) + '</div>' : '') +
-          '</div>' +
-          '<button class="btn-run" title="Run in terminal: ' + escHtml(c.runCmd) + '">Run</button>';
-
-        // clicking the row (not the button) also runs
-        item.addEventListener('click', function(e) {
-          if (e.target.classList.contains('btn-run')) return;
-          runCmd(c);
-        });
-        item.querySelector('.btn-run').addEventListener('click', function(e) {
-          e.stopPropagation();
-          runCmd(c);
-        });
-
-        section.appendChild(item);
-      }
-
-      el.appendChild(section);
-  }
+  for (const c of visible) {
+    el.appendChild(buildCommandItem(c));
   }
 
-  const total = cmds.length;
-  const tabInfo = selectedTab === 'All' ? '' : ' [' + selectedTab + ']';
+  const isFiltered = q || t;
   st.textContent = visible.length + (visible.length === 1 ? ' command' : ' commands') +
-    tabInfo + (q ? ' (filtered of ' + total + ')' : '');
+    (isFiltered ? ' (filtered of ' + cmds.length + ')' : '');
 }
 
 vscode.postMessage({ type: 'ready' });
