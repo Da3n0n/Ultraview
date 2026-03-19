@@ -45,6 +45,7 @@ export class GitProjects {
       path: p.path || '',
       repoUrl: p.repoUrl,
       gitProfile: p.gitProfile,
+      lastOpened: p.lastOpened,
     };
     projects.push(proj);
     this.store.write({ projects });

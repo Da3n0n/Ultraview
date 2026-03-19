@@ -34,6 +34,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
           // On ready, auto-apply credentials for the current project
           await this._autoApplyOnOpen();
           await this._validateAllTokensBackground();
+          // Bump lastOpened for the currently active workspace so it rises to top of list
+          const activeRepoOnReady = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+          if (activeRepoOnReady) {
+            const activeProj = this.manager.getProjectByPath(activeRepoOnReady);
+            if (activeProj) {
+              this.manager.updateProject(activeProj.id, { lastOpened: Date.now() });
+            }
+          }
           this.postState();
           break;
         }
@@ -54,7 +62,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
           if (workspaceFolders && workspaceFolders.length > 0) {
             const folder = workspaceFolders[0].uri.fsPath;
             const name = workspaceFolders[0].name;
-            this.manager.addProject({ name, path: folder });
+            this.manager.addProject({ name, path: folder, lastOpened: Date.now() });
             this.postState();
           } else {
             vscode.window.showInformationMessage('No workspace folder open. Use "+ Add" to select a folder.');
