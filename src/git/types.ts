@@ -5,6 +5,7 @@ export interface GitProject {
   repoUrl?: string;
   gitProfile?: string; // profile id used for commits
   accountId?: string;  // bound git account id
+  lastOpened?: number; // timestamp of most recent open
 }
 
 export interface GitProfile {

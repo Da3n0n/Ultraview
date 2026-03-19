@@ -162,37 +162,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  // ── Force Git panel as default sidebar on every VS Code launch ──────────
-  // Try a few times to catch the moment the sidebar is ready, but stop
-  // immediately if the user manually switches to a different panel.
-  let focusCount = 0;
-  let userOverrode = false;
-
-  // Listen for any sidebar view-change the user triggers; if they click
-  // away from the git panel we must stop fighting them.
-  const viewChangeSub = vscode.window.tabGroups.onDidChangeTabGroups(() => {
-    // Any tab-group change while we are still retrying means the user is
-    // actively interacting – bail out.
-    userOverrode = true;
-  });
-
-  const focusTimer = setInterval(() => {
-    if (userOverrode || ++focusCount >= 6) {
-      clearInterval(focusTimer);
-      viewChangeSub.dispose();
-      return;
-    }
-    vscode.commands.executeCommand('ultraview.git.focus');
-  }, 150);
-
-  // Also cancel if the user explicitly focuses any other sidebar view
-  // within the first second by watching visibility of the git webview.
-  // The gitProvider will call back when its view becomes hidden.
-  gitProvider.onUserOverride(() => {
-    userOverrode = true;
-    clearInterval(focusTimer);
-    viewChangeSub.dispose();
-  });
 }
 
 export function deactivate() { }

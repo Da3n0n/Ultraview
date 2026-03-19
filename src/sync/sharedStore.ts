@@ -45,6 +45,7 @@ export interface SyncProject {
     repoUrl?: string;
     gitProfile?: string;
     accountId?: string;
+    lastOpened?: number;
 }
 
 export interface SyncProfile {

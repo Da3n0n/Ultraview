@@ -13,8 +13,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
   private manager: GitProjects;
   private accounts: GitAccounts;
   private store: SharedStore;
-  private _overrideCallback?: () => void;
-
   constructor(context: vscode.ExtensionContext, store: SharedStore) {
     this.context = context;
     this.store = store;
@@ -22,24 +20,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
     this.accounts = new GitAccounts(context, store);
   }
 
-  /** Register a callback that fires once when the user navigates away from the git panel. */
-  onUserOverride(cb: () => void) {
-    this._overrideCallback = cb;
-  }
-
   resolveWebviewView(webviewView: vscode.WebviewView) {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = buildGitHtml();
-
-    // If the user navigates away from the git panel, fire the override
-    // callback so the startup auto-focus timer stops immediately.
-    webviewView.onDidChangeVisibility(() => {
-      if (!webviewView.visible && this._overrideCallback) {
-        this._overrideCallback();
-        this._overrideCallback = undefined;   // fire only once
-      }
-    });
 
     // Hot-reload when another IDE writes the shared sync file
     this.store.on('changed', () => this.postState());
@@ -104,8 +88,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 await applyLocalAccount(project.path, acc, acc.token);
               }
             }
-            // Flag so the Git panel auto-focuses after the window reloads
-            await this.context.globalState.update('ultraview.git.focusOnOpen', true);
+            this.manager.updateProject(id, { lastOpened: Date.now() });
             const uri = vscode.Uri.file(project.path);
             vscode.commands.executeCommand('vscode.openFolder', uri, false);
           }
@@ -209,7 +192,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
   postState() {
     if (!this.view) return;
-    const projects = this.manager.listProjects();
+    const projects = this.manager.listProjects().slice().sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
     const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     const accounts = this.accounts.listAccounts();
 

@@ -3,7 +3,7 @@
   "icon": "images/icon.png",
   "displayName": "Ultraview “ All in One VS Code Extension",
   "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
-  "version": "0.2.162",
+  "version": "0.2.165",
   "publisher": "Da3n0n",
   "engines": {
     "vscode": "^1.85.0"
@@ -262,7 +262,7 @@
         },
         {
           "id": "ultraview-git",
-          "title": "Git",
+          "title": "Project Manager",
           "icon": "images/git.svg"
         },
         {
@@ -289,7 +289,7 @@
         {
           "type": "webview",
           "id": "ultraview.git",
-          "name": "Ultraview: Git"
+          "name": "Project Manager"
         }
       ],
       "ultraview-ports": [
@@ -315,7 +315,7 @@
       },
       {
         "command": "ultraview.openGitProjects",
-        "title": "Ultraview: Open Git Projects Manager",
+        "title": "Ultraview: Open Project Manager",
         "icon": "$(git-branch)"
       },
       {
