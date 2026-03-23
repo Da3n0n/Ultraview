@@ -2,7 +2,7 @@
 
 Ultraview packs a full suite of viewers, editors, and developer tools directly inside VS Code, Cursor, Windsurf, or any VS Code-compatible IDE.
 
-&nbsp;Install it once, stay synced across **VS Code**, **Antigravity**, **Cursor**, and **Windsurf**.
+Install it once, stay synced across **VS Code**, **Antigravity**, **Cursor**, and **Windsurf**.
 
 
 ## Features
@@ -35,7 +35,8 @@ Manage multiple GitHub, GitLab, and Azure DevOps accounts from a single sidebar.
 - **Smart project ordering** — the currently open project always floats to the top of the list. Projects are sorted by most-recently opened so the ones you use most are always first.
 - **Add current project** — a one-click button adds the open workspace folder as a project and places it at the top of the list.
 - **Clone existing repos** — click **+ Add Repo** to fetch all your repos from GitHub or GitLab and clone one with a single folder picker.
-- **Create new repos** — the **+ Add Repo** list includes a **Create new repo…** option at the top. Pick a name, choose public or private, select a local parent folder — Ultraview creates the remote repo via API, initialises a local git repo, makes an initial commit, and pushes. The project is added to your list immediately.
+- **Clone from URL (fork-and-own)** — paste any public or private git URL, give it a new name, and Ultraview clones the files, strips the source history, makes a fresh initial commit under your identity, creates the remote repo on your account, and pushes — all in one step. Ends with an **Open Folder** / **Open in New Window** prompt so you can start working immediately.
+- **Create new repos** — the **+ Add Repo** list includes a **Create new repo…** option. Pick a name, choose public or private, select a parent folder — Ultraview creates the remote repo via API, initialises a local git repo, makes an initial commit, pushes, and opens the folder for you.
 - **Live auth status** — each account badge reflects the real token state (OAuth, PAT, or SSH). Token validity is checked against the provider API on panel open; a 401 or 403 marks the account as expired right away rather than waiting for the next 24-hour cycle. PAT accounts are checked with a real API call the same as OAuth.
 
 
@@ -88,7 +89,7 @@ Aggressively remove locked files and folders from the Explorer context menu. Ult
 
 Ultraview stores your projects and Git accounts in a single shared file on your local machine (`~/.ultraview/sync.json`). Every IDE that has Ultraview installed reads and writes to the same file automatically.
 
-`~/.ultraview/sync.json ← shared project list and accounts (no tokens)`
+`~/.ultraview/sync.json <- shared project list and accounts (no tokens)`
 
 ### How It Works
 
@@ -149,21 +150,40 @@ The project list is sorted by most-recently opened — the project you open floa
 - **Clicking Open** on a project from the list.
 - **Adding the current project** — clicking `+ Add Current` sets its timestamp immediately so it appears first.
 
-### Cloning Existing Repos
+### Cloning from Your Account
 
-Click **+ Add Repo** to see all your repositories from GitHub or GitLab. Select one, pick a destination folder, and Ultraview clones it, registers it as a project, binds your account, and applies credentials automatically.
+Click **+ Add Repo** to see all repositories in your GitHub or GitLab account. Select one, pick a destination folder, and Ultraview clones it, registers it as a project, binds your account, and applies credentials automatically.
+
+### Clone from URL (Fork-and-Own)
+
+The **Clone from URL…** option in **+ Add Repo** lets you clone any public or private git URL and set yourself up as the full owner on your own account. The complete flow:
+
+1. **Source URL** — paste any git URL (public repos, private repos you have access to, internal tools, open-source projects)
+2. **New name** — choose a name for your copy (defaults to the source repo name)
+3. **Visibility** — choose Public or Private for the new repo created on your account
+4. **Local folder** — pick the parent directory where the repo should live
+5. Ultraview clones the source files to your local machine
+6. **Strips the old `.git` folder entirely** — all source history, remotes, and config are wiped so you start with a completely clean slate
+7. Runs `git init` fresh, sets your account's `user.name` and `user.email`, and creates an **Initial commit** containing all the cloned files — authored by you
+8. Creates a brand-new remote repository on GitHub or GitLab via the API under your account
+9. Pushes with embedded credentials — the branch is fully tracked so VS Code's Source Control panel shows the connected state, not "Publish Branch"
+10. Registers the project in your Ultraview list, binds your account, and applies credentials automatically
+11. Shows **Open Folder** / **Open in New Window** buttons so you can jump straight into the new repo without navigating manually
+
+**Workflow scope auto-fix**: if the source contains `.github/workflows/` files and your OAuth token lacks the `workflow` scope, Ultraview automatically removes those files, amends the initial commit, and retries the push — so the whole operation completes without any extra steps or manual intervention.
 
 ### Creating New Repos
 
-The **+ Add Repo** QuickPick includes a **$(add) Create new repo…** entry at the top of the list. Selecting it starts the full create flow:
+The **+ Add Repo** QuickPick includes a **Create new repo…** entry at the top of the list. Selecting it starts the full create flow:
 
 1. **Name** — enter the repository name
 2. **Visibility** — choose Public or Private
 3. **Local folder** — pick the parent directory
 4. Ultraview calls the GitHub or GitLab API to create the remote repository
-5. Initialises a local git repo with a `README.md` and an initial commit
-6. Pushes to the remote with authenticated credentials
-7. Registers the project in your list immediately — even if the push step has network issues, the project is still saved so you can push later
+5. Initialises a local git repo with a `README.md` and an initial commit authored under your account identity
+6. Pushes to the remote with embedded credentials — branch is fully tracked from the start
+7. Registers the project in your list immediately — even if the push step has network issues, the project is still saved
+8. Shows **Open Folder** / **Open in New Window** so you can start working straight away
 
 ### Auth Status
 
@@ -185,7 +205,7 @@ Each account in the sidebar shows a live status badge:
 When you switch or open a project with a bound account, Ultraview automatically:
 
 - Writes `user.name` and `user.email` into the project's local `.git/config`
-- Applies your token so VS Code's built-in Source Control authenticates transparently — no password prompts
+- Embeds your token in the remote URL so VS Code's built-in Source Control authenticates transparently — no password prompts, no "Publish Branch" confusion
 
 When you remove or change an account, Ultraview strips the credentials and restores the clean URL automatically.
 
@@ -230,7 +250,7 @@ Open any `.md`, `.mdx`, or `.markdown` file and Ultraview replaces the default v
 
 ### Toolbar
 
-Bold, Italic, Strikethrough, Inline Code, Headings (H1–H6), Bullet / Numbered / Task lists, Blockquote, Code Block, Table, Insert Link, Insert Image, Style switcher (Obsidian / GitHub), and View mode selector.
+Bold, Italic, Strikethrough, Inline Code, Headings (H1-H6), Bullet / Numbered / Task lists, Blockquote, Code Block, Table, Insert Link, Insert Image, Style switcher (Obsidian / GitHub), and View mode selector.
 
 ### Styles
 
@@ -368,7 +388,7 @@ Click the **Run** button next to any command to execute it in a dedicated termin
 
 - **Live Search**: Filter by command name, description, folder path, runner type, or the exact terminal command.
 - **Categories**: Commands are automatically grouped by runner type (NPM, Just, etc.).
-- **Full Panel**: Toggle between the sidebar view and a full-width editor panel using the ⬡ icon.
+- **Full Panel**: Toggle between the sidebar view and a full-width editor panel using the icon.
 
 
 # Force Delete
@@ -394,7 +414,7 @@ Ultraview shows a confirmation dialog listing detected locking process names and
 
 # Settings
 
-All settings live under the `ultraview.*` namespace (`Ctrl+,` → search "Ultraview").
+All settings live under the `ultraview.*` namespace (`Ctrl+,` -> search "Ultraview").
 
 ### Markdown
 
@@ -460,11 +480,12 @@ All settings live under the `ultraview.*` namespace (`Ctrl+,` → search "Ultrav
 
 - **Install** from the VS Code Marketplace (or install the `.vsix` manually via `Extensions: Install from VSIX...`)
 - **Open a file** — double-click a `.db`, `.sqlite`, `.md`, `.svg`, `.glb`, `.gltf`, or other supported file in Explorer
-- **Open the Code Graph** — sidebar or Command Palette → `Ultraview: Open Code Graph`
+- **Open the Code Graph** — sidebar or Command Palette -> `Ultraview: Open Code Graph`
 - **Open the Git panel** — click the Git icon in the activity bar
 - **View ports & processes** — open the Ports & Processes sidebar or run `Ultraview: Open Ports & Processes`
 - **Run workspace commands** — open the Commands sidebar or use `Ultraview: Open Commands`
 - **Add an account** — click **+ Account** and choose OAuth, PAT, or SSH
-- **Clone a repo** — click **+ Add Repo** and select one from your account's repo list
-- **Create a new repo** — click **+ Add Repo** → **Create new repo…** at the top of the list
+- **Clone a repo from your account** — click **+ Add Repo** and select one from your account's repo list
+- **Clone from URL (fork-and-own)** — click **+ Add Repo** -> **Clone from URL…**, paste any git URL, name your copy, pick a folder — Ultraview clones, wipes history, makes a fresh commit under your identity, creates the remote on your account, pushes, and opens the folder
+- **Create a new repo** — click **+ Add Repo** -> **Create new repo…**, enter a name, pick visibility and folder — done
 - **Set up sync** — install Ultraview in your other IDEs — your accounts and projects appear automatically

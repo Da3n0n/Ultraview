@@ -47,7 +47,13 @@ export async function applyLocalAccount(
 
         // 1. Set commit identity
         await gitConfig(repoPath, '--local', 'user.name', account.username);
-        const email = account.email || `${account.username}@${host}`;
+        const noReplyHost = account.provider === 'github' ? 'users.noreply.github.com'
+            : account.provider === 'gitlab' ? 'users.noreply.gitlab.com'
+            : host;
+        const noReplyPrefix = account.providerUserId
+            ? `${account.providerUserId}+${account.username}`
+            : account.username;
+        const email = account.email || `${noReplyPrefix}@${noReplyHost}`;
         await gitConfig(repoPath, '--local', 'user.email', email);
 
         // 2. If we have a token, configure the remote URL to embed credentials

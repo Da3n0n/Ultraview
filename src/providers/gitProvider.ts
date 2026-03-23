@@ -354,16 +354,18 @@ export class GitProvider implements vscode.WebviewViewProvider {
       const username = session.account.label;
       const token = session.accessToken;
 
-      // Try to fetch email from provider API
+      // Try to fetch email and user ID from provider API
       let email: string | undefined;
+      let providerUserId: number | undefined;
       try {
         if (gitProvider === 'github') {
           const res = await fetch('https://api.github.com/user', {
             headers: { 'Authorization': `Bearer ${token}`, 'User-Agent': 'Ultraview-VSCode' }
           });
           if (res.ok) {
-            const data = await res.json() as { email?: string };
+            const data = await res.json() as { id?: number; email?: string };
             email = data.email || undefined;
+            providerUserId = data.id;
           }
           if (!email) {
             const emailsRes = await fetch('https://api.github.com/user/emails', {
@@ -384,15 +386,16 @@ export class GitProvider implements vscode.WebviewViewProvider {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (res.ok) {
-            const data = await res.json() as { email?: string };
+            const data = await res.json() as { id?: number; email?: string };
             email = data.email || undefined;
+            providerUserId = data.id;
           }
         }
       } catch {
         // email is optional
       }
 
-      const account = this.accounts.addAccount({ provider: gitProvider, username, email, token, authMethod: 'oauth' as AuthMethod, lastValidatedAt: Date.now() });
+      const account = this.accounts.addAccount({ provider: gitProvider, username, email, providerUserId, token, authMethod: 'oauth' as AuthMethod, lastValidatedAt: Date.now() });
 
       // Auto-bind to current project
       const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
@@ -542,10 +545,11 @@ export class GitProvider implements vscode.WebviewViewProvider {
               const username = session.account.label;
               const token = session.accessToken;
               let email: string | undefined;
+              let providerUserId: number | undefined;
               try {
                 if (provider.label === 'github') {
                   const res = await fetch('https://api.github.com/user', { headers: { 'Authorization': `Bearer ${token}`, 'User-Agent': 'Ultraview-VSCode' } });
-                  if (res.ok) { const d = await res.json() as { email?: string }; email = d.email || undefined; }
+                  if (res.ok) { const d = await res.json() as { id?: number; email?: string }; email = d.email || undefined; providerUserId = d.id; }
                   if (!email) {
                     const emailsRes = await fetch('https://api.github.com/user/emails', { headers: { 'Authorization': `Bearer ${token}`, 'User-Agent': 'Ultraview-VSCode' } });
                     if (emailsRes.ok) {
@@ -557,10 +561,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
                   }
                 } else if (provider.label === 'gitlab') {
                   const res = await fetch('https://gitlab.com/api/v4/user', { headers: { 'Authorization': `Bearer ${token}` } });
-                  if (res.ok) { const d = await res.json() as { email?: string }; email = d.email || undefined; }
+                  if (res.ok) { const d = await res.json() as { id?: number; email?: string }; email = d.email || undefined; providerUserId = d.id; }
                 }
               } catch { /* email optional */ }
-              const account = accounts.addAccount({ provider: provider.label as GitProviderType, username, email, token, authMethod: 'oauth' as AuthMethod, lastValidatedAt: Date.now() });
+              const account = accounts.addAccount({ provider: provider.label as GitProviderType, username, email, providerUserId, token, authMethod: 'oauth' as AuthMethod, lastValidatedAt: Date.now() });
               // Auto-bind to current project
               const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
               if (activeRepo) {
@@ -892,8 +896,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
             await run('git checkout -b main').catch(() => run('git checkout -b master'));
             nodeFs.writeFileSync(nodePath.join(fullPath, 'README.md'), `# ${safeName}\n`);
             await run('git add .');
-            const userEmail = accWithToken.email ||
-              `${accWithToken.username}@users.noreply.${accWithToken.provider === 'github' ? 'github.com' : 'gitlab.com'}`;
+            const noReplyHost = accWithToken.provider === 'github' ? 'users.noreply.github.com' : 'users.noreply.gitlab.com';
+            const noReplyPrefix = accWithToken.providerUserId ? `${accWithToken.providerUserId}+${accWithToken.username}` : accWithToken.username;
+            const userEmail = accWithToken.email || `${noReplyPrefix}@${noReplyHost}`;
             await run(`git config user.name "${accWithToken.username}"`);
             await run(`git config user.email "${userEmail}"`);
             await run('git commit -m "Initial commit"');
@@ -994,8 +999,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
             await execAsync('git init', { cwd: cloneFullPath, env: process.env });
             await execAsync('git checkout -b main', { cwd: cloneFullPath, env: process.env })
               .catch(() => execAsync('git checkout -b master', { cwd: cloneFullPath, env: process.env }));
-            const userEmail2 = accWithToken.email ||
-              `${accWithToken.username}@users.noreply.${accWithToken.provider === 'github' ? 'github.com' : 'gitlab.com'}`;
+            const noReplyHost2 = accWithToken.provider === 'github' ? 'users.noreply.github.com' : 'users.noreply.gitlab.com';
+            const noReplyPrefix2 = accWithToken.providerUserId ? `${accWithToken.providerUserId}+${accWithToken.username}` : accWithToken.username;
+            const userEmail2 = accWithToken.email || `${noReplyPrefix2}@${noReplyHost2}`;
             await execAsync(`git config user.name "${accWithToken.username}"`, { cwd: cloneFullPath, env: process.env });
             await execAsync(`git config user.email "${userEmail2}"`, { cwd: cloneFullPath, env: process.env });
             await execAsync('git add .', { cwd: cloneFullPath, env: process.env });
