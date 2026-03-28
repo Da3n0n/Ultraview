@@ -8,7 +8,7 @@ let SQL: SqlJsStatic | null = null;
 
 async function getSqlJs(extUri: vscode.Uri): Promise<SqlJsStatic> {
   if (SQL) { return SQL; }
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const initSqlJsFn = require('sql.js') as (cfg?: object) => Promise<SqlJsStatic>;
   const wasmPath = path.join(extUri.fsPath, 'dist', 'sql-wasm.wasm');
   SQL = await initSqlJsFn({ locateFile: () => wasmPath });

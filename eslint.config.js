@@ -19,8 +19,14 @@ export default [
         setTimeout: 'readonly',
         clearTimeout: 'readonly',
         require: 'readonly',
+        // Fetch API globals
+        fetch: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
         // VS Code globals
         acquireVsCodeApi: 'readonly',
+        // Additional Node types
+        NodeJS: 'readonly',
       },
     },
     plugins: {
@@ -32,6 +38,7 @@ export default [
       'no-console': 'off',
       'prefer-const': 'warn',
       'no-var': 'error',
+      'no-empty': 'warn',
     },
   },
   eslint.configs.recommended,

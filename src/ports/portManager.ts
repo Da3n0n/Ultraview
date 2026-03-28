@@ -95,7 +95,7 @@ async function getPortsDarwin(): Promise<PortProcess[]> {
 }
 
 async function getPortsLinux(): Promise<PortProcess[]> {
-    let outputs: PortProcess[] = [];
+    const outputs: PortProcess[] = [];
     try {
         const { stdout } = await execAsync('ss -tulnp');
         const lines = stdout.split('\n').slice(1);
