@@ -24,7 +24,7 @@ export interface CodeGraph {
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { detectTs, getNamedImports } from './tsDetector';
+import { detectTs, getNamedImports, getAllFunctionsWithIndex } from './tsDetector';
 import { detectMd } from './mdDetector';
 import { detectDb } from './dbDetector';
 
@@ -169,16 +169,28 @@ export async function buildCodeGraphStreaming(
     }
     if (importedItems.size === 0) continue;
 
+    const localFns = getAllFunctionsWithIndex(text2);
+
     CALL_RE.lastIndex = 0;
     let m2: RegExpExecArray | null;
     while ((m2 = CALL_RE.exec(text2)) !== null) {
       const localName = m2[1];
       const targetId = importedItems.get(localName);
       if (!targetId) continue;
-      const edgeKey = `${fp}→${targetId}→call`;
+      
+      let callerName: string | null = null;
+      for (let i = localFns.length - 1; i >= 0; i--) {
+        if (localFns[i].index < m2.index) {
+          callerName = localFns[i].name;
+          break;
+        }
+      }
+      
+      const sourceId = callerName ? `${fp}::${callerName}` : fp;
+      const edgeKey = `${sourceId}→${targetId}→call`;
       if (!edgeSet.has(edgeKey)) {
         edgeSet.add(edgeKey);
-        const e: CodeEdge = { source: fp, target: targetId, kind: 'call' };
+        const e: CodeEdge = { source: sourceId, target: targetId, kind: 'call' };
         allEdges.push(e);
         callEdges.push(e);
       }
@@ -278,16 +290,28 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
     }
     if (importedItems.size === 0) continue;
 
+    const localFns = getAllFunctionsWithIndex(text2);
+
     CALL_RE.lastIndex = 0;
     let m2: RegExpExecArray | null;
     while ((m2 = CALL_RE.exec(text2)) !== null) {
       const localName = m2[1];
       const targetId = importedItems.get(localName);
       if (!targetId) continue;
-      const edgeKey = `${fp}→${targetId}→call`;
+      
+      let callerName: string | null = null;
+      for (let i = localFns.length - 1; i >= 0; i--) {
+        if (localFns[i].index < m2.index) {
+          callerName = localFns[i].name;
+          break;
+        }
+      }
+      
+      const sourceId = callerName ? `${fp}::${callerName}` : fp;
+      const edgeKey = `${sourceId}→${targetId}→call`;
       if (!edgeSet.has(edgeKey)) {
         edgeSet.add(edgeKey);
-        dedupedEdges.push({ source: fp, target: targetId, kind: 'call' });
+        dedupedEdges.push({ source: sourceId, target: targetId, kind: 'call' });
       }
     }
   }

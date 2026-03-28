@@ -79,6 +79,19 @@ function CustomNode({ data }: { data: CustomNodeData }) {
       <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {data.label}
       </div>
+      {data.nodeType === 'fn' && data.filePath && (
+        <div style={{
+          marginTop: '4px',
+          fontSize: '9px',
+          color: 'var(--vscode-descriptionForeground, #888)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          opacity: 0.8
+        }}>
+          {data.filePath.split(/[/\\]/).pop()}
+        </div>
+      )}
     </div>
   );
 }
@@ -279,7 +292,7 @@ function App() {
           });
         }
         for (const e of edges) {
-          const key = `${e.source}-${e.target}`;
+          const key = `${e.source}-${e.target}-${e.kind}`;
           if (edgeSet.has(key)) continue;
           edgeSet.add(key);
           const isImport = e.kind === 'import';
@@ -354,7 +367,7 @@ function App() {
         if (batchEdges.length > 0) {
           const newRfEdges: unknown[] = [];
           for (const e of batchEdges) {
-            const key = `${e.source}-${e.target}`;
+            const key = `${e.source}-${e.target}-${e.kind}`;
             if (edgeSetRef.current.has(key)) continue;
             edgeSetRef.current.add(key);
             const isImport = e.kind === 'import';

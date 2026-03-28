@@ -189,3 +189,19 @@ export function getAllExports(
 
   return exports;
 }
+
+export function getAllFunctionsWithIndex(text: string): { name: string; index: number }[] {
+  const fns: { name: string; index: number }[] = [];
+  const fnRe = /(?:export\s+)?(?:async\s+)?(?:function|class)\s+(\w+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = fnRe.exec(text)) !== null) {
+    if (m[1]) fns.push({ name: m[1], index: m.index });
+  }
+  const constRe = /(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?(?:\(|function\b)/g;
+  while ((m = constRe.exec(text)) !== null) {
+    if (m[1]) fns.push({ name: m[1], index: m.index });
+  }
+  // Sort by index so we can binary search or linear search
+  fns.sort((a, b) => a.index - b.index);
+  return fns;
+}
