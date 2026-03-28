@@ -51,15 +51,42 @@ async function getProjectGitStatus(projectPath: string): Promise<GitStatus> {
     const parts = revOut.trim().split(/\s+/);
     status.ahead = parseInt(parts[0], 10) || 0;
     status.behind = parseInt(parts[1], 10) || 0;
-  } catch { /* no upstream */ }
+  } catch {
+    // No upstream configured — try origin/<branch> directly
+    if (status.branch) {
+      try {
+        const { stdout: revOut } = await run(`git rev-list --left-right --count HEAD...origin/${status.branch}`);
+        const parts = revOut.trim().split(/\s+/);
+        status.ahead = parseInt(parts[0], 10) || 0;
+        status.behind = parseInt(parts[1], 10) || 0;
+      } catch { /* no remote branch */ }
+    }
+  }
 
   return status;
 }
 
+async function getCurrentBranch(projectPath: string): Promise<string> {
+  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 8000 });
+  try {
+    const { stdout } = await run('git branch --show-current');
+    const branch = stdout.trim();
+    if (branch) { return branch; }
+  } catch { /* detached HEAD */ }
+  // Fallback: check what remote HEAD points to
+  try {
+    const { stdout } = await run('git symbolic-ref refs/remotes/origin/HEAD');
+    const ref = stdout.trim(); // e.g. refs/remotes/origin/main
+    return ref.replace(/^refs\/remotes\/origin\//, '');
+  } catch { /* ignore */ }
+  return 'main'; // last-resort default
+}
+
 async function gitPull(projectPath: string): Promise<string> {
   const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const branch = await getCurrentBranch(projectPath);
   try {
-    const { stdout, stderr } = await run('git pull --rebase origin HEAD');
+    const { stdout, stderr } = await run(`git pull origin ${branch}`);
     return stdout.trim() || stderr.trim() || 'Pull complete';
   } catch (err: any) {
     throw new Error(err.stderr?.trim() || err.message);
@@ -78,10 +105,10 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
 
 async function gitPush(projectPath: string, commitMsg?: string): Promise<string> {
   const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const branch = await getCurrentBranch(projectPath);
   try {
-    // Stage and commit local changes, then push
     await gitCommitLocal(projectPath, commitMsg);
-    const { stdout, stderr } = await run('git push origin HEAD');
+    const { stdout, stderr } = await run(`git push -u origin ${branch}`);
     return stdout.trim() || stderr.trim() || 'Push complete';
   } catch (err: any) {
     throw new Error(err.stderr?.trim() || err.message);
@@ -90,27 +117,34 @@ async function gitPush(projectPath: string, commitMsg?: string): Promise<string>
 
 async function gitSync(projectPath: string, commitMsg?: string): Promise<string> {
   const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const branch = await getCurrentBranch(projectPath);
   const errors: string[] = [];
 
-  // 1. Commit local changes first (so pull --rebase can rebase on top)
+  // 1. Commit local changes first
   try {
     await gitCommitLocal(projectPath, commitMsg);
   } catch (err: any) {
-    errors.push(`Commit failed: ${err.stderr?.trim() || err.message}`);
+    errors.push(`Commit: ${err.stderr?.trim() || err.message}`);
   }
 
-  // 2. Pull remote changes (rebase local on top)
+  // 2. Pull remote changes with rebase; abort + merge-fallback on conflict
   try {
-    await run('git pull --rebase origin HEAD');
-  } catch (err: any) {
-    errors.push(`Pull failed: ${err.stderr?.trim() || err.message}`);
+    await run(`git pull --rebase origin ${branch}`);
+  } catch {
+    // Rebase conflict — abort and retry as merge
+    try { await run('git rebase --abort'); } catch { /* already clean */ }
+    try {
+      await run(`git pull --no-rebase origin ${branch}`);
+    } catch (err: any) {
+      errors.push(`Pull: ${err.stderr?.trim() || err.message}`);
+    }
   }
 
-  // 3. Push everything
+  // 3. Push
   try {
-    await run('git push origin HEAD');
+    await run(`git push -u origin ${branch}`);
   } catch (err: any) {
-    errors.push(`Push failed: ${err.stderr?.trim() || err.message}`);
+    errors.push(`Push: ${err.stderr?.trim() || err.message}`);
   }
 
   if (errors.length) {
@@ -367,15 +401,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
       authStatus: this.accounts.getAccountAuthStatus(acc),
     }));
 
-    // Fetch git status for all projects in parallel
-    const gitStatuses: Record<string, GitStatus> = {};
-    await Promise.allSettled(projects.map(async p => {
-      gitStatuses[p.id] = await getProjectGitStatus(p.path);
-    }));
-
     const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
 
-    this.view.webview.postMessage({
+    const buildMsg = (gitStatuses: Record<string, GitStatus>) => ({
       type: 'state',
       projects,
       activeRepo,
@@ -385,6 +413,17 @@ export class GitProvider implements vscode.WebviewViewProvider {
       activeProjectId: activeProject?.id || null,
       gitStatuses,
     });
+
+    // Send state immediately so the list updates instantly
+    this.view.webview.postMessage(buildMsg({}));
+
+    // Then fetch git statuses in background and send again
+    const gitStatuses: Record<string, GitStatus> = {};
+    await Promise.allSettled(projects.map(async p => {
+      gitStatuses[p.id] = await getProjectGitStatus(p.path);
+    }));
+
+    this.view.webview.postMessage(buildMsg(gitStatuses));
   }
 
   /** Auto-apply credentials when the extension loads for the current workspace */
@@ -600,15 +639,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
         authStatus: accounts.getAccountAuthStatus(acc),
       }));
 
-      // Fetch git status for all projects in parallel
-      const gitStatuses: Record<string, GitStatus> = {};
-      await Promise.allSettled(projects.map(async p => {
-        gitStatuses[p.id] = await getProjectGitStatus(p.path);
-      }));
-
       const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
 
-      panel.webview.postMessage({
+      const buildMsg = (gitStatuses: Record<string, GitStatus>) => ({
         type: 'state',
         projects,
         activeRepo,
@@ -618,6 +651,17 @@ export class GitProvider implements vscode.WebviewViewProvider {
         activeProjectId: activeProject?.id || null,
         gitStatuses,
       });
+
+      // Send state immediately so the list updates instantly
+      panel.webview.postMessage(buildMsg({}));
+
+      // Then fetch git statuses in background and send again
+      const gitStatuses: Record<string, GitStatus> = {};
+      await Promise.allSettled(projects.map(async p => {
+        gitStatuses[p.id] = await getProjectGitStatus(p.path);
+      }));
+
+      panel.webview.postMessage(buildMsg(gitStatuses));
     };
 
     // Hot-reload when another IDE writes the shared sync file
