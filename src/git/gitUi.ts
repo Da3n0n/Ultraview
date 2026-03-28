@@ -95,6 +95,26 @@ export function buildGitHtml(): string {
       border-top-color:var(--vscode-textLink-foreground,#4ec9b0);animation:spin .7s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
     .hidden{display:none !important}
+    .git-badges{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;align-items:center}
+    .git-badge{
+      display:inline-flex;align-items:center;gap:3px;
+      padding:1px 6px;border-radius:3px;font-size:9px;
+      font-weight:600;letter-spacing:0.3px;line-height:1.4}
+    .git-badge.local{background:rgba(255,152,0,.18);color:#FFA726;border:1px solid rgba(255,152,0,.35)}
+    .git-badge.behind{background:rgba(66,165,245,.18);color:#42A5F5;border:1px solid rgba(66,165,245,.35)}
+    .git-badge.ahead{background:rgba(102,187,106,.18);color:#66BB6A;border:1px solid rgba(102,187,106,.35)}
+    .git-badge.synced{background:rgba(76,175,80,.12);color:#4CAF50;border:1px solid rgba(76,175,80,.25)}
+    .git-badge.branch{background:rgba(128,128,128,.12);color:var(--vscode-descriptionForeground);border:1px solid rgba(128,128,128,.2)}
+    .git-actions{display:flex;gap:3px;margin-top:5px;flex-wrap:wrap}
+    .btn-git{
+      padding:2px 7px;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600;
+      white-space:nowrap;border:1px solid transparent}
+    .btn-git.pull{background:rgba(66,165,245,.2);color:#42A5F5;border-color:rgba(66,165,245,.4)}
+    .btn-git.pull:hover{background:rgba(66,165,245,.35)}
+    .btn-git.push{background:rgba(255,152,0,.2);color:#FFA726;border-color:rgba(255,152,0,.4)}
+    .btn-git.push:hover{background:rgba(255,152,0,.35)}
+    .btn-git.sync{background:rgba(156,39,176,.2);color:#BA68C8;border-color:rgba(156,39,176,.4)}
+    .btn-git.sync:hover{background:rgba(156,39,176,.35)}
   </style>
 </head>
 <body>
@@ -140,6 +160,7 @@ var activeAccountId = null;
 var activeProjectId = null;
 var activeRepo = '';
 var activeRepoName = '';
+var gitStatuses = {};
 
 var projectList = document.getElementById('project-list');
 var emptyState = document.getElementById('empty-state');
@@ -163,13 +184,53 @@ function renderProjects() {
     filtered.forEach(function(pr) {
       var isActive = activeRepo && pr.path === activeRepo;
       var boundAccount = allAccounts.find(function(a) { return a.id === pr.accountId; });
+      var gs = gitStatuses[pr.id] || {};
       var li = document.createElement('li');
       li.className = 'project-item' + (isActive ? ' active' : '');
+
+      // Build git badge HTML
+      var badgesHtml = '';
+      if (gs.isGitRepo) {
+        badgesHtml = '<div class="git-badges">';
+        if (gs.branch) {
+          badgesHtml += '<span class="git-badge branch">⎇ ' + esc(gs.branch) + '</span>';
+        }
+        if (gs.localChanges > 0) {
+          badgesHtml += '<span class="git-badge local">● ' + gs.localChanges + ' local</span>';
+        }
+        if (gs.behind > 0) {
+          badgesHtml += '<span class="git-badge behind">↓ ' + gs.behind + ' behind</span>';
+        }
+        if (gs.ahead > 0) {
+          badgesHtml += '<span class="git-badge ahead">↑ ' + gs.ahead + ' ahead</span>';
+        }
+        if (gs.localChanges === 0 && gs.ahead === 0 && gs.behind === 0) {
+          badgesHtml += '<span class="git-badge synced">✓ synced</span>';
+        }
+        badgesHtml += '</div>';
+      }
+
+      // Build git action buttons
+      var actionsHtml = '';
+      if (gs.isGitRepo) {
+        actionsHtml = '<div class="git-actions">';
+        if (gs.behind > 0) {
+          actionsHtml += '<button class="btn-git pull" data-git="pull" data-id="' + esc(pr.id) + '" title="Pull ' + gs.behind + ' commits from remote">↓ Pull</button>';
+        }
+        if (gs.localChanges > 0 || gs.ahead > 0) {
+          actionsHtml += '<button class="btn-git push" data-git="push" data-id="' + esc(pr.id) + '" title="Commit all changes and push">↑ Push</button>';
+        }
+        actionsHtml += '<button class="btn-git sync" data-git="sync" data-id="' + esc(pr.id) + '" title="Pull remote changes then push local changes">⟳ Sync</button>';
+        actionsHtml += '</div>';
+      }
+
       li.innerHTML =
         '<div class="project-info">' +
           '<div class="project-name">' + esc(pr.name) + '</div>' +
           '<div class="project-path">' + esc(pr.path) + '</div>' +
           (boundAccount ? '<div class="project-account">⚡ ' + esc(boundAccount.username) + ' (' + esc(boundAccount.provider) + ')</div>' : '') +
+          badgesHtml +
+          actionsHtml +
         '</div>' +
         '<div class="project-actions">' +
           '<button class="btn-action btn-sm" data-action="open" data-id="' + esc(pr.id) + '">Open</button>' +
@@ -261,6 +322,7 @@ function updateUI(msg) {
   activeProjectId = msg.activeProjectId || null;
   activeRepo = msg.activeRepo || '';
   activeRepoName = msg.activeRepoName || '';
+  gitStatuses = msg.gitStatuses || {};
 
   // Update "+ Add Current" button: show project name, hide if already exists
   var btnAddProject = document.getElementById('btn-add-project');
@@ -319,15 +381,29 @@ document.getElementById('btn-add-account').addEventListener('click', function() 
 
 projectList.addEventListener('click', function(e) {
   var btn = e.target.closest('[data-action]');
-  if (!btn) return;
-  
-  var action = btn.dataset.action;
-  var id = btn.dataset.id;
-  
-  if (action === 'open') {
-    vscode.postMessage({ type: 'open', id: id });
-  } else if (action === 'delete') {
-    vscode.postMessage({ type: 'delete', id: id });
+  if (btn) {
+    var action = btn.dataset.action;
+    var id = btn.dataset.id;
+    if (action === 'open') {
+      vscode.postMessage({ type: 'open', id: id });
+    } else if (action === 'delete') {
+      vscode.postMessage({ type: 'delete', id: id });
+    }
+    return;
+  }
+
+  var gitBtn = e.target.closest('[data-git]');
+  if (gitBtn) {
+    var gitAction = gitBtn.dataset.git;
+    var projId = gitBtn.dataset.id;
+    if (gitAction === 'pull') {
+      vscode.postMessage({ type: 'gitPull', id: projId });
+    } else if (gitAction === 'push') {
+      vscode.postMessage({ type: 'gitPush', id: projId });
+    } else if (gitAction === 'sync') {
+      vscode.postMessage({ type: 'gitSync', id: projId });
+    }
+    return;
   }
 });
 

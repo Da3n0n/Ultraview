@@ -224,6 +224,9 @@ function sortCommandsByUsage(commands: ProjectCommand[]): ProjectCommand[] {
       return { ...command, lastRun: usage?.lastRun || 0, runCount: usage?.runCount || 0 };
     })
     .sort((a, b) => {
+      // Priority first: dev (0) always top, then build (1), start (2), test (3), lint (4), etc.
+      if (a.priority !== b.priority) { return a.priority - b.priority; }
+      // Within same priority, most recently used first
       if (a.lastRun !== b.lastRun) { return b.lastRun - a.lastRun; }
       if (a.runCount !== b.runCount) { return b.runCount - a.runCount; }
       return a.name.localeCompare(b.name);

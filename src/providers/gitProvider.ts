@@ -1,10 +1,105 @@
 import * as vscode from 'vscode';
+import * as childProcess from 'child_process';
+import * as util from 'util';
 import { buildGitHtml } from '../git/gitUi';
 import { GitProjects } from '../git/gitProjects';
 import { GitAccounts } from '../git/gitAccounts';
 import { GitProfile, GitProvider as GitProviderType, AuthMethod } from '../git/types';
 import { applyLocalAccount, clearLocalAccount } from '../git/gitCredentials';
 import { SharedStore } from '../sync/sharedStore';
+
+const execAsync = util.promisify(childProcess.exec);
+
+interface GitStatus {
+  isGitRepo: boolean;
+  localChanges: number;   // uncommitted + staged
+  ahead: number;           // commits ahead of remote
+  behind: number;          // commits behind remote
+  branch: string;
+}
+
+async function getProjectGitStatus(projectPath: string): Promise<GitStatus> {
+  const empty: GitStatus = { isGitRepo: false, localChanges: 0, ahead: 0, behind: 0, branch: '' };
+  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 8000 });
+
+  try {
+    // Check if dir exists and is a git repo
+    await run('git rev-parse --is-inside-work-tree');
+  } catch {
+    return empty;
+  }
+
+  const status: GitStatus = { isGitRepo: true, localChanges: 0, ahead: 0, behind: 0, branch: '' };
+
+  try {
+    const { stdout: branchOut } = await run('git branch --show-current');
+    status.branch = branchOut.trim();
+  } catch { /* detached HEAD */ }
+
+  try {
+    const { stdout: statusOut } = await run('git status --porcelain');
+    status.localChanges = statusOut.trim() ? statusOut.trim().split('\n').length : 0;
+  } catch { /* ignore */ }
+
+  try {
+    // Fetch remote silently to compare ahead/behind
+    await run('git fetch --quiet');
+  } catch { /* offline or no remote */ }
+
+  try {
+    const { stdout: revOut } = await run('git rev-list --left-right --count HEAD...@{upstream}');
+    const parts = revOut.trim().split(/\s+/);
+    status.ahead = parseInt(parts[0], 10) || 0;
+    status.behind = parseInt(parts[1], 10) || 0;
+  } catch { /* no upstream */ }
+
+  return status;
+}
+
+async function gitPull(projectPath: string): Promise<string> {
+  try {
+    const { stdout } = await execAsync('git pull', { cwd: projectPath, env: process.env, timeout: 30000 });
+    return stdout.trim() || 'Pull complete';
+  } catch (err: any) {
+    throw new Error(err.stderr?.trim() || err.message);
+  }
+}
+
+async function gitPush(projectPath: string, commitMsg?: string): Promise<string> {
+  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  try {
+    // Stage, commit if there are changes, then push
+    const { stdout: statusOut } = await run('git status --porcelain');
+    if (statusOut.trim()) {
+      await run('git add -A');
+      const msg = commitMsg || `sync: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+      await run(`git commit -m "${msg.replace(/"/g, '\\"')}"`);
+    }
+    const { stdout } = await run('git push');
+    return stdout.trim() || 'Push complete';
+  } catch (err: any) {
+    throw new Error(err.stderr?.trim() || err.message);
+  }
+}
+
+async function gitSync(projectPath: string, commitMsg?: string): Promise<string> {
+  const results: string[] = [];
+  // Pull first
+  try {
+    const pullResult = await gitPull(projectPath);
+    results.push(`Pull: ${pullResult}`);
+  } catch (err: any) {
+    results.push(`Pull failed: ${err.message}`);
+  }
+  // Then push
+  try {
+    const pushResult = await gitPush(projectPath, commitMsg);
+    results.push(`Push: ${pushResult}`);
+  } catch (err: any) {
+    results.push(`Push failed: ${err.message}`);
+  }
+  return results.join('\n');
+}
 
 export class GitProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'ultraview.git';
@@ -191,6 +286,45 @@ export class GitProvider implements vscode.WebviewViewProvider {
           this.postState();
           break;
         }
+        case 'gitPull': {
+          const project = this.manager.listProjects().find(p => p.id === msg.id);
+          if (project) {
+            try {
+              const result = await gitPull(project.path);
+              vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
+            } catch (err: any) {
+              vscode.window.showErrorMessage(`Pull failed for ${project.name}: ${err.message}`);
+            }
+            this.postState();
+          }
+          break;
+        }
+        case 'gitPush': {
+          const project = this.manager.listProjects().find(p => p.id === msg.id);
+          if (project) {
+            try {
+              const result = await gitPush(project.path, msg.commitMsg);
+              vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
+            } catch (err: any) {
+              vscode.window.showErrorMessage(`Push failed for ${project.name}: ${err.message}`);
+            }
+            this.postState();
+          }
+          break;
+        }
+        case 'gitSync': {
+          const project = this.manager.listProjects().find(p => p.id === msg.id);
+          if (project) {
+            try {
+              const result = await gitSync(project.path, msg.commitMsg);
+              vscode.window.showInformationMessage(`✓ ${project.name}: Sync complete`);
+            } catch (err: any) {
+              vscode.window.showErrorMessage(`Sync failed for ${project.name}: ${err.message}`);
+            }
+            this.postState();
+          }
+          break;
+        }
       }
     });
 
@@ -198,7 +332,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
     this.postState();
   }
 
-  postState() {
+  async postState() {
     if (!this.view) return;
     const projects = this.manager.listProjects().slice().sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
     const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
@@ -215,6 +349,12 @@ export class GitProvider implements vscode.WebviewViewProvider {
       authStatus: this.accounts.getAccountAuthStatus(acc),
     }));
 
+    // Fetch git status for all projects in parallel
+    const gitStatuses: Record<string, GitStatus> = {};
+    await Promise.allSettled(projects.map(async p => {
+      gitStatuses[p.id] = await getProjectGitStatus(p.path);
+    }));
+
     const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
 
     this.view.webview.postMessage({
@@ -225,6 +365,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
       accounts: accountsWithStatus,
       activeAccountId: activeAccountId || null,
       activeProjectId: activeProject?.id || null,
+      gitStatuses,
     });
   }
 
@@ -427,7 +568,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
     const manager = new GitProjects(context, store);
     const accounts = new GitAccounts(context, store);
 
-    const postPanelState = () => {
+    const postPanelState = async () => {
       const projects = manager.listProjects();
       const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
       const accountList = accounts.listAccounts();
@@ -441,6 +582,12 @@ export class GitProvider implements vscode.WebviewViewProvider {
         authStatus: accounts.getAccountAuthStatus(acc),
       }));
 
+      // Fetch git status for all projects in parallel
+      const gitStatuses: Record<string, GitStatus> = {};
+      await Promise.allSettled(projects.map(async p => {
+        gitStatuses[p.id] = await getProjectGitStatus(p.path);
+      }));
+
       const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
 
       panel.webview.postMessage({
@@ -451,6 +598,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
         accounts: accountsWithStatus,
         activeAccountId: activeAccountId || null,
         activeProjectId: activeProject?.id || null,
+        gitStatuses,
       });
     };
 
@@ -704,6 +852,45 @@ export class GitProvider implements vscode.WebviewViewProvider {
           postPanelState();
           break;
         }
+        case 'gitPull': {
+          const project = manager.listProjects().find(p => p.id === msg.id);
+          if (project) {
+            try {
+              const result = await gitPull(project.path);
+              vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
+            } catch (err: any) {
+              vscode.window.showErrorMessage(`Pull failed for ${project.name}: ${err.message}`);
+            }
+            postPanelState();
+          }
+          break;
+        }
+        case 'gitPush': {
+          const project = manager.listProjects().find(p => p.id === msg.id);
+          if (project) {
+            try {
+              const result = await gitPush(project.path, msg.commitMsg);
+              vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
+            } catch (err: any) {
+              vscode.window.showErrorMessage(`Push failed for ${project.name}: ${err.message}`);
+            }
+            postPanelState();
+          }
+          break;
+        }
+        case 'gitSync': {
+          const project = manager.listProjects().find(p => p.id === msg.id);
+          if (project) {
+            try {
+              const result = await gitSync(project.path, msg.commitMsg);
+              vscode.window.showInformationMessage(`✓ ${project.name}: Sync complete`);
+            } catch (err: any) {
+              vscode.window.showErrorMessage(`Sync failed for ${project.name}: ${err.message}`);
+            }
+            postPanelState();
+          }
+          break;
+        }
       }
     });
   }
@@ -837,6 +1024,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
       if (accWithToken.provider !== 'github' && accWithToken.provider !== 'gitlab') {
         vscode.window.showInformationMessage('Creating repos is currently supported for GitHub and GitLab only.');
         return;
+
+
+
+
       }
 
       const newName = await vscode.window.showInputBox({

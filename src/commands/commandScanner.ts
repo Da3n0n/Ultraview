@@ -69,6 +69,7 @@ export interface ProjectCommand {
   folderLabel: string;
   workspaceLabel: string;
   displayName: string;
+  priority: number;
 }
 
 export async function scanCommands(rootPath: string): Promise<ProjectCommand[]> {
@@ -99,7 +100,8 @@ export async function scanCommands(rootPath: string): Promise<ProjectCommand[]> 
   }
 
   return all.sort((left, right) => {
-    return left.folderLabel.localeCompare(right.folderLabel)
+    return (left.priority - right.priority)
+      || left.folderLabel.localeCompare(right.folderLabel)
       || left.type.localeCompare(right.type)
       || left.name.localeCompare(right.name);
   });
@@ -206,7 +208,32 @@ function buildCommand(
     folderLabel,
     workspaceLabel,
     displayName: `${type} ${name}`,
+    priority: computeCommandPriority(name, runCmd),
   };
+}
+
+function computeCommandPriority(name: string, runCmd: string): number {
+  const n = name.toLowerCase();
+  const r = runCmd.toLowerCase();
+  // Dev commands - highest priority
+  if (n === 'dev' || n === 'develop' || n.startsWith('dev:') || n.startsWith('develop:')) { return 0; }
+  // Build commands
+  if (n === 'build' || n.startsWith('build:')) { return 1; }
+  // Start/serve/preview
+  if (n === 'start' || n === 'serve' || n === 'preview' || n.startsWith('start:') || n.startsWith('serve:')) { return 2; }
+  // Test
+  if (n === 'test' || n.startsWith('test:') || n === 'e2e' || n.startsWith('e2e:')) { return 3; }
+  // Lint/format/check
+  if (n === 'lint' || n.startsWith('lint:') || n === 'format' || n.startsWith('format:') ||
+      n === 'check' || n === 'typecheck' || n === 'type-check') { return 4; }
+  // Check runCmd for framework commands not caught by name
+  if (/\bdev(elop)?\b/.test(r)) { return 0; }
+  if (/\bbuild\b/.test(r)) { return 1; }
+  if (/\b(start|serve|preview)\b/.test(r)) { return 2; }
+  // Generate/migrate/deploy/watch
+  if (n.includes('generate') || n.includes('migrate') || n.includes('seed') ||
+      n.includes('deploy') || n.includes('watch') || n === 'clean') { return 5; }
+  return 6;
 }
 
 function pushCommand(out: ProjectCommand[], seenIds: Set<string>, command: ProjectCommand): void {
@@ -229,11 +256,14 @@ async function scanNpm(workspaceRoot: string, cwd: string, out: ProjectCommand[]
   if (!scripts || typeof scripts !== 'object') return;
 
   const runner = detectNpmRunner(cwd);
+  const resolvedType: CommandType = runner.startsWith('bun') ? 'bun'
+    : runner.startsWith('pnpm') ? 'pnpm'
+    : 'npm';
   for (const [name, cmd] of Object.entries(scripts)) {
     pushCommand(out, seenIds, buildCommand(
       workspaceRoot,
       cwd,
-      'npm',
+      resolvedType,
       name,
       `${runner} ${name}`,
       String(cmd),
@@ -1014,42 +1044,16 @@ async function scanShell(workspaceRoot: string, cwd: string, out: ProjectCommand
 // ─── Bun ─────────────────────────────────────────────────────────────────────
 
 async function scanBun(workspaceRoot: string, cwd: string, out: ProjectCommand[], seenIds: Set<string>): Promise<void> {
-  // Check for Bun project
+  // Check for Bun project (only when bun lockfile or config exists)
   const hasBunLock = fs.existsSync(path.join(cwd, 'bun.lock')) || fs.existsSync(path.join(cwd, 'bun.lockb'));
   const hasBunConfig = fs.existsSync(path.join(cwd, 'bunfig.toml'));
-  const hasPackageJson = fs.existsSync(path.join(cwd, 'package.json'));
 
-  if (!hasBunLock && !hasBunConfig && !hasPackageJson) {
+  if (!hasBunLock && !hasBunConfig) {
     return;
   }
 
-  // Read package.json to get scripts
-  if (hasPackageJson) {
-    const content = readFile(path.join(cwd, 'package.json'));
-    if (content) {
-      try {
-        const pkg = JSON.parse(content);
-        const scripts = pkg.scripts;
-        if (scripts && typeof scripts === 'object') {
-          // Add all scripts as Bun commands
-          for (const [name, cmd] of Object.entries(scripts)) {
-            pushCommand(out, seenIds, buildCommand(
-              workspaceRoot,
-              cwd,
-              'bun',
-              name,
-              `bun run ${name}`,
-              String(cmd)
-            ));
-          }
-        }
-      } catch {
-        // Invalid JSON, skip
-      }
-    }
-  }
-
-  // Add common Bun commands
+  // Package.json scripts are already handled by scanNpm with the correct runner.
+  // Only add bun-specific utility commands here.
   pushCommand(out, seenIds, buildCommand(
     workspaceRoot,
     cwd,
@@ -1382,39 +1386,7 @@ async function scanNpx(workspaceRoot: string, cwd: string, out: ProjectCommand[]
   let pkg: any;
   try { pkg = JSON.parse(content); } catch { return; }
 
-  // Add common npx commands for popular tools
-  const popularTools = [
-    'typescript',
-    'eslint',
-    'prettier',
-    'vitest',
-    'jest',
-    'cypress',
-    'playwright',
-    'next',
-    'vite',
-    'webpack',
-    'rollup',
-    'tailwindcss',
-    'prisma',
-    'typeorm',
-    'knex',
-    'migrate',
-    'supabase',
-  ];
-
-  for (const tool of popularTools) {
-    pushCommand(out, seenIds, buildCommand(
-      workspaceRoot,
-      cwd,
-      'npx',
-      `run ${tool}`,
-      `npx ${tool}`,
-      `Run ${tool} with npx`
-    ));
-  }
-
-  // Add specific npx commands based on dependencies
+  // Add npx commands only for tools actually in this project's dependencies
   const deps = {
     ...pkg.dependencies,
     ...pkg.devDependencies,
@@ -1685,41 +1657,15 @@ async function scanNpx(workspaceRoot: string, cwd: string, out: ProjectCommand[]
 // ─── pnpm ─────────────────────────────────────────────────────────────────────
 
 async function scanPnpm(workspaceRoot: string, cwd: string, out: ProjectCommand[], seenIds: Set<string>): Promise<void> {
-  // Check for pnpm project
+  // Check for pnpm project (only when pnpm lockfile exists)
   const hasPnpmLock = fs.existsSync(path.join(cwd, 'pnpm-lock.yaml'));
-  const hasPackageJson = fs.existsSync(path.join(cwd, 'package.json'));
 
-  if (!hasPnpmLock && !hasPackageJson) {
+  if (!hasPnpmLock) {
     return;
   }
 
-  // Read package.json to get scripts
-  if (hasPackageJson) {
-    const content = readFile(path.join(cwd, 'package.json'));
-    if (content) {
-      try {
-        const pkg = JSON.parse(content);
-        const scripts = pkg.scripts;
-        if (scripts && typeof scripts === 'object') {
-          // Add all scripts as pnpm commands
-          for (const [name, cmd] of Object.entries(scripts)) {
-            pushCommand(out, seenIds, buildCommand(
-              workspaceRoot,
-              cwd,
-              'pnpm',
-              name,
-              `pnpm run ${name}`,
-              String(cmd)
-            ));
-          }
-        }
-      } catch {
-        // Invalid JSON, skip
-      }
-    }
-  }
-
-  // Add common pnpm commands
+  // Package.json scripts are already handled by scanNpm with the correct runner.
+  // Only add pnpm-specific utility commands here.
   pushCommand(out, seenIds, buildCommand(
     workspaceRoot,
     cwd,
