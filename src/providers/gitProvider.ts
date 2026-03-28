@@ -381,33 +381,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
           }
           break;
         }
-        /** Post state for a single project only (for targeted UI update) */
-        private async _postSingleProjectState(projectId: string) {
-          if (!this.view) return;
-          const projects = this.manager.listProjects().slice().sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
-          const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-          const accounts = this.accounts.listAccounts();
-          const activeProject = projects.find(p => p.path === activeRepo);
-          const activeAccountId = activeProject?.accountId || (activeRepo ? this.accounts.getLocalAccount(activeRepo)?.id : undefined);
-          const accountsWithStatus = accounts.map(acc => ({ ...acc, authStatus: this.accounts.getAccountAuthStatus(acc) }));
-          const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
-          const gitStatuses: Record<string, GitStatus> = {};
-          const project = projects.find(p => p.id === projectId);
-          if (project) {
-            gitStatuses[project.id] = await getProjectGitStatus(project.path);
-          }
-          this.view.webview.postMessage({
-            type: 'state',
-            projects,
-            activeRepo,
-            activeRepoName,
-            accounts: accountsWithStatus,
-            activeAccountId: activeAccountId || null,
-            activeProjectId: activeProject?.id || null,
-            gitStatuses,
-            onlyProjectId: projectId,
-          });
-        }
       }
     });
 
@@ -457,8 +430,36 @@ export class GitProvider implements vscode.WebviewViewProvider {
     this.view.webview.postMessage(buildMsg(gitStatuses));
   }
 
+  /** Post state for a single project only (for targeted UI update) */
+  public async _postSingleProjectState(projectId: string): Promise<void> {
+    if (!this.view) return;
+    const projects = this.manager.listProjects().slice().sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
+    const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    const accounts = this.accounts.listAccounts();
+    const activeProject = projects.find(p => p.path === activeRepo);
+    const activeAccountId = activeProject?.accountId || (activeRepo ? this.accounts.getLocalAccount(activeRepo)?.id : undefined);
+    const accountsWithStatus = accounts.map(acc => ({ ...acc, authStatus: this.accounts.getAccountAuthStatus(acc) }));
+    const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
+    const gitStatuses: Record<string, GitStatus> = {};
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      gitStatuses[project.id] = await getProjectGitStatus(project.path);
+    }
+    this.view.webview.postMessage({
+      type: 'state',
+      projects,
+      activeRepo,
+      activeRepoName,
+      accounts: accountsWithStatus,
+      activeAccountId: activeAccountId || null,
+      activeProjectId: activeProject?.id || null,
+      gitStatuses,
+      onlyProjectId: projectId,
+    });
+  }
+
   /** Auto-apply credentials when the extension loads for the current workspace */
-  private async _autoApplyOnOpen() {
+  private async _autoApplyOnOpen(): Promise<void> {
     const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     if (!activeRepo) return;
 

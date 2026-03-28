@@ -164,6 +164,7 @@ var activeProjectId = null;
 var activeRepo = '';
 var activeRepoName = '';
 var gitStatuses = {};
+var projectLoading = {}; // { [projectId]: true } for loading spinner
 
 var projectList = document.getElementById('project-list');
 var emptyState = document.getElementById('empty-state');
@@ -210,33 +211,32 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function renderProjects() {
+function renderProjects(onlyProjectId) {
   var filtered = allProjects;
-  
-  projectList.innerHTML = '';
-  
-  if (filtered.length === 0) {
-    emptyState.classList.remove('hidden');
-  } else {
-    emptyState.classList.add('hidden');
-    filtered.forEach(function(pr) {
-      var isActive = activeRepo && pr.path === activeRepo;
-      var boundAccount = allAccounts.find(function(a) { return a.id === pr.accountId; });
-      var gs = gitStatuses[pr.id] || {};
-      var li = document.createElement('li');
-      li.className = 'project-item' + (isActive ? ' active' : '');
-
-      // Build new layout: branch badge next to name, sync button top right, local/push and remote/pull inline below
-      var branchHtml = '';
-      if (gs.isGitRepo && gs.branch) {
-        branchHtml = '<span class="git-badge branch" style="margin-left:6px;vertical-align:middle;">⎇ ' + esc(gs.branch) + '</span>';
-      }
-
-      // Inline badges and buttons row
-      var inlineRow = '';
-      if (gs.isGitRepo) {
-        inlineRow = '<div class="git-inline-row">';
-        // Local changes + push
+  if (onlyProjectId) {
+    // Only update the affected project item
+    var idx = filtered.findIndex(function(pr) { return pr.id === onlyProjectId; });
+    if (idx === -1) return;
+    var pr = filtered[idx];
+    var boundAccount = allAccounts.find(function(a) { return a.id === pr.accountId; });
+    var gs = gitStatuses[pr.id] || {};
+    var lis = projectList.querySelectorAll('.project-item');
+    var li = lis[idx];
+    if (!li) return;
+    var isActive = activeRepo && pr.path === activeRepo;
+    li.className = 'project-item' + (isActive ? ' active' : '');
+    // Build new layout: branch badge next to name, sync button top right, local/push and remote/pull inline below
+    var branchHtml = '';
+    if (gs.isGitRepo && gs.branch) {
+      branchHtml = '<span class="git-badge branch" style="margin-left:6px;vertical-align:middle;">⎇ ' + esc(gs.branch) + '</span>';
+    }
+    // Inline badges and buttons row
+    var inlineRow = '';
+    if (gs.isGitRepo) {
+      inlineRow = '<div class="git-inline-row">';
+      if (projectLoading[pr.id]) {
+        inlineRow += '<span class="spinner" style="width:16px;height:16px;border-width:2px;vertical-align:middle;margin-right:8px;"></span> <span style="font-size:11px;opacity:.7;">Working...</span>';
+      } else {
         if (gs.localChanges > 0) {
           inlineRow += '<span class="git-badge local">● ' + gs.localChanges + ' local</span>';
           inlineRow += '<button class="btn-git push" data-git="push" data-id="' + esc(pr.id) + '" title="Commit all changes and push" style="margin-right:8px;">↑ Push</button>';
@@ -244,24 +244,77 @@ function renderProjects() {
           inlineRow += '<span class="git-badge ahead">↑ ' + gs.ahead + ' ahead</span>';
           inlineRow += '<button class="btn-git push" data-git="push" data-id="' + esc(pr.id) + '" title="Push commits" style="margin-right:8px;">↑ Push</button>';
         }
-        // Remote changes + pull
         if (gs.behind > 0) {
           inlineRow += '<span class="git-badge behind">↓ ' + gs.behind + ' behind</span>';
           inlineRow += '<button class="btn-git pull" data-git="pull" data-id="' + esc(pr.id) + '" title="Pull ' + gs.behind + ' commits from remote" style="margin-right:8px;">↓ Pull</button>';
         }
-        // Synced
         if (gs.localChanges === 0 && gs.ahead === 0 && gs.behind === 0) {
           inlineRow += '<span class="git-badge synced">✓ synced</span>';
         }
+      }
+      inlineRow += '</div>';
+    }
+    var syncBtn = '';
+    if (gs.isGitRepo) {
+      syncBtn = '<button class="btn-git sync" data-git="sync" data-id="' + esc(pr.id) + '" title="Pull remote changes then push local changes" style="margin-left:8px;">⟳ Sync</button>';
+    }
+    li.innerHTML =
+      '<div class="project-info">' +
+        '<div class="project-name" style="display:flex;align-items:center;gap:4px;">' + esc(pr.name) + branchHtml + '</div>' +
+        '<div class="project-path">' + esc(pr.path) + '</div>' +
+        (boundAccount ? '<div class="project-account">⚡ ' + esc(boundAccount.username) + ' (' + esc(boundAccount.provider) + ')</div>' : '') +
+        inlineRow +
+      '</div>' +
+      '<div class="project-actions" style="display:flex;align-items:center;gap:4px;">' +
+        '<button class="btn-action btn-sm" data-action="open" data-id="' + esc(pr.id) + '">Open</button>' +
+        syncBtn +
+        '<button class="btn-action btn-sm" data-action="delete" data-id="' + esc(pr.id) + '">×</button>' +
+      '</div>';
+    return;
+  }
+  // Full render
+  projectList.innerHTML = '';
+  if (filtered.length === 0) {
+    emptyState.classList.remove('hidden');
+  } else {
+    emptyState.classList.add('hidden');
+    filtered.forEach(function(pr, idx) {
+      var isActive = activeRepo && pr.path === activeRepo;
+      var boundAccount = allAccounts.find(function(a) { return a.id === pr.accountId; });
+      var gs = gitStatuses[pr.id] || {};
+      var li = document.createElement('li');
+      li.className = 'project-item' + (isActive ? ' active' : '');
+      var branchHtml = '';
+      if (gs.isGitRepo && gs.branch) {
+        branchHtml = '<span class="git-badge branch" style="margin-left:6px;vertical-align:middle;">⎇ ' + esc(gs.branch) + '</span>';
+      }
+      var inlineRow = '';
+      if (gs.isGitRepo) {
+        inlineRow = '<div class="git-inline-row">';
+        if (projectLoading[pr.id]) {
+          inlineRow += '<span class="spinner" style="width:16px;height:16px;border-width:2px;vertical-align:middle;margin-right:8px;"></span> <span style="font-size:11px;opacity:.7;">Working...</span>';
+        } else {
+          if (gs.localChanges > 0) {
+            inlineRow += '<span class="git-badge local">● ' + gs.localChanges + ' local</span>';
+            inlineRow += '<button class="btn-git push" data-git="push" data-id="' + esc(pr.id) + '" title="Commit all changes and push" style="margin-right:8px;">↑ Push</button>';
+          } else if (gs.ahead > 0) {
+            inlineRow += '<span class="git-badge ahead">↑ ' + gs.ahead + ' ahead</span>';
+            inlineRow += '<button class="btn-git push" data-git="push" data-id="' + esc(pr.id) + '" title="Push commits" style="margin-right:8px;">↑ Push</button>';
+          }
+          if (gs.behind > 0) {
+            inlineRow += '<span class="git-badge behind">↓ ' + gs.behind + ' behind</span>';
+            inlineRow += '<button class="btn-git pull" data-git="pull" data-id="' + esc(pr.id) + '" title="Pull ' + gs.behind + ' commits from remote" style="margin-right:8px;">↓ Pull</button>';
+          }
+          if (gs.localChanges === 0 && gs.ahead === 0 && gs.behind === 0) {
+            inlineRow += '<span class="git-badge synced">✓ synced</span>';
+          }
+        }
         inlineRow += '</div>';
       }
-
-      // Sync button top right, next to open/delete
       var syncBtn = '';
       if (gs.isGitRepo) {
         syncBtn = '<button class="btn-git sync" data-git="sync" data-id="' + esc(pr.id) + '" title="Pull remote changes then push local changes" style="margin-left:8px;">⟳ Sync</button>';
       }
-
       li.innerHTML =
         '<div class="project-info">' +
           '<div class="project-name" style="display:flex;align-items:center;gap:4px;">' + esc(pr.name) + branchHtml + '</div>' +
@@ -277,7 +330,6 @@ function renderProjects() {
       projectList.appendChild(li);
     });
   }
-  
   var count = filtered.length;
   stProjects.textContent = count + ' project' + (count !== 1 ? 's' : '');
 }
@@ -354,6 +406,23 @@ function renderAccounts() {
 function updateUI(msg) {
   document.getElementById('loading').classList.add('hidden');
 
+  // If onlyProjectId is present, only update that project
+  if (msg.onlyProjectId) {
+    if (msg.projects) allProjects = msg.projects;
+    if (msg.accounts) allAccounts = msg.accounts;
+    if (msg.activeAccountId) activeAccountId = msg.activeAccountId;
+    if (msg.activeProjectId) activeProjectId = msg.activeProjectId;
+    if (msg.activeRepo) activeRepo = msg.activeRepo;
+    if (msg.activeRepoName) activeRepoName = msg.activeRepoName;
+    if (msg.gitStatuses) {
+      Object.assign(gitStatuses, msg.gitStatuses);
+    }
+    projectLoading[msg.onlyProjectId] = false;
+    renderProjects(msg.onlyProjectId);
+    renderAccounts();
+    return;
+  }
+
   allProjects = msg.projects || [];
   allAccounts = msg.accounts || [];
   activeAccountId = msg.activeAccountId || null;
@@ -361,6 +430,7 @@ function updateUI(msg) {
   activeRepo = msg.activeRepo || '';
   activeRepoName = msg.activeRepoName || '';
   gitStatuses = msg.gitStatuses || {};
+  projectLoading = {};
 
   // Update "+ Add Current" button: show project name, hide if already exists
   var btnAddProject = document.getElementById('btn-add-project');
@@ -434,12 +504,10 @@ projectList.addEventListener('click', function(e) {
   if (gitBtn) {
     var gitAction = gitBtn.dataset.git;
     var projId = gitBtn.dataset.id;
-    if (gitAction === 'pull') {
-      vscode.postMessage({ type: 'gitPull', id: projId });
-    } else if (gitAction === 'push') {
-      vscode.postMessage({ type: 'gitPush', id: projId });
-    } else if (gitAction === 'sync') {
-      vscode.postMessage({ type: 'gitSync', id: projId });
+    if (gitAction === 'pull' || gitAction === 'push' || gitAction === 'sync') {
+      projectLoading[projId] = true;
+      renderProjects(projId);
+      vscode.postMessage({ type: gitAction === 'pull' ? 'gitPull' : gitAction === 'push' ? 'gitPush' : 'gitSync', id: projId });
     }
     return;
   }
