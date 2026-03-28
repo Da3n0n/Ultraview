@@ -179,10 +179,15 @@ function getScript(src: string, ext: string): string {
 
     const needsBlend = ext === 'blend' || ext === 'blend1';
 
-    // CDN URLs - use unpkg for all
-    const threepipeCdn  = 'https://unpkg.com/threepipe@latest/dist/index.js';
-    const extraCdn      = 'https://unpkg.com/@threepipe/plugins-extra-importers@latest/dist/index.js';
-    const blendCdn      = 'https://unpkg.com/@threepipe/plugin-blend-importer@latest/dist/index.js';
+    // CDN URLs - pinned versions for security (avoid @latest which can change)
+    // WARNING: These CDN dependencies are loaded at runtime for the 3D viewer.
+    // For air-gapped environments, this feature will not work.
+    const threepipeVersion = '2.7.4';
+    const extraVersion = '1.2.1';
+    const blendVersion = '1.0.3';
+    const threepipeCdn  = `https://unpkg.com/threepipe@${threepipeVersion}/dist/index.js`;
+    const extraCdn      = `https://unpkg.com/@threepipe/plugins-extra-importers@${extraVersion}/dist/index.js`;
+    const blendCdn      = `https://unpkg.com/@threepipe/plugin-blend-importer@${blendVersion}/dist/index.js`;
 
     const script = `
 (function() {
