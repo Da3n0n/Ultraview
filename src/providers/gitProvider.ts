@@ -98,8 +98,13 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
   const { stdout: statusOut } = await run('git status --porcelain');
   if (!statusOut.trim()) { return false; }
   await run('git add -A');
-  const msg = commitMsg || `sync: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
-  await run(`git commit -m "${msg.replace(/"/g, '\\"')}"`);
+  let msg = commitMsg;
+  if (!msg) {
+    // Parse changed files from statusOut
+    const files = statusOut.trim().split('\n').map(line => line.slice(3).trim()).filter(Boolean);
+    msg = files.length > 0 ? `update: ${files.join(', ')}` : `update: files changed`;
+  }
+  await run(`git commit -m "${msg.replace(/"/g, '\"')}"`);
   return true;
 }
 
