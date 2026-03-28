@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { buildCommandsHtml } from '../commands/commandsUi';
 import { ProjectCommand, scanWorkspaceCommands } from '../commands/commandScanner';
 
@@ -175,60 +177,67 @@ async function postCommands(webview: vscode.Webview): Promise<void> {
 async function getWorkspaceCommands(): Promise<ProjectCommand[]> {
   const rootPaths = (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath);
   const commands = await scanWorkspaceCommands(rootPaths);
-  // Sort by most recently used
-  return sortCommandsByUsage(commands);
+  // Sort by workspace order file if present, else fallback to usage
+  return await sortCommandsByWorkspaceOrder(commands);
 }
 
-// Command usage tracking
-interface CommandUsage {
-  commandId: string;
-  lastRun: number;
-  runCount: number;
+
+// --- Workspace command order tracking ---
+const ORDER_FILE = '.vscode/command-order.json';
+
+function getOrderFilePath(): string | null {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return null;
+  return path.join(folders[0].uri.fsPath, ORDER_FILE);
 }
 
-// In-memory map so sorts are always instant — config is only used for persistence across sessions.
-let usageCache: Record<string, CommandUsage> | null = null;
+function getCommandId(command: ProjectCommand): string {
+  return `${command.workspaceLabel}:${command.type}:${command.name}:${command.cwd}`;
+}
 
-function getUsageCache(): Record<string, CommandUsage> {
-  if (usageCache === null) {
-    const config = vscode.workspace.getConfiguration('ultraview');
-    usageCache = config.get<Record<string, CommandUsage>>('commands.usage') || {};
+function readOrderFile(): string[] {
+  const file = getOrderFilePath();
+  if (!file || !fs.existsSync(file)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(data.order) ? data.order : [];
+  } catch {
+    return [];
   }
-  return usageCache;
+}
+
+function writeOrderFile(order: string[]): void {
+  const file = getOrderFilePath();
+  if (!file) return;
+  try {
+    fs.writeFileSync(file, JSON.stringify({ order }, null, 2));
+  } catch {}
 }
 
 function recordCommandUsage(command: ProjectCommand): void {
-  const cache = getUsageCache();
-  const commandId = `${command.workspaceLabel}:${command.type}:${command.name}:${command.cwd}`;
-  const now = Date.now();
-
-  if (cache[commandId]) {
-    cache[commandId].lastRun = now;
-    cache[commandId].runCount++;
-  } else {
-    cache[commandId] = { commandId, lastRun: now, runCount: 1 };
-  }
-
-  // Persist in background — don't await so the sort sees the update immediately
-  const config = vscode.workspace.getConfiguration('ultraview');
-  void config.update('commands.usage', cache, vscode.ConfigurationTarget.Global);
+  // Update order file: move this commandId to the front
+  const id = getCommandId(command);
+  let order = readOrderFile();
+  order = [id, ...order.filter(x => x !== id)];
+  writeOrderFile(order);
 }
 
-function sortCommandsByUsage(commands: ProjectCommand[]): ProjectCommand[] {
-  const usageData = getUsageCache();
-
-  return commands
-    .map(command => {
-      const commandId = `${command.workspaceLabel}:${command.type}:${command.name}:${command.cwd}`;
-      const usage = usageData[commandId];
-      return { ...command, lastRun: usage?.lastRun || 0, runCount: usage?.runCount || 0 };
-    })
-    .sort((a, b) => {
-      // Priority first: dev (0) always top, then build (1), start (2), test (3), lint (4), etc.
-      if (a.priority !== b.priority) { return a.priority - b.priority; }
-      // Within same priority, most recently used first
-      if (a.lastRun !== b.lastRun) { return b.lastRun - a.lastRun; }
-      if (a.runCount !== b.runCount) { return b.runCount - a.runCount; }
+async function sortCommandsByWorkspaceOrder(commands: ProjectCommand[]): Promise<ProjectCommand[]> {
+  const order = readOrderFile();
+  // Always put dev command at top if no order
+  if (!order.length) {
+    return commands.slice().sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
       return a.name.localeCompare(b.name);
     });
+  }
+  // Sort by order file, then by priority/name for new commands
+  const idMap = new Map(commands.map(cmd => [getCommandId(cmd), cmd]));
+  const ordered = order.map(id => idMap.get(id)).filter(Boolean) as ProjectCommand[];
+  const rest = commands.filter(cmd => !order.includes(getCommandId(cmd)));
+  rest.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return a.name.localeCompare(b.name);
+  });
+  return [...ordered, ...rest];
 }

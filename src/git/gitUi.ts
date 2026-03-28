@@ -134,6 +134,7 @@ export function buildGitHtml(): string {
     <div class="section-header">
       <span class="section-title">Projects</span>
       <div style="display:flex;gap:4px">
+        <button class="btn-action btn-sm" id="btn-refresh-projects" title="Refresh all projects">↻ Refresh</button>
         <button class="btn-action btn-sm" id="btn-add-project">+ Add Current</button>
         <button class="btn-action btn-sm" id="btn-add-repo">+ Add Repo</button>
         <button class="btn-action btn-sm" id="btn-add" title="Browse for folder">+ Browse</button>
@@ -151,6 +152,7 @@ export function buildGitHtml(): string {
 </div>
 
 <script>
+
 (function(){
 'use strict';
 
@@ -168,6 +170,41 @@ var emptyState = document.getElementById('empty-state');
 var stProjects = document.getElementById('st-projects');
 var accountList = document.getElementById('account-list');
 var stAccount = document.getElementById('st-account');
+
+// Add refresh handler for projects
+var btnRefreshProjects = document.getElementById('btn-refresh-projects');
+if (btnRefreshProjects) {
+  btnRefreshProjects.addEventListener('click', function() {
+    vscode.postMessage({ type: 'refreshProjects' });
+  });
+}
+
+// Periodic auto-refresh for active project only
+var autoRefreshInterval = null;
+var lastActiveProjectId = null;
+
+function setupAutoRefresh(activeProjectId) {
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+    autoRefreshInterval = null;
+  }
+  if (!activeProjectId) return;
+  lastActiveProjectId = activeProjectId;
+  autoRefreshInterval = setInterval(function() {
+    // Only refresh if still on the same project
+    if (lastActiveProjectId === activeProjectId) {
+      vscode.postMessage({ type: 'refreshProjects' });
+    }
+  }, 30000); // 30 seconds
+}
+
+// Listen for state updates to track active project
+window.addEventListener('message', function(e) {
+  var msg = e.data;
+  if (msg && msg.type === 'state') {
+    setupAutoRefresh(msg.activeProjectId);
+  }
+});
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');

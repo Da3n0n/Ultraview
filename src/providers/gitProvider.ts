@@ -226,6 +226,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
           this.postState();
           break;
         }
+        case 'refreshProjects': {
+          this.postState();
+          break;
+        }
         case 'delete': {
           const id = msg.id;
           this.manager.removeProject(id);
