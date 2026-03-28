@@ -102,12 +102,9 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
   if (!msg) {
     // Parse changed files from statusOut, preserving full filename
     const files = statusOut.trim().split('\n').map(line => line.substring(3)).map(f => f.trim()).filter(Boolean);
-    if (files.length > 0) {
-      // Each file on a new line after the header
-      msg = `update:\n` + files.map(f => `- ${f}`).join('\n');
-    } else {
-      msg = `update: files changed`;
-    }
+    if (files.length === 0) return false;
+    // Each file on a new line after the header
+    msg = `update:\n` + files.map(f => `- ${f}`).join('\n');
   }
   await run(`git commit -m "${msg.replace(/"/g, '\"')}"`);
   return true;
