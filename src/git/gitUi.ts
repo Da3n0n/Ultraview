@@ -105,10 +105,11 @@ export function buildGitHtml(): string {
     .git-badge.ahead{background:rgba(102,187,106,.18);color:#66BB6A;border:1px solid rgba(102,187,106,.35)}
     .git-badge.synced{background:rgba(76,175,80,.12);color:#4CAF50;border:1px solid rgba(76,175,80,.25)}
     .git-badge.branch{background:rgba(128,128,128,.12);color:var(--vscode-descriptionForeground);border:1px solid rgba(128,128,128,.2)}
-    .git-actions{display:flex;gap:3px;margin-top:5px;flex-wrap:wrap}
+    .git-inline-row{display:flex;align-items:center;gap:8px;margin:4px 0 0 0;flex-wrap:wrap}
+    .git-badge{margin-right:2px;}
     .btn-git{
       padding:2px 7px;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600;
-      white-space:nowrap;border:1px solid transparent}
+      white-space:nowrap;border:1px solid transparent; margin-right:2px; vertical-align:middle;}
     .btn-git.pull{background:rgba(66,165,245,.2);color:#42A5F5;border-color:rgba(66,165,245,.4)}
     .btn-git.pull:hover{background:rgba(66,165,245,.35)}
     .btn-git.push{background:rgba(255,152,0,.2);color:#FFA726;border-color:rgba(255,152,0,.4)}
@@ -188,52 +189,52 @@ function renderProjects() {
       var li = document.createElement('li');
       li.className = 'project-item' + (isActive ? ' active' : '');
 
-      // Build git badge HTML
-      var badgesHtml = '';
-      if (gs.isGitRepo) {
-        badgesHtml = '<div class="git-badges">';
-        if (gs.branch) {
-          badgesHtml += '<span class="git-badge branch">⎇ ' + esc(gs.branch) + '</span>';
-        }
-        if (gs.localChanges > 0) {
-          badgesHtml += '<span class="git-badge local">● ' + gs.localChanges + ' local</span>';
-        }
-        if (gs.behind > 0) {
-          badgesHtml += '<span class="git-badge behind">↓ ' + gs.behind + ' behind</span>';
-        }
-        if (gs.ahead > 0) {
-          badgesHtml += '<span class="git-badge ahead">↑ ' + gs.ahead + ' ahead</span>';
-        }
-        if (gs.localChanges === 0 && gs.ahead === 0 && gs.behind === 0) {
-          badgesHtml += '<span class="git-badge synced">✓ synced</span>';
-        }
-        badgesHtml += '</div>';
+      // Build new layout: branch badge next to name, sync button top right, local/push and remote/pull inline below
+      var branchHtml = '';
+      if (gs.isGitRepo && gs.branch) {
+        branchHtml = '<span class="git-badge branch" style="margin-left:6px;vertical-align:middle;">⎇ ' + esc(gs.branch) + '</span>';
       }
 
-      // Build git action buttons
-      var actionsHtml = '';
+      // Inline badges and buttons row
+      var inlineRow = '';
       if (gs.isGitRepo) {
-        actionsHtml = '<div class="git-actions">';
+        inlineRow = '<div class="git-inline-row">';
+        // Local changes + push
+        if (gs.localChanges > 0) {
+          inlineRow += '<span class="git-badge local">● ' + gs.localChanges + ' local</span>';
+          inlineRow += '<button class="btn-git push" data-git="push" data-id="' + esc(pr.id) + '" title="Commit all changes and push" style="margin-right:8px;">↑ Push</button>';
+        } else if (gs.ahead > 0) {
+          inlineRow += '<span class="git-badge ahead">↑ ' + gs.ahead + ' ahead</span>';
+          inlineRow += '<button class="btn-git push" data-git="push" data-id="' + esc(pr.id) + '" title="Push commits" style="margin-right:8px;">↑ Push</button>';
+        }
+        // Remote changes + pull
         if (gs.behind > 0) {
-          actionsHtml += '<button class="btn-git pull" data-git="pull" data-id="' + esc(pr.id) + '" title="Pull ' + gs.behind + ' commits from remote">↓ Pull</button>';
+          inlineRow += '<span class="git-badge behind">↓ ' + gs.behind + ' behind</span>';
+          inlineRow += '<button class="btn-git pull" data-git="pull" data-id="' + esc(pr.id) + '" title="Pull ' + gs.behind + ' commits from remote" style="margin-right:8px;">↓ Pull</button>';
         }
-        if (gs.localChanges > 0 || gs.ahead > 0) {
-          actionsHtml += '<button class="btn-git push" data-git="push" data-id="' + esc(pr.id) + '" title="Commit all changes and push">↑ Push</button>';
+        // Synced
+        if (gs.localChanges === 0 && gs.ahead === 0 && gs.behind === 0) {
+          inlineRow += '<span class="git-badge synced">✓ synced</span>';
         }
-        actionsHtml += '<button class="btn-git sync" data-git="sync" data-id="' + esc(pr.id) + '" title="Pull remote changes then push local changes">⟳ Sync</button>';
-        actionsHtml += '</div>';
+        inlineRow += '</div>';
+      }
+
+      // Sync button top right, next to open/delete
+      var syncBtn = '';
+      if (gs.isGitRepo) {
+        syncBtn = '<button class="btn-git sync" data-git="sync" data-id="' + esc(pr.id) + '" title="Pull remote changes then push local changes" style="margin-left:8px;">⟳ Sync</button>';
       }
 
       li.innerHTML =
         '<div class="project-info">' +
-          '<div class="project-name">' + esc(pr.name) + '</div>' +
+          '<div class="project-name" style="display:flex;align-items:center;gap:4px;">' + esc(pr.name) + branchHtml + '</div>' +
           '<div class="project-path">' + esc(pr.path) + '</div>' +
           (boundAccount ? '<div class="project-account">⚡ ' + esc(boundAccount.username) + ' (' + esc(boundAccount.provider) + ')</div>' : '') +
-          badgesHtml +
-          actionsHtml +
+          inlineRow +
         '</div>' +
-        '<div class="project-actions">' +
+        '<div class="project-actions" style="display:flex;align-items:center;gap:4px;">' +
           '<button class="btn-action btn-sm" data-action="open" data-id="' + esc(pr.id) + '">Open</button>' +
+          syncBtn +
           '<button class="btn-action btn-sm" data-action="delete" data-id="' + esc(pr.id) + '">×</button>' +
         '</div>';
       projectList.appendChild(li);
