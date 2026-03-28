@@ -57,48 +57,66 @@ async function getProjectGitStatus(projectPath: string): Promise<GitStatus> {
 }
 
 async function gitPull(projectPath: string): Promise<string> {
+  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
   try {
-    const { stdout } = await execAsync('git pull', { cwd: projectPath, env: process.env, timeout: 30000 });
-    return stdout.trim() || 'Pull complete';
+    const { stdout, stderr } = await run('git pull --rebase origin HEAD');
+    return stdout.trim() || stderr.trim() || 'Pull complete';
   } catch (err: any) {
     throw new Error(err.stderr?.trim() || err.message);
   }
 }
 
+async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<boolean> {
+  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const { stdout: statusOut } = await run('git status --porcelain');
+  if (!statusOut.trim()) { return false; }
+  await run('git add -A');
+  const msg = commitMsg || `sync: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+  await run(`git commit -m "${msg.replace(/"/g, '\\"')}"`);
+  return true;
+}
+
 async function gitPush(projectPath: string, commitMsg?: string): Promise<string> {
   const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
   try {
-    // Stage, commit if there are changes, then push
-    const { stdout: statusOut } = await run('git status --porcelain');
-    if (statusOut.trim()) {
-      await run('git add -A');
-      const msg = commitMsg || `sync: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
-      await run(`git commit -m "${msg.replace(/"/g, '\\"')}"`);
-    }
-    const { stdout } = await run('git push');
-    return stdout.trim() || 'Push complete';
+    // Stage and commit local changes, then push
+    await gitCommitLocal(projectPath, commitMsg);
+    const { stdout, stderr } = await run('git push origin HEAD');
+    return stdout.trim() || stderr.trim() || 'Push complete';
   } catch (err: any) {
     throw new Error(err.stderr?.trim() || err.message);
   }
 }
 
 async function gitSync(projectPath: string, commitMsg?: string): Promise<string> {
-  const results: string[] = [];
-  // Pull first
+  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const errors: string[] = [];
+
+  // 1. Commit local changes first (so pull --rebase can rebase on top)
   try {
-    const pullResult = await gitPull(projectPath);
-    results.push(`Pull: ${pullResult}`);
+    await gitCommitLocal(projectPath, commitMsg);
   } catch (err: any) {
-    results.push(`Pull failed: ${err.message}`);
+    errors.push(`Commit failed: ${err.stderr?.trim() || err.message}`);
   }
-  // Then push
+
+  // 2. Pull remote changes (rebase local on top)
   try {
-    const pushResult = await gitPush(projectPath, commitMsg);
-    results.push(`Push: ${pushResult}`);
+    await run('git pull --rebase origin HEAD');
   } catch (err: any) {
-    results.push(`Push failed: ${err.message}`);
+    errors.push(`Pull failed: ${err.stderr?.trim() || err.message}`);
   }
-  return results.join('\n');
+
+  // 3. Push everything
+  try {
+    await run('git push origin HEAD');
+  } catch (err: any) {
+    errors.push(`Push failed: ${err.stderr?.trim() || err.message}`);
+  }
+
+  if (errors.length) {
+    throw new Error(errors.join('\n'));
+  }
+  return 'Sync complete';
 }
 
 export class GitProvider implements vscode.WebviewViewProvider {
