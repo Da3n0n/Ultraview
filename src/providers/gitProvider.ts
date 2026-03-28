@@ -100,10 +100,15 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
   await run('git add -A');
   let msg = commitMsg;
   if (!msg) {
-    // Parse changed files from statusOut, preserving full filename
-    const files = statusOut.trim().split('\n').map(line => line.substring(3)).map(f => f.trim()).filter(Boolean);
+    // Robustly extract filenames from git status output
+    const files = statusOut.trim().split('\n')
+      .map(line => {
+        // git status --porcelain: first 2 chars are status, then space, then filename
+        const match = line.match(/^\s*[A-Z\?]{1,2} (.+)$/i);
+        return match ? match[1].trim() : '';
+      })
+      .filter(Boolean);
     if (files.length === 0) return false;
-    // Each file on a new line after the header
     msg = `update:\n` + files.map(f => `- ${f}`).join('\n');
   }
   await run(`git commit -m "${msg.replace(/"/g, '\"')}"`);
