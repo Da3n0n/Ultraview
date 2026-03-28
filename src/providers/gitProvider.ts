@@ -98,18 +98,22 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
   const { stdout: statusOut } = await run('git status --porcelain');
   if (!statusOut.trim()) { return false; }
   await run('git add -A');
+  // Extract filenames for commit message (always include them)
+  const files = statusOut.trim().split('\n')
+    .map(line => {
+      // git status --porcelain: first 2 chars are status, then space, then filename
+      // Handle renamed files: " R  oldname → newname"
+      const match = line.match(/^\s*[A-Z\?]{1,2} (.+)$/i);
+      return match ? match[1].trim() : '';
+    })
+    .filter(Boolean);
+  if (files.length === 0) { return false; }
   let msg = commitMsg;
   if (!msg) {
-    // Robustly extract filenames from git status output
-    const files = statusOut.trim().split('\n')
-      .map(line => {
-        // git status --porcelain: first 2 chars are status, then space, then filename
-        const match = line.match(/^\s*[A-Z\?]{1,2} (.+)$/i);
-        return match ? match[1].trim() : '';
-      })
-      .filter(Boolean);
-    if (files.length === 0) return false;
-    msg = `update:\n` + files.map(f => `- ${f}`).join('\n');
+    msg = `Update ${files.length} file${files.length !== 1 ? 's' : ''}:\n` + files.map(f => `- ${f}`).join('\n');
+  } else {
+    // Append filenames even when custom message is provided
+    msg = `${msg}\n\nFiles changed:\n` + files.map(f => `- ${f}`).join('\n');
   }
   await run(`git commit -m "${msg.replace(/"/g, '\"')}"`);
   return true;

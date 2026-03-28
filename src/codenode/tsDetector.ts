@@ -1,13 +1,23 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import { CodeNode, CodeEdge } from './index';
 
 const IMPORT_RE = /(?:import|require)\s*(?:[^'"]*from\s*)?['"]([^'"]+)['"]/g;
-// Matches exported AND non-exported top-level functions, classes, and arrow-function consts
-const FN_RE = /(?:export\s+)?(?:async\s+)?(?:function|class)\s+(\w+)|(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?(?:\(|function\b)/g;
-const URL_RE = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/g;
 // Named imports: import { foo, bar as baz } from './path'
 const NAMED_IMPORT_RE = /import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/g;
+// Function declarations (exported and non-exported)
+const FN_RE = /(?:export\s+)?(?:async\s+)?function\s+(\w+)/g;
+// Class declarations
+const CLASS_RE = /(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/g;
+// Interface declarations
+const INTERFACE_RE = /(?:export\s+)?interface\s+(\w+)/g;
+// Type alias declarations
+const TYPE_RE = /(?:export\s+)?type\s+(\w+)\s*=/g;
+// Enum declarations
+const ENUM_RE = /(?:export\s+)?(?:const\s+)?enum\s+(\w+)/g;
+// Arrow functions and const declarations (exported and non-exported)
+const CONST_RE = /(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?(?:\(|function\b)/g;
+// URL detection
+const URL_RE = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/g;
 
 export function detectTs(filePath: string, text: string, allFiles: Set<string>): { nodes: CodeNode[]; edges: CodeEdge[] } {
   const nodes: CodeNode[] = [];
@@ -36,10 +46,60 @@ export function detectTs(filePath: string, text: string, allFiles: Set<string>):
     }
   }
 
-  // Functions/classes
+  // Function declarations
   FN_RE.lastIndex = 0;
   while ((m = FN_RE.exec(text)) !== null) {
-    const name = m[1] ?? m[2];
+    const name = m[1];
+    if (!name) continue;
+    const id = `${filePath}::${name}`;
+    nodes.push({ id, label: name, type: 'fn', filePath, meta: { parent: filePath } });
+    edges.push({ source: filePath, target: id, kind: 'declares' });
+  }
+
+  // Class declarations
+  CLASS_RE.lastIndex = 0;
+  while ((m = CLASS_RE.exec(text)) !== null) {
+    const name = m[1];
+    if (!name) continue;
+    const id = `${filePath}::${name}`;
+    nodes.push({ id, label: name, type: 'class', filePath, meta: { parent: filePath } });
+    edges.push({ source: filePath, target: id, kind: 'declares' });
+  }
+
+  // Interface declarations
+  INTERFACE_RE.lastIndex = 0;
+  while ((m = INTERFACE_RE.exec(text)) !== null) {
+    const name = m[1];
+    if (!name) continue;
+    const id = `${filePath}::${name}`;
+    nodes.push({ id, label: name, type: 'interface', filePath, meta: { parent: filePath } });
+    edges.push({ source: filePath, target: id, kind: 'declares' });
+  }
+
+  // Type alias declarations
+  TYPE_RE.lastIndex = 0;
+  while ((m = TYPE_RE.exec(text)) !== null) {
+    const name = m[1];
+    if (!name) continue;
+    const id = `${filePath}::${name}`;
+    nodes.push({ id, label: name, type: 'type', filePath, meta: { parent: filePath } });
+    edges.push({ source: filePath, target: id, kind: 'declares' });
+  }
+
+  // Enum declarations
+  ENUM_RE.lastIndex = 0;
+  while ((m = ENUM_RE.exec(text)) !== null) {
+    const name = m[1];
+    if (!name) continue;
+    const id = `${filePath}::${name}`;
+    nodes.push({ id, label: name, type: 'enum', filePath, meta: { parent: filePath } });
+    edges.push({ source: filePath, target: id, kind: 'declares' });
+  }
+
+  // Const/arrow function declarations
+  CONST_RE.lastIndex = 0;
+  while ((m = CONST_RE.exec(text)) !== null) {
+    const name = m[1];
     if (!name) continue;
     const id = `${filePath}::${name}`;
     nodes.push({ id, label: name, type: 'fn', filePath, meta: { parent: filePath } });
@@ -58,10 +118,6 @@ export function detectTs(filePath: string, text: string, allFiles: Set<string>):
   return { nodes, edges };
 }
 
-/**
- * Returns a map of localName → resolvedSourceFilePath for named imports in a TS/JS file.
- * Used by buildCodeGraph for cross-file call-edge detection.
- */
 export function getNamedImports(
   filePath: string,
   text: string,
@@ -85,7 +141,6 @@ export function getNamedImports(
     }
     if (!sourceFile) continue;
     for (const part of m[1].split(',')) {
-      // handle "foo as bar" → use original name "foo" to match export, map to local name "bar"
       const parts = part.trim().split(/\s+as\s+/);
       const exportedName = parts[0].trim();
       const localName = (parts[1] ?? parts[0]).trim();
@@ -93,4 +148,44 @@ export function getNamedImports(
     }
   }
   return result;
+}
+
+export function getAllExports(
+  filePath: string,
+  text: string
+): { name: string; type: string }[] {
+  const exports: { name: string; type: string }[] = [];
+  
+  const fnRe = /(?:export\s+)?(?:async\s+)?function\s+(\w+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = fnRe.exec(text)) !== null) {
+    if (m[1]) exports.push({ name: m[1], type: 'fn' });
+  }
+
+  const classRe = /(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/g;
+  while ((m = classRe.exec(text)) !== null) {
+    if (m[1]) exports.push({ name: m[1], type: 'class' });
+  }
+
+  const interfaceRe = /(?:export\s+)?interface\s+(\w+)/g;
+  while ((m = interfaceRe.exec(text)) !== null) {
+    if (m[1]) exports.push({ name: m[1], type: 'interface' });
+  }
+
+  const typeRe = /(?:export\s+)?type\s+(\w+)\s*=/g;
+  while ((m = typeRe.exec(text)) !== null) {
+    if (m[1]) exports.push({ name: m[1], type: 'type' });
+  }
+
+  const enumRe = /(?:export\s+)?(?:const\s+)?enum\s+(\w+)/g;
+  while ((m = enumRe.exec(text)) !== null) {
+    if (m[1]) exports.push({ name: m[1], type: 'enum' });
+  }
+
+  const constRe = /(?:export\s+)?const\s+(\w+)\s*=/g;
+  while ((m = constRe.exec(text)) !== null) {
+    if (m[1]) exports.push({ name: m[1], type: 'const' });
+  }
+
+  return exports;
 }

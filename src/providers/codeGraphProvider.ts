@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import * as path from 'path';
 import { buildCodeGraph } from '../codenode';
 import { defaultCodeGraphSettings } from '../settings';
@@ -216,6 +215,7 @@ function buildHtml(wsPath: string): string {
   <input id="search" placeholder="Filter nodes…" autocomplete="off"/>
   <button class="tbtn" id="btn-panel"   title="Open as full panel">⬡</button>
   <button class="tbtn" id="btn-eye" title="Toggle UI">👁</button>
+  <button class="tbtn" id="btn-codeflow" title="Switch to CodeFlow">⟷</button>
   <button id="btn-settings" title="Open VS Code Settings">⚙</button>
 </div>
 <div id="canvas-wrap"><canvas id="c"></canvas></div>
@@ -230,7 +230,16 @@ function buildHtml(wsPath: string): string {
 </div>
 
 <div id="settings-panel">
-  <div class="settings-header">Graph Dynamics</div>
+  <div class="settings-header">Graph Settings</div>
+  <div class="setting-row">
+    <label><span>Edge Direction</span></label>
+    <select id="edge-direction" style="background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:4px;padding:2px 4px;font-size:11px;width:100%">
+      <option value="straight">Straight</option>
+      <option value="curved">Curved</option>
+      <option value="arrow">Arrow</option>
+      <option value="curved-arrow">Curved + Arrow</option>
+    </select>
+  </div>
   <div class="setting-row">
     <label><span>Repulsion</span><span id="val-repel">9000</span></label>
     <input type="range" id="slider-repel" min="1000" max="30000" value="9000" step="500"/>
@@ -315,6 +324,7 @@ let CENTER_K    = 0.008;
 const REPEL_CUTOFF= 350;
 let ALPHA_DECAY = 0.994;  // may be tightened for large graphs
 const MIN_ALPHA   = 0.001;
+let EDGE_DIRECTION = 'straight';
 
 // ── State ────────────────────────────────────────────────────────────────────
 let nodes = [];   // { id, label, type, filePath, x, y, vx, vy, r, col, parentId?, pinned? }
@@ -702,13 +712,41 @@ function render() {
     const A = nodes[e.si], B = nodes[e.ti];
     const isSel = (e.si === selected || e.ti === selected);
     ctx.beginPath();
-    ctx.moveTo(A.x, A.y);
-    ctx.lineTo(B.x, B.y);
+    
+    if (EDGE_DIRECTION === 'curved' || EDGE_DIRECTION === 'curved-arrow') {
+      const mx = (A.x + B.x) / 2;
+      const my = (A.y + B.y) / 2 - 30;
+      ctx.moveTo(A.x, A.y);
+      ctx.quadraticCurveTo(mx, my, B.x, B.y);
+    } else {
+      ctx.moveTo(A.x, A.y);
+      ctx.lineTo(B.x, B.y);
+    }
+    
     ctx.strokeStyle = isSel
       ? (e.kind === 'import' ? 'rgba(78,201,176,0.75)' : e.kind === 'call' ? 'rgba(220,180,120,0.80)' : 'rgba(197,134,192,0.75)')
       : (COLORS['edge_' + e.kind] || 'rgba(150,150,150,0.18)');
     ctx.lineWidth = isSel ? 1.5 / z : 0.8 / z;
     ctx.stroke();
+
+    if (EDGE_DIRECTION === 'arrow' || EDGE_DIRECTION === 'curved-arrow') {
+      const dx = B.x - A.x, dy = B.y - A.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const nx = dx / len, ny = dy / len;
+      const arrowX = B.x - nx * (B.r + 4);
+      const arrowY = B.y - ny * (B.r + 4);
+      const arrowSize = 8 / z;
+      const angle = Math.atan2(ny, nx);
+      ctx.beginPath();
+      ctx.moveTo(arrowX, arrowY);
+      ctx.lineTo(arrowX - arrowSize * Math.cos(angle - Math.PI / 6), arrowY - arrowSize * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(arrowX - arrowSize * Math.cos(angle + Math.PI / 6), arrowY - arrowSize * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fillStyle = isSel
+        ? (e.kind === 'import' ? 'rgba(78,201,176,0.75)' : e.kind === 'call' ? 'rgba(220,180,120,0.80)' : 'rgba(197,134,192,0.75)')
+        : (COLORS['edge_' + e.kind] || 'rgba(150,150,150,0.18)');
+      ctx.fill();
+    }
   }
 
   // Nodes
@@ -1075,6 +1113,11 @@ document.getElementById('slider-center').addEventListener('input', function() {
   kickSim(0.2);
 });
 
+document.getElementById('edge-direction').addEventListener('change', function() {
+  EDGE_DIRECTION = this.value;
+  render();
+});
+
 document.getElementById('btn-refresh').addEventListener('click', () => {
   document.getElementById('loading').style.display = 'flex';
   vscode.postMessage({ type: 'refresh', showFns });
@@ -1090,6 +1133,11 @@ document.getElementById('btn-fns').addEventListener('click', function() {
 
 document.getElementById('btn-panel').addEventListener('click', () => {
   vscode.postMessage({ type: 'openPanel' });
+});
+
+document.getElementById('btn-codeflow').addEventListener('click', function() {
+  this.classList.toggle('active');
+  vscode.postMessage({ type: 'switchToCodeFlow', active: this.classList.contains('active') });
 });
 
 document.getElementById('search').addEventListener('input', function() {
@@ -1134,6 +1182,71 @@ resize();
 vscode.postMessage({ type: 'ready', showFns: false });
 
 })();
+</script>
+</body>
+</html>`;
+}
+
+// ─── CodeFlow HTML (React Flow) ──────────────────────────────────────────────
+
+function buildCodeFlowHtml(wsPath: string, _webview: vscode.Webview): string {
+  const scriptUri = _webview.asWebviewUri(vscode.Uri.file(path.join(wsPath, 'dist', 'codeFlow.js')));
+  
+  return /* html */`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CodeFlow</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;
+    background:var(--vscode-sideBar-background,var(--vscode-editor-background));
+    color:var(--vscode-editor-foreground);
+    font:12px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+  #toolbar{
+    position:fixed;top:0;left:0;right:0;height:36px;
+    display:flex;align-items:center;gap:6px;padding:0 8px;
+    background:var(--vscode-sideBar-background,var(--vscode-editor-background));
+    border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));
+    z-index:10;flex-shrink:0}
+  .tbtn{
+    padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;
+    background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));
+    border:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));
+    color:var(--vscode-editor-foreground);white-space:nowrap}
+  .tbtn:hover{background:var(--vscode-list-hoverBackground)}
+  .tbtn.active{
+    background:var(--vscode-button-background,rgba(0,120,212,.9));
+    color:var(--vscode-button-foreground,#fff);
+    border-color:transparent}
+  #app-wrap{position:fixed;top:36px;left:0;right:0;bottom:0}
+  #loading{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:12px;
+    background:var(--vscode-sideBar-background,var(--vscode-editor-background,rgba(30,30,30,.95)));z-index:20}
+  .spinner{
+    width:28px;height:28px;border-radius:50%;
+    border:3px solid var(--vscode-panel-border,rgba(128,128,128,.3));
+    border-top-color:var(--vscode-textLink-foreground,#4ec9b0);
+    animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button class="tbtn active" id="btn-normal" title="Switch to Normal Graph">Normal</button>
+</div>
+<div id="app-wrap">
+  <div id="loading"><div class="spinner"></div><span>Loading CodeFlow…</span></div>
+  <div id="app"></div>
+</div>
+<script src="${scriptUri}"></script>
+<script>
+  document.getElementById('btn-normal').addEventListener('click', function() {
+    document.getElementById('loading').style.display = 'flex';
+    vscode.postMessage({ type: 'switchToCodeFlow', active: false });
+  });
 </script>
 </body>
 </html>`;
@@ -1202,6 +1315,12 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'openUrl') {
         // open URL using Ultraview's openUrl command (uses Simple Browser)
         try { vscode.commands.executeCommand('ultraview.openUrl', String(msg.url)); } catch (e) { /* ignore */ }
+      } else if (msg.type === 'switchToCodeFlow') {
+        if (msg.active) {
+          panel.webview.html = buildCodeFlowHtml(wsRoot, panel.webview);
+        } else {
+          panel.webview.html = buildHtml(wsRoot);
+        }
       }
       // openPanel from inside a panel = no-op
     });
@@ -1234,6 +1353,20 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
       case 'saveHiddenTypes':
         this._saveHiddenTypes(msg.hiddenTypes as string[]);
         break;
+      case 'switchToCodeFlow':
+        this._switchToCodeFlow(webview, msg.active as boolean);
+        break;
+    }
+  }
+
+  private async _switchToCodeFlow(webview: vscode.Webview, active: boolean): Promise<void> {
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    if (active) {
+      webview.html = buildCodeFlowHtml(wsRoot, webview);
+      await sendGraph(webview, true);
+    } else {
+      webview.html = buildHtml(wsRoot);
+      await sendGraph(webview, false);
     }
   }
 

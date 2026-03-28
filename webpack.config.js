@@ -16,17 +16,16 @@ const config = {
   },
   externals: {
     vscode: 'commonjs vscode',
-    // duckdb is optional native module — graceful fallback at runtime
     duckdb: 'commonjs duckdb'
   },
   resolve: {
-    extensions: ['.ts', '.js'],
+    extensions: ['.ts', '.tsx', '.js', '.jsx'],
     fallback: { crypto: false, path: false, fs: false }
   },
   module: {
     rules: [
       {
-        test: /\.ts$/,
+        test: /\.tsx?$/,
         exclude: /node_modules/,
         use: 'ts-loader'
       }
@@ -39,16 +38,6 @@ const config = {
           from: 'node_modules/sql.js/dist/sql-wasm.wasm',
           to: 'sql-wasm.wasm'
         }
-          ,
-          // ensure webview HTML panels are available in the packaged extension
-          {
-            from: 'src/git/gitPanel.html',
-            to: 'gitPanel.html'
-          },
-          {
-            from: 'src/projects/projectsPanel.html',
-            to: 'projectsPanel.html'
-          }
       ]
     })
   ],
@@ -56,4 +45,40 @@ const config = {
   infrastructureLogging: { level: 'log' }
 };
 
-module.exports = config;
+/** @type {import('webpack').Configuration} */
+const webviewConfig = {
+  target: 'web',
+  mode: 'production',
+  entry: {
+    codeFlow: './src/webview/codeFlowApp.tsx'
+  },
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: '[name].js',
+    libraryTarget: 'window',
+    publicPath: './'
+  },
+  resolve: {
+    extensions: ['.tsx', '.ts', '.js', '.jsx']
+  },
+  module: {
+    rules: [
+      {
+        test: /\.tsx?$/,
+        exclude: /node_modules/,
+        use: {
+          loader: 'ts-loader',
+          options: { transpileOnly: true }
+        }
+      },
+      {
+        test: /\.css$/,
+        use: ['style-loader', 'css-loader']
+      }
+    ]
+  },
+  devtool: 'source-map',
+  infrastructureLogging: { level: 'log' }
+};
+
+module.exports = [config, webviewConfig];

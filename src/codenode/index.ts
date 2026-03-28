@@ -4,7 +4,7 @@
 export interface CodeNode {
   id: string;
   label: string;
-  type: string; // e.g. 'ts', 'py', 'md', 'sql', 'url', 'db', etc.
+  type: string;
   filePath?: string;
   meta?: Record<string, unknown>;
 }
@@ -12,7 +12,7 @@ export interface CodeNode {
 export interface CodeEdge {
   source: string;
   target: string;
-  kind: string; // e.g. 'import', 'call', 'link', 'db', 'url', etc.
+  kind: string;
   meta?: Record<string, unknown>;
 }
 
@@ -21,7 +21,6 @@ export interface CodeGraph {
   edges: CodeEdge[];
 }
 
-// Main entrypoint: scan workspace and build a graph
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -29,11 +28,12 @@ import { detectTs, getNamedImports } from './tsDetector';
 import { detectMd } from './mdDetector';
 import { detectDb } from './dbDetector';
 
+const TYPE_NODE_TYPES = new Set(['fn', 'class', 'interface', 'type', 'enum']);
+
 export async function buildCodeGraph(): Promise<CodeGraph> {
   const wsFolders = vscode.workspace.workspaceFolders;
   if (!wsFolders || wsFolders.length === 0) return { nodes: [], edges: [] };
 
-  // Find all files (code, markdown, db)
   const pattern = new vscode.RelativePattern(wsFolders[0], '**/*');
   const exclude = '{**/node_modules/**,**/dist/**,**/.git/**,**/out/**,**/.next/**,**/build/**}';
   const uris = await vscode.workspace.findFiles(pattern, exclude, 10000);
@@ -48,7 +48,6 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
     const ext = path.extname(fp).toLowerCase();
     let text = '';
 
-    // Expand readable/text extensions so we can run detectors on more languages
     const readableExts = [
       '.ts', '.tsx', '.js', '.jsx',
       '.md', '.mdx', '.markdown',
@@ -61,34 +60,26 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
       try { text = fs.readFileSync(fp, 'utf8'); } catch {}
     }
 
-    // Ensure every file becomes at least one node so "all nodes show up for every language"
-    // We only add a generic file node when a specialized detector will not create it.
     const detectorFileExts = new Set(['.ts', '.tsx', '.js', '.jsx', '.md', '.mdx', '.markdown']);
     if (!detectorFileExts.has(ext) && !seen.has(fp)) {
-      const type = ext ? ext.slice(1) : baseName; // use extension or basename for files like Dockerfile
+      const type = ext ? ext.slice(1) : baseName;
       nodes.push({ id: fp, label: path.basename(fp), type, filePath: fp });
       seen.add(fp);
     }
 
-    // TypeScript/JS detector (will add its own file node for JS/TS files)
     const ts = detectTs(fp, text, allFiles);
     for (const n of ts.nodes) if (!seen.has(n.id)) { nodes.push(n); seen.add(n.id); }
     edges.push(...ts.edges);
 
-    // Markdown
     const md = detectMd(fp, text, allFiles);
     for (const n of md.nodes) if (!seen.has(n.id)) { nodes.push(n); seen.add(n.id); }
     edges.push(...md.edges);
 
-    // DB
     const db = detectDb(fp);
     for (const n of db.nodes) if (!seen.has(n.id)) { nodes.push(n); seen.add(n.id); }
     edges.push(...db.edges);
   }
 
-  // TODO: add more detectors (Python, SQL, config, etc)
-
-  // Deduplicate edges
   const edgeSet = new Set<string>();
   const dedupedEdges: CodeEdge[] = [];
   for (const e of edges) {
@@ -96,17 +87,17 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
     if (!edgeSet.has(key)) { edgeSet.add(key); dedupedEdges.push(e); }
   }
 
-  // ── Second pass: cross-file function-call edges ──────────────────────────
-  // Build a map: fn nodeId (file::name) → exists, plus file → exported fn names
-  const fileExports = new Map<string, Set<string>>();
+  // Build file → exported names map (including all types)
+  const fileExports = new Map<string, Map<string, string>>();
   for (const node of nodes) {
-    if (node.type === 'fn' && node.meta?.parent) {
+    if (TYPE_NODE_TYPES.has(node.type) && node.meta?.parent) {
       const parent = node.meta.parent as string;
-      if (!fileExports.has(parent)) fileExports.set(parent, new Set());
-      fileExports.get(parent)!.add(node.label);
+      if (!fileExports.has(parent)) fileExports.set(parent, new Map());
+      fileExports.get(parent)!.set(node.label, node.type);
     }
   }
 
+  // Cross-file call edges for all exported types
   const CALL_RE = /\b(\w+)\s*\(/g;
 
   for (const uri of uris) {
@@ -116,20 +107,18 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
     let text2 = '';
     try { text2 = fs.readFileSync(fp, 'utf8'); } catch { continue; }
 
-    // Map localName → `sourceFile::exportedName`
-    const importedFns = getNamedImports(fp, text2, allFiles);
-    // Keep only names that correspond to actual fn nodes
-    for (const [local, qualifiedId] of importedFns) {
-      const [srcFile, fnName] = qualifiedId.split('::');
-      if (!fileExports.get(srcFile)?.has(fnName)) importedFns.delete(local);
+    const importedItems = getNamedImports(fp, text2, allFiles);
+    for (const [local, qualifiedId] of importedItems) {
+      const [srcFile, name] = qualifiedId.split('::');
+      if (!fileExports.get(srcFile)?.has(name)) importedItems.delete(local);
     }
-    if (importedFns.size === 0) continue;
+    if (importedItems.size === 0) continue;
 
     CALL_RE.lastIndex = 0;
     let m2: RegExpExecArray | null;
     while ((m2 = CALL_RE.exec(text2)) !== null) {
       const localName = m2[1];
-      const targetId = importedFns.get(localName);
+      const targetId = importedItems.get(localName);
       if (!targetId) continue;
       const edgeKey = `${fp}→${targetId}→call`;
       if (!edgeSet.has(edgeKey)) {

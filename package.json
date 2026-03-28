@@ -3,7 +3,7 @@
   "icon": "images/icon.png",
   "displayName": "Ultraview “ All in One VS Code Extension",
   "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
-  "version": "0.2.186",
+  "version": "0.2.190",
   "publisher": "Da3n0n",
   "engines": {
     "vscode": "^1.85.0"
@@ -585,23 +585,30 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
     "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
     "@typescript-eslint/parser": "^8.57.2",
     "@vscode/vsce": "^2.24.0",
     "copy-webpack-plugin": "^14.0.0",
+    "css-loader": "^7.1.4",
     "eslint": "^9.39.4",
     "eslint-plugin-import": "^2.32.0",
     "prettier": "^3.8.1",
+    "style-loader": "^4.0.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.3.3",
     "webpack": "^5.90.0",
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "@xyflow/react": "^12.0.0",
     "marked": "^11.2.0",
     "mdb-reader": "^1.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "sql.js": "^1.11.0",
     "turndown": "^7.2.2"
   }
