@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { buildCodeGraph } from '../codenode';
+import { buildCodeGraph, buildCodeGraphStreaming } from '../codenode';
 import { defaultCodeGraphSettings } from '../settings';
 import { colorPickerStyle, colorPickerScript } from '../ui/colorPicker';
 
@@ -1189,8 +1189,8 @@ vscode.postMessage({ type: 'ready', showFns: false });
 
 // ─── CodeFlow HTML (React Flow) ──────────────────────────────────────────────
 
-function buildCodeFlowHtml(wsPath: string, _webview: vscode.Webview): string {
-  const scriptUri = _webview.asWebviewUri(vscode.Uri.file(path.join(wsPath, 'dist', 'codeFlow.js')));
+function buildCodeFlowHtml(extensionPath: string, _webview: vscode.Webview): string {
+  const scriptUri = _webview.asWebviewUri(vscode.Uri.file(path.join(extensionPath, 'dist', 'codeFlow.js')));
   
   return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -1224,7 +1224,7 @@ function buildCodeFlowHtml(wsPath: string, _webview: vscode.Webview): string {
   #loading{
     position:absolute;inset:0;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:12px;
-    background:var(--vscode-sideBar-background,var(--vscode-editor-background,rgba(30,30,30,.95)));z-index:20}
+    background:var(--vscode-sideBar-background,var(--vscode-editor-background));z-index:20}
   .spinner{
     width:28px;height:28px;border-radius:50%;
     border:3px solid var(--vscode-panel-border,rgba(128,128,128,.3));
@@ -1236,17 +1236,28 @@ function buildCodeFlowHtml(wsPath: string, _webview: vscode.Webview): string {
 <body>
 <div id="toolbar">
   <button class="tbtn active" id="btn-normal" title="Switch to Normal Graph">Normal</button>
+  <input id="search" placeholder="Search functions…" style="flex:1;min-width:0;padding:3px 7px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,rgba(128,128,128,.4));border-radius:4px;font-size:11px"/>
+  <button class="tbtn" id="btn-refresh" title="Refresh">↻</button>
 </div>
 <div id="app-wrap">
   <div id="loading"><div class="spinner"></div><span>Loading CodeFlow…</span></div>
   <div id="app"></div>
 </div>
+<script>
+  // Acquire vscode API BEFORE the React bundle loads (can only be called once)
+  window.__vscodeApi = acquireVsCodeApi();
+</script>
 <script src="${scriptUri}"></script>
 <script>
-  document.getElementById('btn-normal').addEventListener('click', function() {
-    document.getElementById('loading').style.display = 'flex';
-    vscode.postMessage({ type: 'switchToCodeFlow', active: false });
-  });
+  (function() {
+    var vscode = window.__vscodeApi;
+    document.getElementById('btn-normal').addEventListener('click', function() {
+      vscode.postMessage({ type: 'switchToCodeFlow', active: false });
+    });
+    document.getElementById('btn-refresh').addEventListener('click', function() {
+      vscode.postMessage({ type: 'requestGraph' });
+    });
+  })();
 </script>
 </body>
 </html>`;
@@ -1279,7 +1290,10 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken
   ): void {
     this._view = webviewView;
-    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.file(path.join(this.ctx.extensionPath, 'dist'))]
+    };
 
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     webviewView.webview.html = buildHtml(wsRoot);
@@ -1298,7 +1312,11 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
       'ultraview.codeGraphPanel',
       'Code Graph',
       vscode.ViewColumn.One,
-      { enableScripts: true, retainContextWhenHidden: true }
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.file(path.join(ctx.extensionPath, 'dist'))]
+      }
     );
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
     panel.webview.html = buildHtml(wsRoot);
@@ -1309,20 +1327,25 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
     });
     panel.webview.onDidReceiveMessage(msg => {
       if (msg.type === 'ready' || msg.type === 'refresh') {
-        sendGraph(panel.webview, msg.showFns ?? false);
+        if (msg.streaming) {
+          sendGraphStreaming(panel.webview);
+        } else {
+          sendGraph(panel.webview, msg.showFns ?? false);
+        }
+      } else if (msg.type === 'requestGraph') {
+        sendGraphStreaming(panel.webview);
       } else if (msg.type === 'openFile') {
         openFile(msg.path);
       } else if (msg.type === 'openUrl') {
-        // open URL using Ultraview's openUrl command (uses Simple Browser)
         try { vscode.commands.executeCommand('ultraview.openUrl', String(msg.url)); } catch (e) { /* ignore */ }
       } else if (msg.type === 'switchToCodeFlow') {
         if (msg.active) {
-          panel.webview.html = buildCodeFlowHtml(wsRoot, panel.webview);
+          panel.webview.html = buildCodeFlowHtml(ctx.extensionPath, panel.webview);
         } else {
           panel.webview.html = buildHtml(wsRoot);
+          sendGraph(panel.webview, false);
         }
       }
-      // openPanel from inside a panel = no-op
     });
   }
 
@@ -1330,7 +1353,11 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
     switch (msg.type) {
       case 'ready':
       case 'refresh':
-        sendGraph(webview, (msg.showFns as boolean) ?? false);
+        if (msg.streaming) {
+          sendGraphStreaming(webview);
+        } else {
+          sendGraph(webview, (msg.showFns as boolean) ?? false);
+        }
         break;
       case 'openFile':
         openFile(msg.path as string);
@@ -1356,17 +1383,19 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
       case 'switchToCodeFlow':
         this._switchToCodeFlow(webview, msg.active as boolean);
         break;
+      case 'requestGraph':
+        sendGraphStreaming(webview);
+        break;
     }
   }
 
-  private async _switchToCodeFlow(webview: vscode.Webview, active: boolean): Promise<void> {
-    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  private _switchToCodeFlow(webview: vscode.Webview, active: boolean): void {
     if (active) {
-      webview.html = buildCodeFlowHtml(wsRoot, webview);
-      await sendGraph(webview, true);
+      webview.html = buildCodeFlowHtml(this.ctx.extensionPath, webview);
     } else {
+      const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
       webview.html = buildHtml(wsRoot);
-      await sendGraph(webview, false);
+      sendGraph(webview, false);
     }
   }
 
@@ -1433,6 +1462,54 @@ async function sendGraph(webview: vscode.Webview, showFns: boolean): Promise<voi
     webview.postMessage({ type: 'graphData', ...data, colors, hideUI, hiddenTypes });
   } catch (err) {
     vscode.window.showErrorMessage('Code Graph error: ' + String(err));
+  }
+}
+
+function mapNode(n: { id: string; label: string; type: string; filePath?: string; meta?: Record<string, unknown> }): GNode {
+  if (n.type === 'url') {
+    const url = (n.meta && typeof n.meta.url === 'string') ? n.meta.url : (typeof n.id === 'string' && n.id.startsWith('url:') ? n.id.slice(4) : (n.filePath ?? ''));
+    return { id: n.id, label: n.label, type: 'url', filePath: url, parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined };
+  }
+  let t = n.type;
+  if (t === 'tsx') t = 'ts';
+  else if (['jsx', 'mjs', 'cjs'].includes(t)) t = 'js';
+  else if (['mdx', 'markdown'].includes(t)) t = 'md';
+  else if (['sqlite3', 'db3', 'ddb', 'mdb', 'accdb'].includes(t)) t = 'db';
+  else if (['cc', 'cxx', 'cpp', 'hh', 'hpp'].includes(t)) t = 'cpp';
+  else if (t === 'h') t = 'c';
+  else if (t === 'yml') t = 'yaml';
+  else if (['bash', 'zsh'].includes(t)) t = 'sh';
+  return {
+    id: n.id, label: n.label, type: t, filePath: n.filePath ?? '',
+    parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined
+  };
+}
+
+function mapEdge(e: { source: string; target: string; kind: string }): GEdge {
+  return {
+    source: e.source, target: e.target,
+    kind: ['import', 'declares'].includes(e.kind) ? 'import' : e.kind === 'call' ? 'call' : 'link'
+  };
+}
+
+async function sendGraphStreaming(webview: vscode.Webview): Promise<void> {
+  const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  try {
+    await buildCodeGraphStreaming((progress) => {
+      const mappedNodes = progress.nodes.map(mapNode);
+      const mappedEdges = progress.edges.map(mapEdge);
+      webview.postMessage({
+        type: 'graphBatch',
+        phase: progress.phase,
+        file: progress.file ? progress.file.replace(wsRoot.replace(/\\/g, '/') + '/', '').replace(/\\/g, '/') : undefined,
+        nodes: mappedNodes,
+        edges: mappedEdges,
+        totalFiles: progress.totalFiles,
+        scannedFiles: progress.scannedFiles
+      });
+    });
+  } catch (err) {
+    vscode.window.showErrorMessage('Code Graph streaming error: ' + String(err));
   }
 }
 
