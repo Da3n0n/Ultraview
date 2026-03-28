@@ -11,6 +11,17 @@ export default [
         ecmaVersion: 2020,
         sourceType: 'module',
       },
+      globals: {
+        // Node.js globals
+        process: 'readonly',
+        Buffer: 'readonly',
+        console: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        require: 'readonly',
+        // VS Code globals
+        acquireVsCodeApi: 'readonly',
+      },
     },
     plugins: {
       '@typescript-eslint': tseslint,
