@@ -7,18 +7,98 @@ export interface PortProcess {
     port: number;
     pid: number;
     name: string;
+    isDev?: boolean;
 }
 
-export async function getOpenPorts(): Promise<PortProcess[]> {
+const DEV_SERVER_PATTERNS = [
+    'node', 'npm', 'yarn', 'pnpm', 'bun',
+    'python', 'python2', 'python3', 'pip',
+    'ruby', 'rails', 'rake',
+    'java', 'javac', 'gradle', 'maven',
+    'go', 'godoc', 'go-run',
+    'php', 'artisan', 'composer',
+    'rustc', 'cargo', 'cargo-run',
+    'vite', 'webpack', 'rollup', 'esbuild',
+    'next', 'nuxt', 'remix', 'gatsby',
+    'django', 'flask', 'fastapi', 'uvicorn',
+    'spring-boot', 'tomcat', 'jetty',
+    'hugo', 'jekyll', 'middleman',
+    'deno', 'deno-run',
+    'podman', 'docker', 'containerd',
+    'postgres', 'mysql', 'mongod', 'redis',
+    'elasticsearch', 'kibana', 'logstash',
+    'rabbitmq', 'activemq', 'kafka',
+    'jenkins', 'travis', 'circleci',
+    'live-server', 'http-server', 'serve',
+    'parcel', 'snowpack', 'wmr',
+    'astro', 'svelte-kit', 'svelte-dev',
+    'mint', 'elixir', 'mix', 'phoenix',
+    'dotnet', 'fsharp', 'mono',
+    'lua', 'luajit', 'torch', 'th',
+    'julia', 'jupyter',
+];
+
+const DEV_PORT_RANGES: [number, number][] = [
+    [3000, 3999],
+    [5000, 5999],
+    [5173, 5180],
+    [5174, 5180],
+    [5175, 5180],
+    [5176, 5180],
+    [5177, 5180],
+    [5178, 5180],
+    [5179, 5180],
+    [5180, 5180],
+    [5170, 5200],
+    [5171, 5200],
+    [8000, 8999],
+    [8888, 8899],
+    [30001, 30100],
+    [4000, 4999],
+    [7000, 7999],
+    [9000, 9999],
+    [10000, 10999],
+    [4200, 4299],
+    [8080, 8999],
+];
+
+function isDevServerProcess(name: string): boolean {
+    const lower = name.toLowerCase();
+    if (lower.includes('code') || lower.includes('vscode')) return false;
+    if (lower.includes('electron') || lower.includes('shell')) return false;
+    for (const pattern of DEV_SERVER_PATTERNS) {
+        if (lower === pattern || lower.startsWith(pattern + ' ') || lower.includes('-' + pattern) || lower.includes('_' + pattern)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isDevPort(port: number): boolean {
+    for (const [start, end] of DEV_PORT_RANGES) {
+        if (port >= start && port <= end) return true;
+    }
+    return false;
+}
+
+export async function getOpenPorts(devOnly: boolean = false): Promise<PortProcess[]> {
     const platform = process.platform;
     try {
+        let ports: PortProcess[];
         if (platform === 'win32') {
-            return await getPortsWin32();
+            ports = await getPortsWin32();
         } else if (platform === 'darwin') {
-            return await getPortsDarwin();
+            ports = await getPortsDarwin();
         } else {
-            return await getPortsLinux();
+            ports = await getPortsLinux();
         }
+        for (const p of ports) {
+            p.isDev = isDevServerProcess(p.name) || isDevPort(p.port);
+        }
+        if (devOnly) {
+            return ports.filter(p => p.isDev);
+        }
+        return ports;
     } catch (err) {
         console.error('Failed to get ports', err);
         return [];
@@ -213,11 +293,20 @@ export async function killProcess(pid: number): Promise<void> {
     if (platform === 'win32') {
         await execAsync(`taskkill /F /PID ${pid}`);
     } else {
-        // Sends SIGTERM first, and waits 2 seconds. If process is still alive, sends SIGKILL.
         try {
             await execAsync(`kill -15 ${pid}`);
         } catch (e) {
             await execAsync(`kill -9 ${pid}`);
+        }
+    }
+}
+
+export async function killProcesses(pids: number[]): Promise<void> {
+    for (const pid of pids) {
+        try {
+            await killProcess(pid);
+        } catch (e) {
+            // continue with other processes
         }
     }
 }

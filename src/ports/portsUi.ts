@@ -27,6 +27,10 @@ export function buildPortsHtml(): string {
     background:var(--vscode-button-background,rgba(0,120,212,.9));
     color:var(--vscode-button-foreground,#fff);
     border-color:transparent}
+  .tbtn.dev-active{
+    background:rgba(35,150,70,.9);
+    color:#fff;
+    border-color:transparent}
   #search{
     flex:1;min-width:0;padding:3px 7px;
     background:var(--vscode-input-background);
@@ -59,6 +63,8 @@ export function buildPortsHtml(): string {
     background:var(--vscode-badge-background,rgba(0,120,212,.8));
     color:var(--vscode-badge-foreground,#fff);
     min-width:52px;text-align:center}
+  .port-badge.dev{
+    background:rgba(35,150,70,.8)}
   .port-info{flex:1;min-width:0;margin:0 10px}
   .port-name{
     font-weight:600;font-size:12px;margin-bottom:2px;
@@ -70,14 +76,24 @@ export function buildPortsHtml(): string {
     border:1px solid transparent;white-space:nowrap;flex-shrink:0}
   .btn-danger:hover{background:rgba(204,45,45,1)}
   .btn-danger:disabled{opacity:0.5;cursor:default}
+  .btn-kill-all{
+    padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;
+    background:rgba(204,45,45,.8);color:#fff;
+    border:1px solid transparent;white-space:nowrap;flex-shrink:0}
+  .btn-kill-all:hover{background:rgba(204,45,45,1)}
+  .btn-kill-all:disabled{opacity:0.5;cursor:default}
   .empty{
     padding:30px 10px;text-align:center;
     opacity:0.5;font-size:13px}
+  .kill-all-bar{
+    display:flex;justify-content:flex-end;padding:0 0 8px 0;
+    gap:6px}
 </style>
 </head>
 <body>
 <div id="toolbar">
   <button class="tbtn" id="btn-refresh" title="Refresh">↻</button>
+  <button class="tbtn" id="btn-dev" title="Dev Servers Only (3000,5173,etc)">⚡ Dev</button>
   <input id="search" placeholder="Filter ports or processes…" autocomplete="off"/>
   <button class="tbtn" id="btn-panel" title="Open as full panel">⬡</button>
 </div>
@@ -94,17 +110,32 @@ export function buildPortsHtml(): string {
 const vscode = acquireVsCodeApi();
 let allPorts = [];
 let filterText = '';
+let devOnly = false;
 
-document.getElementById('btn-refresh').addEventListener('click', () => {
+const btnRefresh = document.getElementById('btn-refresh');
+const btnDev = document.getElementById('btn-dev');
+const btnPanel = document.getElementById('btn-panel');
+const searchInput = document.getElementById('search');
+
+function refresh() {
   document.getElementById('content').innerHTML = '<div class="empty">Scanning…</div>';
-  vscode.postMessage({ type: 'refresh' });
+  vscode.postMessage({ type: 'refresh', devOnly });
+}
+
+btnRefresh.addEventListener('click', refresh);
+
+btnDev.addEventListener('click', () => {
+  devOnly = !devOnly;
+  btnDev.classList.toggle('active', devOnly);
+  btnDev.classList.toggle('dev-active', devOnly);
+  refresh();
 });
 
-document.getElementById('btn-panel').addEventListener('click', () => {
+btnPanel.addEventListener('click', () => {
   vscode.postMessage({ type: 'openPanel' });
 });
 
-document.getElementById('search').addEventListener('input', function() {
+searchInput.addEventListener('input', function() {
   filterText = this.value.toLowerCase();
   render(allPorts);
 });
@@ -113,6 +144,9 @@ window.addEventListener('message', e => {
   const msg = e.data;
   if (msg.type === 'state') {
     allPorts = msg.ports || [];
+    devOnly = msg.devOnly || false;
+    btnDev.classList.toggle('active', devOnly);
+    btnDev.classList.toggle('dev-active', devOnly);
     render(allPorts);
   }
 });
@@ -121,6 +155,12 @@ function killProcess(pid) {
   const btn = document.getElementById('kill-' + pid);
   if (btn) { btn.textContent = 'Killing…'; btn.disabled = true; }
   vscode.postMessage({ type: 'kill', pid });
+}
+
+function killAllDev() {
+  const devPorts = allPorts.filter(p => p.isDev);
+  if (devPorts.length === 0) return;
+  vscode.postMessage({ type: 'killAll', ports: devPorts.map(p => p.pid) });
 }
 
 function render(ports) {
@@ -132,6 +172,11 @@ function render(ports) {
   const el = document.getElementById('content');
   const st = document.getElementById('st-count');
 
+  const devPorts = ports.filter(p => p.isDev);
+  const devVisible = q
+    ? devPorts.filter(p => String(p.port).includes(q) || p.name.toLowerCase().includes(q))
+    : devPorts;
+
   if (!visible || visible.length === 0) {
     el.innerHTML = '<div class="empty">' +
       (ports.length === 0 ? 'No open listening ports found.' : 'No matches for filter.') +
@@ -141,17 +186,28 @@ function render(ports) {
   }
 
   el.innerHTML = '';
+
+  if (devPorts.length > 0 && devVisible.length > 0) {
+    const killAllBar = document.createElement('div');
+    killAllBar.className = 'kill-all-bar';
+    killAllBar.innerHTML = '<button class="btn-kill-all" id="kill-all-dev">Kill All Dev (' + devVisible.length + ')</button>';
+    killAllBar.querySelector('#kill-all-dev').addEventListener('click', killAllDev);
+    el.appendChild(killAllBar);
+  }
+
   const section = document.createElement('div');
   section.className = 'section';
-  section.innerHTML = '<div class="section-title">Listening Ports</div>';
+  section.innerHTML = '<div class="section-title">Dev Servers' + (devPorts.length > 0 ? ' (' + devVisible.length + ')' : '') + '</div>';
 
   visible.forEach(p => {
     const item = document.createElement('div');
     item.className = 'port-item';
+    const badgeClass = p.isDev ? 'port-badge dev' : 'port-badge';
+    const devTag = p.isDev ? ' <span style="font-size:9px;opacity:0.7">⚡</span>' : '';
     item.innerHTML =
-      '<div class="port-badge">:' + p.port + '</div>' +
+      '<div class="' + badgeClass + '">:' + p.port + '</div>' +
       '<div class="port-info">' +
-        '<div class="port-name" title="' + escHtml(p.name) + '">' + escHtml(p.name) + '</div>' +
+        '<div class="port-name" title="' + escHtml(p.name) + '">' + escHtml(p.name) + devTag + '</div>' +
         '<div class="port-pid">PID ' + p.pid + '</div>' +
       '</div>' +
       '<button id="kill-' + p.pid + '" class="btn-danger" onclick="killProcess(' + p.pid + ')">Kill</button>';
@@ -160,7 +216,7 @@ function render(ports) {
 
   el.appendChild(section);
   st.textContent = visible.length + (visible.length === 1 ? ' port' : ' ports') +
-    (q ? ' (filtered)' : '');
+    (q ? ' (filtered)' : '') + (devPorts.length > 0 ? ' | ' + devPorts.length + ' dev' : '');
 }
 
 function escHtml(s) {
@@ -171,10 +227,9 @@ function escHtml(s) {
     .replace(/"/g,'&quot;');
 }
 
-// expose for inline onclick
 window.killProcess = killProcess;
+window.killAllDev = killAllDev;
 
-// boot
 vscode.postMessage({ type: 'ready' });
 })();
 </script>

@@ -52,7 +52,8 @@ export function detectTs(filePath: string, text: string, allFiles: Set<string>):
     const name = m[1];
     if (!name) continue;
     const id = `${filePath}::${name}`;
-    nodes.push({ id, label: name, type: 'fn', filePath, meta: { parent: filePath } });
+    const line = text.substring(0, m.index).split('\n').length;
+    nodes.push({ id, label: name, type: 'fn', filePath, meta: { parent: filePath, line } });
     edges.push({ source: filePath, target: id, kind: 'declares' });
   }
 
@@ -62,7 +63,8 @@ export function detectTs(filePath: string, text: string, allFiles: Set<string>):
     const name = m[1];
     if (!name) continue;
     const id = `${filePath}::${name}`;
-    nodes.push({ id, label: name, type: 'class', filePath, meta: { parent: filePath } });
+    const line = text.substring(0, m.index).split('\n').length;
+    nodes.push({ id, label: name, type: 'class', filePath, meta: { parent: filePath, line } });
     edges.push({ source: filePath, target: id, kind: 'declares' });
   }
 
@@ -72,7 +74,8 @@ export function detectTs(filePath: string, text: string, allFiles: Set<string>):
     const name = m[1];
     if (!name) continue;
     const id = `${filePath}::${name}`;
-    nodes.push({ id, label: name, type: 'interface', filePath, meta: { parent: filePath } });
+    const line = text.substring(0, m.index).split('\n').length;
+    nodes.push({ id, label: name, type: 'interface', filePath, meta: { parent: filePath, line } });
     edges.push({ source: filePath, target: id, kind: 'declares' });
   }
 
@@ -82,7 +85,8 @@ export function detectTs(filePath: string, text: string, allFiles: Set<string>):
     const name = m[1];
     if (!name) continue;
     const id = `${filePath}::${name}`;
-    nodes.push({ id, label: name, type: 'type', filePath, meta: { parent: filePath } });
+    const line = text.substring(0, m.index).split('\n').length;
+    nodes.push({ id, label: name, type: 'type', filePath, meta: { parent: filePath, line } });
     edges.push({ source: filePath, target: id, kind: 'declares' });
   }
 
@@ -92,7 +96,8 @@ export function detectTs(filePath: string, text: string, allFiles: Set<string>):
     const name = m[1];
     if (!name) continue;
     const id = `${filePath}::${name}`;
-    nodes.push({ id, label: name, type: 'enum', filePath, meta: { parent: filePath } });
+    const line = text.substring(0, m.index).split('\n').length;
+    nodes.push({ id, label: name, type: 'enum', filePath, meta: { parent: filePath, line } });
     edges.push({ source: filePath, target: id, kind: 'declares' });
   }
 
@@ -102,7 +107,8 @@ export function detectTs(filePath: string, text: string, allFiles: Set<string>):
     const name = m[1];
     if (!name) continue;
     const id = `${filePath}::${name}`;
-    nodes.push({ id, label: name, type: 'fn', filePath, meta: { parent: filePath } });
+    const line = text.substring(0, m.index).split('\n').length;
+    nodes.push({ id, label: name, type: 'fn', filePath, meta: { parent: filePath, line } });
     edges.push({ source: filePath, target: id, kind: 'declares' });
   }
 

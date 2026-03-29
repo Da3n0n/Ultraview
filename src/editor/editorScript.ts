@@ -526,6 +526,16 @@ export function getEditorScript(): string {
     if (msg.type === 'setContent') {
       editor.value = msg.content;
       updatePreview();
+    } else if (msg.type === 'scrollToLine' && typeof msg.line === 'number') {
+      const lineNum = msg.line;
+      const lines = editor.value.split('\n');
+      let charOffset = 0;
+      for (let i = 0; i < lineNum - 1 && i < lines.length; i++) {
+        charOffset += lines[i].length + 1;
+      }
+      editor.focus({ preventScroll: false });
+      editor.setSelectionRange(charOffset, charOffset);
+      editor.scrollTop = Math.max(0, (lineNum - 5) * 20);
     }
   });
 

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { MarkdownDocument, buildEditorPage } from '../editor';
+import { getMarkdownScrollLine } from './markdownScrollState';
 
 export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDocument> {
   private readonly _onDidChangeCustomDocument = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<MarkdownDocument>>();
@@ -63,6 +64,10 @@ export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDoc
       switch (msg.type) {
         case 'ready':
           updateContent();
+          const pendingLine = getMarkdownScrollLine(filePath);
+          if (pendingLine) {
+            panel.webview.postMessage({ type: 'scrollToLine', line: pendingLine });
+          }
           break;
         case 'save':
           if (msg.content !== undefined) {
