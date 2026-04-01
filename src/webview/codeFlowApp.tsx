@@ -55,12 +55,29 @@ const TYPE_LABELS: Record<string, string> = {
   interface: 'Interface', type: 'Type', enum: 'Enum', const: 'Const',
 };
 
+const CODEFLOW_FRAME_TYPES = new Set([
+  'ts', 'js', 'py', 'rs', 'go', 'cpp', 'c', 'cs', 'java', 'php', 'rb', 'swift', 'kt',
+  'css', 'scss', 'sh', 'ps1'
+]);
+
+const CODEFLOW_EXCLUDED_FILE_NAMES = new Set([
+  '.gitignore', '.prettierignore', '.prettierrc', '.vscodeignore', 'license', 'procfile'
+]);
+
+const CODEFLOW_EXCLUDED_EXTENSIONS = new Set([
+  '.vsix', '.zip', '.html', '.htm', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.ico',
+  '.webp', '.bmp', '.lock', '.log', '.map', '.min.js', '.min.css'
+]);
+
 // ─── Custom Node ──────────────────────────────────────────────────────────────
 
 interface CustomNodeData {
   label: string;
   nodeType: string;
   filePath?: string;
+  line?: number;
+  snippet?: string;
+  snippetStartLine?: number;
   [key: string]: unknown;
 }
 
@@ -68,24 +85,26 @@ function CustomNode({ data }: { data: CustomNodeData }) {
   const color = TYPE_COLORS[data.nodeType] || '#888';
   const label = TYPE_LABELS[data.nodeType] || data.nodeType;
   const isFileNode = Boolean(data.isFileNode);
+  const snippet = typeof data.snippet === 'string' ? data.snippet : '';
+  const snippetStartLine = typeof data.snippetStartLine === 'number' ? data.snippetStartLine : undefined;
   return (
     <>
       <Handle type="target" position={Position.Left} style={{ background: color, border: 'none', width: 8, height: 8 }} />
       <div style={{
-      padding: isFileNode ? '10px 14px' : '8px 12px',
+      padding: isFileNode ? '10px 14px' : '10px 12px',
       border: `2px solid ${color}`,
       borderRadius: isFileNode ? '12px' : '8px',
       background: isFileNode ? 'rgba(78,201,176,0.10)' : 'var(--vscode-editor-background, #1e1e1e)',
       color: 'var(--vscode-editor-foreground, #fff)',
       fontSize: '11px',
-      minWidth: isFileNode ? '140px' : '100px',
-      maxWidth: '200px',
+      minWidth: isFileNode ? '220px' : '210px',
+      maxWidth: '280px',
     }}>
       <div style={{ fontWeight: 600, marginBottom: '2px', color }}>{isFileNode ? 'File' : label}</div>
       <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {data.label}
       </div>
-      {data.nodeType === 'fn' && data.filePath && (
+      {(data.filePath || data.line) && (
         <div style={{
           marginTop: '4px',
           fontSize: '9px',
@@ -95,8 +114,28 @@ function CustomNode({ data }: { data: CustomNodeData }) {
           textOverflow: 'ellipsis',
           opacity: 0.8
         }}>
-          {data.filePath.split(/[/\\]/).pop()}
+          {data.filePath?.split(/[/\\]/).pop()}
+          {typeof data.line === 'number' ? `:${data.line}` : ''}
         </div>
+      )}
+      {snippet && (
+        <pre style={{
+          marginTop: '8px',
+          padding: '8px 10px',
+          borderRadius: '8px',
+          background: 'rgba(0, 0, 0, 0.22)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          color: 'var(--vscode-editor-foreground, #d4d4d4)',
+          fontSize: '10px',
+          lineHeight: 1.45,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          fontFamily: "Consolas, 'Courier New', monospace",
+          maxHeight: '110px',
+          overflow: 'hidden',
+        }}>
+          {snippetStartLine ? `${snippetStartLine}| ` : ''}{snippet}
+        </pre>
       )}
     </div>
       <Handle type="source" position={Position.Right} style={{ background: color, border: 'none', width: 8, height: 8 }} />
@@ -151,6 +190,46 @@ function getParentFile(node: CodeNode): string | undefined {
 
 function getFrameLabel(filePath: string): string {
   return filePath.split(/[/\\]/).pop() || filePath;
+}
+
+function isExcludedCodeFlowFilePath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+  const fileName = normalized.split('/').pop() || normalized;
+  if (CODEFLOW_EXCLUDED_FILE_NAMES.has(fileName)) return true;
+  return Array.from(CODEFLOW_EXCLUDED_EXTENSIONS).some(ext => fileName.endsWith(ext));
+}
+
+function isCodeFlowFrameFile(node: CodeNode, filePath: string): boolean {
+  if (!filePath || isExcludedCodeFlowFilePath(filePath)) return false;
+  return CODEFLOW_FRAME_TYPES.has(node.type);
+}
+
+function filterCodeFlowGraph(nodes: CodeNode[], edges: CodeEdge[]) {
+  const fileNodes = new Map<string, CodeNode>();
+  for (const node of nodes) {
+    if (node.filePath && node.id === node.filePath) {
+      fileNodes.set(node.filePath, node);
+    }
+  }
+
+  const allowedFrameFiles = new Set<string>();
+  for (const [filePath, node] of fileNodes) {
+    if (isCodeFlowFrameFile(node, filePath)) {
+      allowedFrameFiles.add(filePath);
+    }
+  }
+
+  const filteredNodes = nodes.filter((node) => {
+    const parentFile = getParentFile(node);
+    if (!parentFile || !allowedFrameFiles.has(parentFile)) return false;
+    if (node.type === 'url') return false;
+    return true;
+  });
+
+  const filteredNodeIds = new Set(filteredNodes.map(node => node.id));
+  const filteredEdges = edges.filter((edge) => filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target));
+
+  return { nodes: filteredNodes, edges: filteredEdges, allowedFrameFiles };
 }
 
 function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
@@ -434,20 +513,24 @@ function App() {
         const newRfNodes: unknown[] = [];
         const newRfEdges: unknown[] = [];
         const edgeSet = new Set<string>();
+        const filteredGraph = filterCodeFlowGraph(allNodes, allEdges);
+        const filteredNodes = filteredGraph.nodes;
+        const filteredEdges = filteredGraph.edges;
 
-        const nodeById = new Map(allNodes.map(node => [node.id, node]));
+        const nodeById = new Map(filteredNodes.map(node => [node.id, node]));
         const frameGroups = new Map<string, CodeNode[]>();
-        for (const node of allNodes) {
+        for (const node of filteredNodes) {
           const parentFile = getParentFile(node);
           if (!parentFile) continue;
           if (!frameGroups.has(parentFile)) frameGroups.set(parentFile, []);
           frameGroups.get(parentFile)!.push(node);
         }
 
-        const layout = layoutGraph(allNodes, allEdges);
+        const layout = layoutGraph(filteredNodes, filteredEdges);
 
         // Add frame nodes
         for (const [filePath, framePos] of layout.framePositions) {
+          if (!filteredGraph.allowedFrameFiles.has(filePath)) continue;
           const childCount = frameGroups.get(filePath)?.length ?? 0;
           newRfNodes.push({
             id: `frame:${filePath}`,
@@ -466,7 +549,7 @@ function App() {
         }
 
         // Add all file-scoped nodes inside their frame, including the file node itself.
-        for (const node of allNodes) {
+        for (const node of filteredNodes) {
           const parentFile = getParentFile(node);
           if (!parentFile) continue;
           const pos = layout.nodePositions.get(node.id);
@@ -477,14 +560,22 @@ function App() {
             id: node.id,
             type: 'custom',
             position: pos,
-            data: { label: node.label, nodeType: node.type, filePath: node.filePath, line, isFileNode },
+            data: {
+              label: node.label,
+              nodeType: node.type,
+              filePath: node.filePath,
+              line,
+              isFileNode,
+              snippet: typeof node.meta?.snippet === 'string' ? node.meta.snippet : undefined,
+              snippetStartLine: typeof node.meta?.snippetStartLine === 'number' ? node.meta.snippetStartLine : undefined,
+            },
             parentId: `frame:${parentFile}`,
             extent: 'parent' as const,
           });
         }
 
         // Keep edges attached to the real nodes so cross-file usage stays visible.
-        for (const e of allEdges) {
+        for (const e of filteredEdges) {
           const key = `${e.source}-${e.target}-${e.kind}`;
           if (edgeSet.has(key)) continue;
           edgeSet.add(key);
@@ -506,7 +597,7 @@ function App() {
         setRfNodes(newRfNodes);
         setRfEdges(newRfEdges);
         setPhase('done');
-        setProgress({ scanned: allNodes.length, total: allNodes.length });
+        setProgress({ scanned: filteredNodes.length, total: filteredNodes.length });
         return;
       }
 

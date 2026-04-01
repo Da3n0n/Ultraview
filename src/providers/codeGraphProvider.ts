@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { buildCodeGraph, buildCodeGraphStreaming } from '../codenode';
 import { defaultCodeGraphSettings } from '../settings';
 import { colorPickerStyle, colorPickerScript } from '../ui/colorPicker';
@@ -12,6 +13,7 @@ interface GNode {
   type: string;  // 'ts'|'js'|'md'|'fn'|'url'|'cpp'|'py'|'rs'|'go'|… (extension or special type)
   filePath: string;
   parentId?: string;    // for function nodes, parent file id
+  meta?: Record<string, unknown>;
 }
 
 interface GEdge {
@@ -109,11 +111,51 @@ function resolveWikiLink(fromFile: string, name: string, allFiles: Set<string>):
   return null;
 }
 
+function getFileLinesCached(filePath: string, cache: Map<string, string[]>): string[] | null {
+  if (cache.has(filePath)) return cache.get(filePath) ?? null;
+  try {
+    const lines = fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n').split('\n');
+    cache.set(filePath, lines);
+    return lines;
+  } catch {
+    cache.set(filePath, []);
+    return null;
+  }
+}
+
+function buildNodeSnippet(filePath: string, meta: Record<string, unknown> | undefined, cache: Map<string, string[]>): Record<string, unknown> | undefined {
+  if (!filePath) return meta;
+  const lines = getFileLinesCached(filePath, cache);
+  if (!lines || lines.length === 0) return meta;
+
+  let startLine = typeof meta?.line === 'number' ? Math.max(1, Math.floor(meta.line)) : 1;
+  let endLine = startLine;
+
+  if (typeof meta?.line === 'number') {
+    endLine = Math.min(lines.length, startLine + 2);
+  } else {
+    const firstNonEmpty = lines.findIndex(line => line.trim().length > 0);
+    startLine = firstNonEmpty >= 0 ? firstNonEmpty + 1 : 1;
+    endLine = Math.min(lines.length, startLine + 3);
+  }
+
+  const snippet = lines
+    .slice(startLine - 1, endLine)
+    .map(line => line.trimEnd())
+    .join('\n')
+    .trim();
+
+  if (!snippet) return meta;
+  return { ...(meta ?? {}), snippet, snippetStartLine: startLine };
+}
+
 async function buildGraph(includeFns: boolean): Promise<GraphData> {
   // Use the new universal code graph builder
   const cg = await buildCodeGraph();
+  const snippetCache = new Map<string, string[]>();
   // Map CodeNode/CodeEdge to GNode/GEdge for the view
   const nodes: GNode[] = cg.nodes.map(n => {
+    const meta = buildNodeSnippet(n.filePath ?? '', n.meta, snippetCache);
     // Preserve URL nodes so the webview can open external links
     if (n.type === 'url') {
       const url = (n.meta && typeof n.meta.url === 'string') ? n.meta.url : (typeof n.id === 'string' && n.id.startsWith('url:') ? n.id.slice(4) : (n.filePath ?? ''));
@@ -122,7 +164,8 @@ async function buildGraph(includeFns: boolean): Promise<GraphData> {
         label: n.label,
         type: 'url' as const,
         filePath: url,
-        parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined
+        parentId: (meta && typeof meta.parent === 'string') ? meta.parent : undefined,
+        meta
       } as GNode;
     }
 
@@ -141,7 +184,8 @@ async function buildGraph(includeFns: boolean): Promise<GraphData> {
       label: n.label,
       type: t,
       filePath: n.filePath ?? '',
-      parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined
+      parentId: (meta && typeof meta.parent === 'string') ? meta.parent : undefined,
+      meta
     } as GNode;
   });
   const edges: GEdge[] = cg.edges.map(e => ({
@@ -216,25 +260,25 @@ function buildHtml(wsPath: string, initialState: ProjectCodeGraphState): string 
     border-top-color:var(--vscode-textLink-foreground,#4ec9b0);
     animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
-  #legend{
-    position:fixed;bottom:28px;right:8px;display:flex;flex-direction:column;
-    gap:4px;font-size:11px;color:var(--vscode-descriptionForeground);
-    background:var(--vscode-sideBar-background,rgba(30,30,30,.9));
-    padding:8px;border-radius:8px;
-    border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));
-    min-width:130px;z-index:10}
   #settings-panel{
-    position:fixed;top:44px;right:8px;display:flex;flex-direction:column;
-    gap:8px;font-size:11px;color:var(--vscode-descriptionForeground);
+    position:fixed;top:44px;left:8px;bottom:32px;display:flex;flex-direction:column;
+    gap:10px;font-size:11px;color:var(--vscode-descriptionForeground);
     background:var(--vscode-sideBar-background,rgba(30,30,30,.9));
     padding:10px;border-radius:8px;
     border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));
-    min-width:180px;z-index:10}
-  .ui-hidden #legend{display:none !important;}
-  .ui-hidden #settings-panel{display:none !important;}
+    width:240px;max-width:calc(100vw - 16px);overflow:hidden;z-index:10}
+  .settings-hidden .graph-settings-only{display:none !important;}
+  .legend-hidden #legend-section{display:none !important;}
+  .panels-hidden #settings-panel{display:none !important;}
+  .settings-scroll{display:flex;flex-direction:column;gap:10px;overflow:auto;padding-right:2px}
+  .settings-section{
+    display:flex;flex-direction:column;gap:6px;padding:8px;border-radius:8px;
+    background:var(--vscode-editorWidget-background,rgba(255,255,255,.03));
+    border:1px solid var(--vscode-panel-border,rgba(128,128,128,.18))}
   .leg{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 6px;border-radius:4px}
   .leg:hover{background:var(--vscode-list-hoverBackground,rgba(255,255,255,.1))}
   .leg.hidden{opacity:0.4}
+  #legend{display:flex;flex-direction:column;gap:4px}
   .dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(255,255,255,.25)}
   .eye-toggle{width:16px;height:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;border-radius:3px;transition:background .15s;font-size:11px}
   .eye-toggle:hover{background:var(--vscode-list-hoverBackground,rgba(255,255,255,.15))}
@@ -250,6 +294,9 @@ function buildHtml(wsPath: string, initialState: ProjectCodeGraphState): string 
     background:var(--vscode-button-background,rgba(0,120,212,.9));
     border:1px solid rgba(255,255,255,.3);cursor:pointer}
   .settings-header{font-weight:600;font-size:11px;margin-bottom:2px;opacity:.9}
+  .settings-copy{font-size:10px;line-height:1.45;opacity:.8}
+  .controls-list{display:flex;flex-direction:column;gap:4px;font-size:10px;line-height:1.45}
+  .controls-list span{opacity:.72}
   #btn-settings{margin-left:auto;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));border:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));color:var(--vscode-editor-foreground)}
   ${colorPickerStyle}
 </style>
@@ -273,36 +320,38 @@ function buildHtml(wsPath: string, initialState: ProjectCodeGraphState): string 
   <span id="st-selected"></span>
 </div>
 <div id="tooltip"></div>
-<div id="legend">
-  <!-- populated dynamically by buildLegend() based on what node types exist in this project -->
-</div>
-
 <div id="settings-panel">
   <div class="settings-header">Graph Settings</div>
-  <div class="setting-row">
-    <label><span>Edge Direction</span></label>
-    <select id="edge-direction" style="background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:4px;padding:2px 4px;font-size:11px;width:100%">
-      <option value="straight">Straight</option>
-      <option value="curved">Curved</option>
-      <option value="arrow">Arrow</option>
-      <option value="curved-arrow">Curved + Arrow</option>
-    </select>
-  </div>
-  <div class="setting-row">
-    <label><span>Repulsion</span><span id="val-repel">9000</span></label>
-    <input type="range" id="slider-repel" min="1000" max="30000" value="9000" step="500"/>
-  </div>
-  <div class="setting-row">
-    <label><span>Spring Length</span><span id="val-spring">130</span></label>
-    <input type="range" id="slider-spring" min="40" max="300" value="130" step="10"/>
-  </div>
-  <div class="setting-row">
-    <label><span>Damping</span><span id="val-damp">0.65</span></label>
-    <input type="range" id="slider-damp" min="0.3" max="0.95" value="0.65" step="0.05"/>
-  </div>
-  <div class="setting-row">
-    <label><span>Center Pull</span><span id="val-center">0.008</span></label>
-    <input type="range" id="slider-center" min="0.001" max="0.05" value="0.008" step="0.001"/>
+  <div class="settings-copy">Dense projects are easier to read when the graph stays interactive. Use the canvas to drag groups apart and filter by type from the legend below.</div>
+  <div class="settings-scroll">
+    <div class="settings-section">
+      <div class="settings-header">Connection Style</div>
+      <div class="setting-row">
+        <label><span>Edge Direction</span></label>
+        <select id="edge-direction" style="background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:4px;padding:2px 4px;font-size:11px;width:100%">
+          <option value="straight">Straight</option>
+          <option value="curved">Curved</option>
+          <option value="arrow">Arrow</option>
+          <option value="curved-arrow">Curved + Arrow</option>
+        </select>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-header">Legend</div>
+      <div class="settings-copy">Click a row to hide that type. Click the color dot to customize it.</div>
+      <div id="legend">
+        <!-- populated dynamically by buildLegend() based on what node types exist in this project -->
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-header">Controls</div>
+      <div class="controls-list">
+        <div><strong>Left drag</strong> <span>move selected nodes or pan empty space</span></div>
+        <div><strong>Right drag</strong> <span>box-select clusters you want to separate</span></div>
+        <div><strong>Wheel</strong> <span>zoom toward the cursor</span></div>
+        <div><strong>Fit</strong> <span>recenters everything after you reorganize the layout</span></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -401,17 +450,72 @@ const vscode = acquireVsCodeApi();
 const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
 const tooltip = document.getElementById('tooltip');
+const legacyUiToggle = document.getElementById('btn-eye');
+let btnToggleSettings = null;
+let btnToggleLegend = null;
+
+function updatePanelToggleButtons() {
+  if (btnToggleSettings) btnToggleSettings.classList.toggle('active', !document.body.classList.contains('settings-hidden'));
+  if (btnToggleLegend) btnToggleLegend.classList.toggle('active', !document.body.classList.contains('legend-hidden'));
+}
+
+function syncPanelVisibility() {
+  const hideSettings = document.body.classList.contains('settings-hidden');
+  const hideLegend = document.body.classList.contains('legend-hidden');
+  document.body.classList.toggle('panels-hidden', hideSettings && hideLegend);
+  updatePanelToggleButtons();
+}
+
+function setupIndependentPanelToggles() {
+  const settingsPanel = document.getElementById('settings-panel');
+  const toolbarPanelButton = document.getElementById('btn-panel');
+  if (!settingsPanel || !toolbarPanelButton) return;
+
+  const introCopy = settingsPanel.querySelector('.settings-copy');
+  if (introCopy) introCopy.classList.add('graph-settings-only');
+
+  settingsPanel.querySelectorAll('.settings-section').forEach(function(section) {
+    const title = section.querySelector('.settings-header');
+    const label = title ? title.textContent.trim() : '';
+    if (label === 'Legend') {
+      section.id = 'legend-section';
+    } else {
+      section.classList.add('graph-settings-only');
+    }
+  });
+
+  if (legacyUiToggle) {
+    legacyUiToggle.style.display = 'none';
+    legacyUiToggle.setAttribute('aria-hidden', 'true');
+    legacyUiToggle.tabIndex = -1;
+  }
+
+  if (!document.getElementById('btn-toggle-legend')) {
+    btnToggleLegend = document.createElement('button');
+    btnToggleLegend.className = 'tbtn';
+    btnToggleLegend.id = 'btn-toggle-legend';
+    btnToggleLegend.title = 'Toggle node legend';
+    btnToggleLegend.textContent = 'L';
+    toolbarPanelButton.insertAdjacentElement('afterend', btnToggleLegend);
+  } else {
+    btnToggleLegend = document.getElementById('btn-toggle-legend');
+  }
+
+  if (!document.getElementById('btn-toggle-settings')) {
+    btnToggleSettings = document.createElement('button');
+    btnToggleSettings.className = 'tbtn';
+    btnToggleSettings.id = 'btn-toggle-settings';
+    btnToggleSettings.title = 'Toggle graph settings';
+    btnToggleSettings.textContent = 'G';
+    toolbarPanelButton.insertAdjacentElement('afterend', btnToggleSettings);
+  } else {
+    btnToggleSettings = document.getElementById('btn-toggle-settings');
+  }
+}
 
 function updateSettingControls() {
-  document.getElementById('slider-repel').value = String(REPULSION);
-  document.getElementById('val-repel').textContent = String(REPULSION);
-  document.getElementById('slider-spring').value = String(SPRING_LEN.import);
-  document.getElementById('val-spring').textContent = String(SPRING_LEN.import);
-  document.getElementById('slider-damp').value = String(DAMPING);
-  document.getElementById('val-damp').textContent = DAMPING.toFixed(2);
-  document.getElementById('slider-center').value = String(CENTER_K);
-  document.getElementById('val-center').textContent = CENTER_K.toFixed(3);
-  document.getElementById('edge-direction').value = EDGE_DIRECTION;
+  const edgeDirection = document.getElementById('edge-direction');
+  if (edgeDirection) edgeDirection.value = EDGE_DIRECTION;
 }
 
 function applyInitialState(state) {
@@ -428,9 +532,11 @@ function applyInitialState(state) {
     hiddenTypes = new Set(state.hiddenTypes);
   }
   if (typeof state.hideUI === 'boolean') {
-    document.body.classList.toggle('ui-hidden', state.hideUI);
-    document.getElementById('btn-eye').classList.toggle('active', state.hideUI);
+    document.body.classList.toggle('settings-hidden', state.hideUI);
+    document.body.classList.toggle('legend-hidden', state.hideUI);
   }
+  if (typeof state.hideGraphSettings === 'boolean') document.body.classList.toggle('settings-hidden', state.hideGraphSettings);
+  if (typeof state.hideLegend === 'boolean') document.body.classList.toggle('legend-hidden', state.hideLegend);
   if (typeof state.edgeDirection === 'string') EDGE_DIRECTION = state.edgeDirection;
   if (typeof state.repulsion === 'number') REPULSION = state.repulsion;
   if (typeof state.springLength === 'number') {
@@ -439,6 +545,7 @@ function applyInitialState(state) {
   }
   if (typeof state.damping === 'number') DAMPING = state.damping;
   if (typeof state.centerPull === 'number') CENTER_K = state.centerPull;
+  syncPanelVisibility();
   updateSettingControls();
 }
 
@@ -446,6 +553,7 @@ function saveProjectState(partial) {
   vscode.postMessage({ type: 'saveProjectState', state: partial });
 }
 
+setupIndependentPanelToggles();
 applyInitialState(INITIAL_STATE);
 
 // ── Resize ───────────────────────────────────────────────────────────────────
@@ -479,9 +587,9 @@ window.addEventListener('message', e => {
 
   if (msg.type === 'graphData') {
     if (msg.hideUI !== undefined) {
-      document.body.classList.toggle('ui-hidden', msg.hideUI);
-      const btnEye = document.getElementById('btn-eye');
-      if (btnEye) btnEye.classList.toggle('active', msg.hideUI);
+      document.body.classList.toggle('settings-hidden', msg.hideUI);
+      document.body.classList.toggle('legend-hidden', msg.hideUI);
+      syncPanelVisibility();
     }
     if (msg.colors) {
       COLORS = { ...COLORS, ...msg.colors };
@@ -1165,45 +1273,30 @@ canvas.addEventListener('gesturechange', e => {
 }, { passive: false });
 
 // ── Toolbar ──────────────────────────────────────────────────────────────────
-document.getElementById('btn-eye').addEventListener('click', function() {
-  const isHidden = document.body.classList.toggle('ui-hidden');
-  this.classList.toggle('active', isHidden);
-  saveProjectState({ hideUI: isHidden });
-});
+if (btnToggleSettings) {
+  btnToggleSettings.addEventListener('click', function() {
+    const isHidden = document.body.classList.toggle('settings-hidden');
+    syncPanelVisibility();
+    saveProjectState({ hideGraphSettings: isHidden, hideUI: isHidden && document.body.classList.contains('legend-hidden') });
+  });
+}
 
-document.getElementById('slider-repel').addEventListener('input', function() {
-  REPULSION = parseFloat(this.value);
-  document.getElementById('val-repel').textContent = REPULSION;
-  kickSim(0.3);
-  saveProjectState({ repulsion: REPULSION });
-});
+if (btnToggleLegend) {
+  btnToggleLegend.addEventListener('click', function() {
+    const isHidden = document.body.classList.toggle('legend-hidden');
+    syncPanelVisibility();
+    saveProjectState({ hideLegend: isHidden, hideUI: isHidden && document.body.classList.contains('settings-hidden') });
+  });
+}
 
-document.getElementById('slider-spring').addEventListener('input', function() {
-  const val = parseFloat(this.value);
-  SPRING_LEN = { import: val, link: val * 1.15, fn: val * 0.42, call: val * 0.69 };
-  document.getElementById('val-spring').textContent = val;
-  kickSim(0.3);
-  saveProjectState({ springLength: val });
-});
-
-document.getElementById('slider-damp').addEventListener('input', function() {
-  DAMPING = parseFloat(this.value);
-  document.getElementById('val-damp').textContent = DAMPING.toFixed(2);
-  saveProjectState({ damping: DAMPING });
-});
-
-document.getElementById('slider-center').addEventListener('input', function() {
-  CENTER_K = parseFloat(this.value);
-  document.getElementById('val-center').textContent = CENTER_K.toFixed(3);
-  kickSim(0.2);
-  saveProjectState({ centerPull: CENTER_K });
-});
-
-document.getElementById('edge-direction').addEventListener('change', function() {
-  EDGE_DIRECTION = this.value;
-  render();
-  saveProjectState({ edgeDirection: EDGE_DIRECTION });
-});
+const edgeDirectionControl = document.getElementById('edge-direction');
+if (edgeDirectionControl) {
+  edgeDirectionControl.addEventListener('change', function() {
+    EDGE_DIRECTION = this.value;
+    render();
+    saveProjectState({ edgeDirection: EDGE_DIRECTION });
+  });
+}
 
 document.getElementById('btn-refresh').addEventListener('click', () => {
   document.getElementById('loading').style.display = 'flex';
@@ -1435,9 +1528,10 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
           sendGraph(panel.webview, msg.showFns ?? false, ctx);
         }
       } else if (msg.type === 'requestGraph') {
-        sendGraphStreaming(panel.webview);
+        const nextState = getProjectGraphState(ctx);
+        sendGraph(panel.webview, nextState.showFns, ctx);
       } else if (msg.type === 'openFile') {
-        openFile(msg.path);
+        openFile(String(msg.path), typeof msg.line === 'number' ? msg.line : undefined);
       } else if (msg.type === 'openUrl') {
         try { vscode.commands.executeCommand('ultraview.openUrl', String(msg.url)); } catch (e) { /* ignore */ }
       } else if (msg.type === 'switchToCodeFlow') {
@@ -1465,7 +1559,7 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
         }
         break;
       case 'openFile':
-        openFile(msg.path as string);
+        openFile(String(msg.path), typeof msg.line === 'number' ? msg.line : undefined);
         break;
       case 'openUrl':
         try { vscode.commands.executeCommand('ultraview.openUrl', String(msg.url)); } catch (e) { /* ignore */ }
@@ -1486,7 +1580,10 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
         this._switchToCodeFlow(webview, msg.active as boolean);
         break;
       case 'requestGraph':
-        sendGraphStreaming(webview);
+        {
+          const state = getProjectGraphState(this.ctx);
+          sendGraph(webview, state.showFns, this.ctx);
+        }
         break;
     }
   }
@@ -1550,7 +1647,7 @@ async function sendGraph(
 function mapNode(n: { id: string; label: string; type: string; filePath?: string; meta?: Record<string, unknown> }): GNode {
   if (n.type === 'url') {
     const url = (n.meta && typeof n.meta.url === 'string') ? n.meta.url : (typeof n.id === 'string' && n.id.startsWith('url:') ? n.id.slice(4) : (n.filePath ?? ''));
-    return { id: n.id, label: n.label, type: 'url', filePath: url, parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined };
+    return { id: n.id, label: n.label, type: 'url', filePath: url, parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined, meta: n.meta };
   }
   let t = n.type;
   if (t === 'tsx') t = 'ts';
@@ -1563,7 +1660,8 @@ function mapNode(n: { id: string; label: string; type: string; filePath?: string
   else if (['bash', 'zsh'].includes(t)) t = 'sh';
   return {
     id: n.id, label: n.label, type: t, filePath: n.filePath ?? '',
-    parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined
+    parentId: (n.meta && typeof n.meta.parent === 'string') ? n.meta.parent : undefined,
+    meta: n.meta
   };
 }
 
@@ -1595,16 +1693,24 @@ async function sendGraphStreaming(webview: vscode.Webview): Promise<void> {
   }
 }
 
-function openFile(filePath: string): void {
+async function openFile(filePath: string, line?: number): Promise<void> {
   const uri = vscode.Uri.file(filePath);
-  if (/\.(md|mdx|markdown)$/i.test(filePath)) {
-    vscode.commands.executeCommand('vscode.openWith', uri, 'ultraview.markdown');
-  } else {
-    const doc = vscode.workspace.textDocuments.find(d => d.uri.fsPath === uri.fsPath);
-    if (doc) {
-      vscode.window.showTextDocument(doc, { preserveFocus: false });
-    } else {
-      vscode.window.showTextDocument(uri, { preview: false, preserveFocus: false });
-    }
+  const hasTargetLine = typeof line === 'number' && Number.isFinite(line) && line > 0;
+
+  if (/\.(md|mdx|markdown)$/i.test(filePath) && !hasTargetLine) {
+    void vscode.commands.executeCommand('vscode.openWith', uri, 'ultraview.markdown');
+    return;
+  }
+
+  const doc = vscode.workspace.textDocuments.find(d => d.uri.fsPath === uri.fsPath)
+    ?? await vscode.workspace.openTextDocument(uri);
+  const editor = await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: false });
+
+  if (hasTargetLine) {
+    const lineIndex = Math.min(Math.max(Math.floor(line) - 1, 0), Math.max(doc.lineCount - 1, 0));
+    const position = new vscode.Position(lineIndex, 0);
+    const selection = new vscode.Selection(position, position);
+    editor.selection = selection;
+    editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
   }
 }
