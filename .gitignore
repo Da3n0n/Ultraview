@@ -20,3 +20,7 @@ Thumbs.db
 
 # VS Code settings (optional, keep if shared)
 # .vscode/
+
+# Web site
+web/site/node_modules/
+web/site/dist/

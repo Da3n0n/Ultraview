@@ -1,0 +1,21 @@
+{
+    "name": "ultraview-site",
+    "private": true,
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc && vite build",
+        "preview": "vite preview",
+        "start": "node server.js"
+    },
+    "dependencies": {
+        "solid-js": "^1.9.0"
+    },
+    "devDependencies": {
+        "typescript": "^5.3.3",
+        "vite": "^5.4.0",
+        "vite-plugin-solid": "^2.10.0",
+        "@types/node": "^20.11.0"
+    }
+}
