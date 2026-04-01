@@ -25,6 +25,54 @@ interface GraphData {
   edges: GEdge[];
 }
 
+interface ProjectCodeGraphState {
+  hideUI: boolean;
+  hiddenTypes: string[];
+  showFns: boolean;
+  graphMode: 'normal' | 'codeflow';
+  filterText: string;
+  edgeDirection: 'straight' | 'curved' | 'arrow' | 'curved-arrow';
+  repulsion: number;
+  springLength: number;
+  damping: number;
+  centerPull: number;
+}
+
+const PROJECT_GRAPH_STATE_KEY = 'ultraview.codeGraph.uiState.v1';
+
+const defaultProjectCodeGraphState: ProjectCodeGraphState = {
+  hideUI: false,
+  hiddenTypes: [],
+  showFns: false,
+  graphMode: 'normal',
+  filterText: '',
+  edgeDirection: 'straight',
+  repulsion: 9000,
+  springLength: 130,
+  damping: 0.65,
+  centerPull: 0.008
+};
+
+function getProjectGraphState(ctx: vscode.ExtensionContext): ProjectCodeGraphState {
+  const saved = ctx.workspaceState.get<Partial<ProjectCodeGraphState>>(PROJECT_GRAPH_STATE_KEY) || {};
+  const config = vscode.workspace.getConfiguration('ultraview');
+  return {
+    ...defaultProjectCodeGraphState,
+    hideUI: config.get<boolean>('codeGraph.hideUI') ?? defaultProjectCodeGraphState.hideUI,
+    hiddenTypes: config.get<string[]>('codeGraph.hiddenTypes') ?? defaultProjectCodeGraphState.hiddenTypes,
+    ...saved
+  };
+}
+
+async function saveProjectGraphState(
+  ctx: vscode.ExtensionContext,
+  partial: Partial<ProjectCodeGraphState>
+): Promise<ProjectCodeGraphState> {
+  const nextState = { ...getProjectGraphState(ctx), ...partial };
+  await ctx.workspaceState.update(PROJECT_GRAPH_STATE_KEY, nextState);
+  return nextState;
+}
+
 // ─── Parser ──────────────────────────────────────────────────────────────────
 
 const IMPORT_RE = /(?:import|require)\s*(?:[^'"]*from\s*)?['"]([^'"]+)['"]/g;
@@ -108,7 +156,7 @@ async function buildGraph(includeFns: boolean): Promise<GraphData> {
 
 // ─── HTML ────────────────────────────────────────────────────────────────────
 
-function buildHtml(wsPath: string): string {
+function buildHtml(wsPath: string, initialState: ProjectCodeGraphState): string {
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -264,6 +312,8 @@ ${colorPickerScript}
 (function(){
 'use strict';
 
+const INITIAL_STATE = ${JSON.stringify(initialState)};
+
 
 
 // ── Type palette & colour helpers ───────────────────────────────────────────
@@ -352,6 +402,52 @@ const canvas = document.getElementById('c');
 const ctx    = canvas.getContext('2d');
 const tooltip = document.getElementById('tooltip');
 
+function updateSettingControls() {
+  document.getElementById('slider-repel').value = String(REPULSION);
+  document.getElementById('val-repel').textContent = String(REPULSION);
+  document.getElementById('slider-spring').value = String(SPRING_LEN.import);
+  document.getElementById('val-spring').textContent = String(SPRING_LEN.import);
+  document.getElementById('slider-damp').value = String(DAMPING);
+  document.getElementById('val-damp').textContent = DAMPING.toFixed(2);
+  document.getElementById('slider-center').value = String(CENTER_K);
+  document.getElementById('val-center').textContent = CENTER_K.toFixed(3);
+  document.getElementById('edge-direction').value = EDGE_DIRECTION;
+}
+
+function applyInitialState(state) {
+  if (!state) return;
+  if (typeof state.showFns === 'boolean') {
+    showFns = state.showFns;
+    document.getElementById('btn-fns').classList.toggle('active', showFns);
+  }
+  if (typeof state.filterText === 'string') {
+    filterText = state.filterText;
+    document.getElementById('search').value = filterText;
+  }
+  if (Array.isArray(state.hiddenTypes)) {
+    hiddenTypes = new Set(state.hiddenTypes);
+  }
+  if (typeof state.hideUI === 'boolean') {
+    document.body.classList.toggle('ui-hidden', state.hideUI);
+    document.getElementById('btn-eye').classList.toggle('active', state.hideUI);
+  }
+  if (typeof state.edgeDirection === 'string') EDGE_DIRECTION = state.edgeDirection;
+  if (typeof state.repulsion === 'number') REPULSION = state.repulsion;
+  if (typeof state.springLength === 'number') {
+    const val = state.springLength;
+    SPRING_LEN = { import: val, link: val * 1.15, fn: val * 0.42, call: val * 0.69 };
+  }
+  if (typeof state.damping === 'number') DAMPING = state.damping;
+  if (typeof state.centerPull === 'number') CENTER_K = state.centerPull;
+  updateSettingControls();
+}
+
+function saveProjectState(partial) {
+  vscode.postMessage({ type: 'saveProjectState', state: partial });
+}
+
+applyInitialState(INITIAL_STATE);
+
 // ── Resize ───────────────────────────────────────────────────────────────────
 function resize(){
   const wrap = document.getElementById('canvas-wrap');
@@ -370,20 +466,9 @@ window.addEventListener('message', e => {
   // Handle live configuration updates from VS Code config listener
   if (msg.type === 'configUpdate') {
     let needsUpdate = false;
-    if (msg.hideUI !== undefined) {
-      document.body.classList.toggle('ui-hidden', msg.hideUI);
-      const btnEye = document.getElementById('btn-eye');
-      if (btnEye) btnEye.classList.toggle('active', msg.hideUI);
-    }
     if (msg.colors) {
       COLORS = { ...COLORS, ...msg.colors };
       updateLegendColors();
-      needsUpdate = true;
-    }
-    if (msg.hiddenTypes) {
-      hiddenTypes = new Set(msg.hiddenTypes);
-      updateLegendVisibility();
-      applyFilter();
       needsUpdate = true;
     }
     if (needsUpdate && alpha <= MIN_ALPHA) {
@@ -532,10 +617,7 @@ function bindLegendInteractions() {
 }
 
 function saveHiddenTypes() {
-  vscode.postMessage({
-    type: 'saveHiddenTypes',
-    hiddenTypes: Array.from(hiddenTypes)
-  });
+  saveProjectState({ hiddenTypes: Array.from(hiddenTypes) });
 }
 
 function bindColorPickers() {
@@ -1086,13 +1168,14 @@ canvas.addEventListener('gesturechange', e => {
 document.getElementById('btn-eye').addEventListener('click', function() {
   const isHidden = document.body.classList.toggle('ui-hidden');
   this.classList.toggle('active', isHidden);
-  vscode.postMessage({ type: 'toggleUI', hideUI: isHidden });
+  saveProjectState({ hideUI: isHidden });
 });
 
 document.getElementById('slider-repel').addEventListener('input', function() {
   REPULSION = parseFloat(this.value);
   document.getElementById('val-repel').textContent = REPULSION;
   kickSim(0.3);
+  saveProjectState({ repulsion: REPULSION });
 });
 
 document.getElementById('slider-spring').addEventListener('input', function() {
@@ -1100,22 +1183,26 @@ document.getElementById('slider-spring').addEventListener('input', function() {
   SPRING_LEN = { import: val, link: val * 1.15, fn: val * 0.42, call: val * 0.69 };
   document.getElementById('val-spring').textContent = val;
   kickSim(0.3);
+  saveProjectState({ springLength: val });
 });
 
 document.getElementById('slider-damp').addEventListener('input', function() {
   DAMPING = parseFloat(this.value);
   document.getElementById('val-damp').textContent = DAMPING.toFixed(2);
+  saveProjectState({ damping: DAMPING });
 });
 
 document.getElementById('slider-center').addEventListener('input', function() {
   CENTER_K = parseFloat(this.value);
   document.getElementById('val-center').textContent = CENTER_K.toFixed(3);
   kickSim(0.2);
+  saveProjectState({ centerPull: CENTER_K });
 });
 
 document.getElementById('edge-direction').addEventListener('change', function() {
   EDGE_DIRECTION = this.value;
   render();
+  saveProjectState({ edgeDirection: EDGE_DIRECTION });
 });
 
 document.getElementById('btn-refresh').addEventListener('click', () => {
@@ -1128,6 +1215,7 @@ document.getElementById('btn-fit').addEventListener('click', fitView);
 document.getElementById('btn-fns').addEventListener('click', function() {
   showFns = !showFns;
   this.classList.toggle('active', showFns);
+  saveProjectState({ showFns: showFns });
   applyFilter();
 });
 
@@ -1137,11 +1225,13 @@ document.getElementById('btn-panel').addEventListener('click', () => {
 
 document.getElementById('btn-codeflow').addEventListener('click', function() {
   this.classList.toggle('active');
+  saveProjectState({ graphMode: this.classList.contains('active') ? 'codeflow' : 'normal' });
   vscode.postMessage({ type: 'switchToCodeFlow', active: this.classList.contains('active') });
 });
 
 document.getElementById('search').addEventListener('input', function() {
   filterText = this.value;
+  saveProjectState({ filterText: filterText });
   applyFilter();
 });
 
@@ -1179,7 +1269,7 @@ function fitView() {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 resize();
-vscode.postMessage({ type: 'ready', showFns: false });
+vscode.postMessage({ type: 'ready', showFns: showFns });
 
 })();
 </script>
@@ -1189,7 +1279,11 @@ vscode.postMessage({ type: 'ready', showFns: false });
 
 // ─── CodeFlow HTML (React Flow) ──────────────────────────────────────────────
 
-function buildCodeFlowHtml(extensionPath: string, _webview: vscode.Webview): string {
+function buildCodeFlowHtml(
+  extensionPath: string,
+  _webview: vscode.Webview,
+  initialState: ProjectCodeGraphState
+): string {
   const scriptUri = _webview.asWebviewUri(vscode.Uri.file(path.join(extensionPath, 'dist', 'codeFlow.js')));
   
   return /* html */`<!DOCTYPE html>
@@ -1246,12 +1340,14 @@ function buildCodeFlowHtml(extensionPath: string, _webview: vscode.Webview): str
 <script>
   // Acquire vscode API BEFORE the React bundle loads (can only be called once)
   window.__vscodeApi = acquireVsCodeApi();
+  window.__ultraviewCodeGraphState = ${JSON.stringify(initialState)};
 </script>
 <script src="${scriptUri}"></script>
 <script>
   (function() {
     var vscode = window.__vscodeApi;
     document.getElementById('btn-normal').addEventListener('click', function() {
+      vscode.postMessage({ type: 'saveProjectState', state: { graphMode: 'normal' } });
       vscode.postMessage({ type: 'switchToCodeFlow', active: false });
     });
     document.getElementById('btn-refresh').addEventListener('click', function() {
@@ -1276,7 +1372,7 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
   constructor(private readonly ctx: vscode.ExtensionContext) {
     if (!CodeGraphProvider.configListener) {
       CodeGraphProvider.configListener = vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('ultraview.codeGraph.nodeColors') || e.affectsConfiguration('ultraview.codeGraph.hideUI')) {
+        if (e.affectsConfiguration('ultraview.codeGraph.nodeColors')) {
           CodeGraphProvider.broadcastSettings();
         }
       });
@@ -1296,7 +1392,10 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
     };
 
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    webviewView.webview.html = buildHtml(wsRoot);
+    const state = getProjectGraphState(this.ctx);
+    webviewView.webview.html = state.graphMode === 'codeflow'
+      ? buildCodeFlowHtml(this.ctx.extensionPath, webviewView.webview, state)
+      : buildHtml(wsRoot, state);
 
     CodeGraphProvider.activeWebviews.add(webviewView.webview);
     webviewView.onDidDispose(() => {
@@ -1319,7 +1418,10 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
       }
     );
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    panel.webview.html = buildHtml(wsRoot);
+    const state = getProjectGraphState(ctx);
+    panel.webview.html = state.graphMode === 'codeflow'
+      ? buildCodeFlowHtml(ctx.extensionPath, panel.webview, state)
+      : buildHtml(wsRoot, state);
 
     CodeGraphProvider.activeWebviews.add(panel.webview);
     panel.onDidDispose(() => {
@@ -1330,7 +1432,7 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
         if (msg.streaming) {
           sendGraphStreaming(panel.webview);
         } else {
-          sendGraph(panel.webview, msg.showFns ?? false);
+          sendGraph(panel.webview, msg.showFns ?? false, ctx);
         }
       } else if (msg.type === 'requestGraph') {
         sendGraphStreaming(panel.webview);
@@ -1340,11 +1442,14 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
         try { vscode.commands.executeCommand('ultraview.openUrl', String(msg.url)); } catch (e) { /* ignore */ }
       } else if (msg.type === 'switchToCodeFlow') {
         if (msg.active) {
-          panel.webview.html = buildCodeFlowHtml(ctx.extensionPath, panel.webview);
+          panel.webview.html = buildCodeFlowHtml(ctx.extensionPath, panel.webview, getProjectGraphState(ctx));
         } else {
-          panel.webview.html = buildHtml(wsRoot);
-          sendGraph(panel.webview, false);
+          const nextState = getProjectGraphState(ctx);
+          panel.webview.html = buildHtml(wsRoot, nextState);
+          sendGraph(panel.webview, nextState.showFns, ctx);
         }
+      } else if (msg.type === 'saveProjectState') {
+        void saveProjectGraphState(ctx, (msg.state as Partial<ProjectCodeGraphState>) ?? {});
       }
     });
   }
@@ -1356,7 +1461,7 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
         if (msg.streaming) {
           sendGraphStreaming(webview);
         } else {
-          sendGraph(webview, (msg.showFns as boolean) ?? false);
+          sendGraph(webview, (msg.showFns as boolean) ?? false, this.ctx);
         }
         break;
       case 'openFile':
@@ -1374,11 +1479,8 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
       case 'openSettings':
         vscode.commands.executeCommand('ultraview.settings.focus');
         break;
-      case 'toggleUI':
-        this._saveToggleUI(msg.hideUI as boolean);
-        break;
-      case 'saveHiddenTypes':
-        this._saveHiddenTypes(msg.hiddenTypes as string[]);
+      case 'saveProjectState':
+        void saveProjectGraphState(this.ctx, (msg.state as Partial<ProjectCodeGraphState>) ?? {});
         break;
       case 'switchToCodeFlow':
         this._switchToCodeFlow(webview, msg.active as boolean);
@@ -1391,17 +1493,13 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
 
   private _switchToCodeFlow(webview: vscode.Webview, active: boolean): void {
     if (active) {
-      webview.html = buildCodeFlowHtml(this.ctx.extensionPath, webview);
+      webview.html = buildCodeFlowHtml(this.ctx.extensionPath, webview, getProjectGraphState(this.ctx));
     } else {
       const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-      webview.html = buildHtml(wsRoot);
-      sendGraph(webview, false);
+      const state = getProjectGraphState(this.ctx);
+      webview.html = buildHtml(wsRoot, state);
+      sendGraph(webview, state.showFns, this.ctx);
     }
-  }
-
-  private async _saveToggleUI(hideUI: boolean): Promise<void> {
-    const config = vscode.workspace.getConfiguration('ultraview');
-    await config.update('codeGraph.hideUI', hideUI, vscode.ConfigurationTarget.Global);
   }
 
   private async _saveColors(colors: Record<string, string>): Promise<void> {
@@ -1412,39 +1510,15 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
     await config.update('codeGraph.nodeColors', mergedColors, vscode.ConfigurationTarget.Global);
   }
 
-  private async _saveHiddenTypes(hiddenTypes: string[]): Promise<void> {
-    const config = vscode.workspace.getConfiguration('ultraview');
-    await config.update('codeGraph.hiddenTypes', hiddenTypes, vscode.ConfigurationTarget.Global);
-  }
-
-  private _loadHiddenTypes(): string[] {
-    const config = vscode.workspace.getConfiguration('ultraview');
-    return config.get<string[]>('codeGraph.hiddenTypes') || [];
-  }
-
-  private _loadColors(): Record<string, string> {
-    const config = vscode.workspace.getConfiguration('ultraview');
-    return config.get<Record<string, string>>('codeGraph.nodeColors')
-      || { ...defaultCodeGraphSettings.nodeColors };
-  }
-
   private static broadcastSettings() {
     const colors = getColors();
-    const config = vscode.workspace.getConfiguration('ultraview');
-    const hideUI = config.get<boolean>('codeGraph.hideUI') ?? false;
-    const hiddenTypes = getHiddenTypes();
     for (const webview of CodeGraphProvider.activeWebviews) {
-      webview.postMessage({ type: 'configUpdate', colors, hideUI, hiddenTypes });
+      webview.postMessage({ type: 'configUpdate', colors });
     }
   }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getHiddenTypes(): string[] {
-  const config = vscode.workspace.getConfiguration('ultraview');
-  return config.get<string[]>('codeGraph.hiddenTypes') || [];
-}
 
 function getColors(): Record<string, string> {
   const config = vscode.workspace.getConfiguration('ultraview');
@@ -1452,14 +1526,22 @@ function getColors(): Record<string, string> {
     || { ...defaultCodeGraphSettings.nodeColors };
 }
 
-async function sendGraph(webview: vscode.Webview, showFns: boolean): Promise<void> {
+async function sendGraph(
+  webview: vscode.Webview,
+  showFns: boolean,
+  ctx: vscode.ExtensionContext
+): Promise<void> {
   try {
     const data = await buildGraph(showFns);
     const colors = getColors();
-    const config = vscode.workspace.getConfiguration('ultraview');
-    const hideUI = config.get<boolean>('codeGraph.hideUI') ?? false;
-    const hiddenTypes = getHiddenTypes();
-    webview.postMessage({ type: 'graphData', ...data, colors, hideUI, hiddenTypes });
+    const state = getProjectGraphState(ctx);
+    webview.postMessage({
+      type: 'graphData',
+      ...data,
+      colors,
+      hideUI: state.hideUI,
+      hiddenTypes: state.hiddenTypes
+    });
   } catch (err) {
     vscode.window.showErrorMessage('Code Graph error: ' + String(err));
   }

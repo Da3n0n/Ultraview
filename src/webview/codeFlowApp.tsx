@@ -24,6 +24,7 @@ interface CodeNode {
   type: string;
   filePath?: string;
   meta?: Record<string, unknown>;
+  parentId?: string;
 }
 
 interface CodeEdge {
@@ -66,20 +67,21 @@ interface CustomNodeData {
 function CustomNode({ data }: { data: CustomNodeData }) {
   const color = TYPE_COLORS[data.nodeType] || '#888';
   const label = TYPE_LABELS[data.nodeType] || data.nodeType;
+  const isFileNode = Boolean(data.isFileNode);
   return (
     <>
       <Handle type="target" position={Position.Left} style={{ background: color, border: 'none', width: 8, height: 8 }} />
       <div style={{
-      padding: '8px 12px',
+      padding: isFileNode ? '10px 14px' : '8px 12px',
       border: `2px solid ${color}`,
-      borderRadius: '8px',
-      background: 'var(--vscode-editor-background, #1e1e1e)',
+      borderRadius: isFileNode ? '12px' : '8px',
+      background: isFileNode ? 'rgba(78,201,176,0.10)' : 'var(--vscode-editor-background, #1e1e1e)',
       color: 'var(--vscode-editor-foreground, #fff)',
       fontSize: '11px',
-      minWidth: '100px',
+      minWidth: isFileNode ? '140px' : '100px',
       maxWidth: '200px',
     }}>
-      <div style={{ fontWeight: 600, marginBottom: '2px', color }}>{label}</div>
+      <div style={{ fontWeight: 600, marginBottom: '2px', color }}>{isFileNode ? 'File' : label}</div>
       <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {data.label}
       </div>
@@ -116,17 +118,18 @@ interface FrameNodeData {
 function FrameNode({ data }: { data: FrameNodeData }) {
   return (
     <div style={{
-      padding: '6px 10px',
+      width: '100%',
+      height: '100%',
+      padding: '12px 14px',
       border: '2px dashed #6b7280',
-      borderRadius: '8px',
-      background: 'rgba(30,30,30,0.5)',
+      borderRadius: '16px',
+      background: 'linear-gradient(180deg, rgba(55,65,81,0.18), rgba(30,41,59,0.10))',
       color: '#9ca3af',
       fontSize: '10px',
-      minWidth: '120px',
-      maxWidth: '200px',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
     }}>
-      <div style={{ fontWeight: 600, marginBottom: '2px' }}>{data.label}</div>
-      <div style={{ fontSize: '9px', opacity: 0.7 }}>{data.childCount} items</div>
+      <div style={{ fontWeight: 700, marginBottom: '4px', fontSize: '12px', color: 'var(--vscode-editor-foreground, #ddd)' }}>{data.label}</div>
+      <div style={{ fontSize: '9px', opacity: 0.7 }}>{data.childCount} nodes in file</div>
     </div>
   );
 }
@@ -138,102 +141,94 @@ interface LayoutResult {
   framePositions: Map<string, { x: number; y: number; width: number; height: number }>;
 }
 
+function getParentFile(node: CodeNode): string | undefined {
+  if (typeof node.parentId === 'string' && node.parentId) return node.parentId;
+  const metaParent = node.meta?.parent;
+  if (typeof metaParent === 'string' && metaParent) return metaParent;
+  if (node.filePath && !node.id.startsWith('url:')) return node.filePath;
+  return undefined;
+}
+
+function getFrameLabel(filePath: string): string {
+  return filePath.split(/[/\\]/).pop() || filePath;
+}
+
 function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
   const nodePositions = new Map<string, { x: number; y: number }>();
   const framePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
-  
-  // Separate file nodes and child nodes (use parentId for grouping)
-  const childNodes = nodes.filter(n => (n as unknown as { parentId?: string }).parentId && TYPE_COLORS[n.type]);
-  const fileNodes = nodes.filter(n => !(n as unknown as { parentId?: string }).parentId);
-  
-  // Group child nodes by parent file
-  const fileGroups = new Map<string, typeof nodes>();
-  for (const node of childNodes) {
-    const parent = (node as unknown as { parentId: string }).parentId || '__root__';
-    if (!fileGroups.has(parent)) fileGroups.set(parent, []);
-    fileGroups.get(parent)!.push(node);
-  }
-  
-  // Determine file order by dependencies
-  const fileList = Array.from(fileGroups.keys());
-  const hasIncoming = new Set<string>();
-  
-  for (const edge of edges) {
-    if (edge.kind === 'import' || edge.kind === 'call') {
-      const sourceNode = childNodes.find(n => n.id === edge.source) as unknown as { parentId?: string };
-      const targetNode = childNodes.find(n => n.id === edge.target) as unknown as { parentId?: string };
-      const sourceFile = sourceNode?.parentId;
-      const targetFile = targetNode?.parentId;
-      if (sourceFile && targetFile && sourceFile !== targetFile) {
-        hasIncoming.add(targetFile);
-      }
+
+  const frameOrder: string[] = [];
+  const fileGroups = new Map<string, CodeNode[]>();
+
+  for (const node of nodes) {
+    const parentFile = getParentFile(node);
+    if (!parentFile) continue;
+    if (!fileGroups.has(parentFile)) {
+      fileGroups.set(parentFile, []);
+      frameOrder.push(parentFile);
     }
+    fileGroups.get(parentFile)!.push(node);
   }
-  
-  // Sort files
-  fileList.sort((a, b) => {
-    const aIncoming = hasIncoming.has(a) ? 1 : 0;
-    const bIncoming = hasIncoming.has(b) ? 1 : 0;
-    if (aIncoming !== bIncoming) return aIncoming - bIncoming;
-    return a.localeCompare(b);
-  });
-  
-  // Layout constants
-  const framePadding = 50;
-  const nodeSpacingX = 160;
-  const nodeSpacingY = 55;
-  const nodesPerRow = 4;
-  const frameWidth = 700;
-  const frameHeight = 200;
-  const frameSpacingX = 80;
-  const frameSpacingY = 80;
-  const startX = 50;
-  const startY = 50;
-  const framesPerRow = 2;
-  
-  // Position frames
+
+  const framePaddingX = 28;
+  const framePaddingY = 24;
+  const frameHeaderHeight = 70;
+  const innerGapX = 28;
+  const innerGapY = 18;
+  const cardWidth = 172;
+  const cardHeight = 72;
+  const frameSpacingX = 96;
+  const frameSpacingY = 96;
+  const startX = 60;
+  const startY = 60;
+  const maxRowWidth = 3200;
+
   let frameX = startX;
   let frameY = startY;
-  let colInRow = 0;
-  
-  for (const file of fileList) {
-    const fileChildNodes = fileGroups.get(file)!;
-    const nodeCount = fileChildNodes.length;
-    
-    // Calculate frame size based on content
-    const cols = Math.min(nodeCount, nodesPerRow);
-    const rows = Math.ceil(nodeCount / nodesPerRow);
-    const actualWidth = Math.max(200, cols * nodeSpacingX + framePadding * 2);
-    const actualHeight = Math.max(100, rows * nodeSpacingY + framePadding * 2 + 30);
-    
-    // Position child nodes within frame
-    fileChildNodes.forEach((node, idx) => {
-      const col = idx % nodesPerRow;
-      const row = Math.floor(idx / nodesPerRow);
-      const x = frameX + framePadding + col * nodeSpacingX;
-      const y = frameY + framePadding + 25 + row * nodeSpacingY;
-      nodePositions.set(node.id, { x, y });
-    });
-    
-    // Store frame position and size
-    framePositions.set(file, {
+  let currentRowHeight = 0;
+
+  for (const filePath of frameOrder) {
+    const group = fileGroups.get(filePath) ?? [];
+    const fileNode = group.find(node => node.id === filePath);
+    const memberNodes = group
+      .filter(node => node.id !== filePath)
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    const totalCards = 1 + memberNodes.length;
+    const columnCount = Math.max(1, Math.min(3, Math.ceil(Math.sqrt(totalCards))));
+    const rowCount = Math.max(1, Math.ceil(totalCards / columnCount));
+    const frameWidth = Math.max(320, framePaddingX * 2 + columnCount * cardWidth + (columnCount - 1) * innerGapX);
+    const frameHeight = Math.max(
+      180,
+      frameHeaderHeight + framePaddingY * 2 + rowCount * cardHeight + (rowCount - 1) * innerGapY
+    );
+
+    if (frameX > startX && frameX + frameWidth > maxRowWidth) {
+      frameX = startX;
+      frameY += currentRowHeight + frameSpacingY;
+      currentRowHeight = 0;
+    }
+
+    framePositions.set(filePath, {
       x: frameX,
       y: frameY,
-      width: actualWidth,
-      height: actualHeight,
+      width: frameWidth,
+      height: frameHeight,
     });
-    
-    // Move to next frame
-    colInRow++;
-    if (colInRow >= framesPerRow) {
-      colInRow = 0;
-      frameX = startX;
-      frameY += actualHeight + frameSpacingY;
-    } else {
-      frameX += actualWidth + frameSpacingX;
-    }
+
+    const cards = fileNode ? [fileNode, ...memberNodes] : memberNodes;
+    cards.forEach((node, idx) => {
+      const col = idx % columnCount;
+      const row = Math.floor(idx / columnCount);
+      const x = framePaddingX + col * (cardWidth + innerGapX);
+      const y = frameHeaderHeight + framePaddingY + row * (cardHeight + innerGapY);
+      nodePositions.set(node.id, { x, y });
+    });
+
+    frameX += frameWidth + frameSpacingX;
+    currentRowHeight = Math.max(currentRowHeight, frameHeight);
   }
-  
+
   return { nodePositions, framePositions };
 }
 
@@ -393,10 +388,16 @@ interface VsCodeApi {
   postMessage: (msg: Record<string, unknown>) => void;
 }
 
+interface InitialCodeGraphState {
+  showFns?: boolean;
+  filterText?: string;
+}
+
 declare global {
   interface Window {
     acquireVsCodeApi?: () => VsCodeApi;
     __vscodeApi?: VsCodeApi;
+    __ultraviewCodeGraphState?: InitialCodeGraphState;
   }
 }
 
@@ -407,12 +408,14 @@ function getVscode(): VsCodeApi | undefined {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 function App() {
+  const initialShowFns = window.__ultraviewCodeGraphState?.showFns ?? true;
+  const initialFilterText = window.__ultraviewCodeGraphState?.filterText ?? '';
   const [rfNodes, setRfNodes] = useState<unknown[]>([]);
   const [rfEdges, setRfEdges] = useState<unknown[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [phase, setPhase] = useState<string>('waiting');
   const [progress, setProgress] = useState({ scanned: 0, total: 0 });
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(initialFilterText);
 
   // Accumulators — we use refs so the message handler always sees the latest
   const nodeAccRef = useRef<unknown[]>([]);
@@ -432,91 +435,69 @@ function App() {
         const newRfEdges: unknown[] = [];
         const edgeSet = new Set<string>();
 
-        // Separate file nodes and child nodes (use parentId for grouping)
-        const childNodes = allNodes.filter(n => (n as unknown as { parentId?: string }).parentId && TYPE_COLORS[n.type]);
-        const fileNodes = allNodes.filter(n => !(n as unknown as { parentId?: string }).parentId);
-
-        // Calculate layout with frames
-        const layout = layoutGraph(allNodes, allEdges);
-
-        // Create frame nodes for each file that has children
-        const filesWithChildren = new Set<string>();
-        for (const node of childNodes) {
-          const parent = (node as unknown as { parentId: string }).parentId;
-          filesWithChildren.add(parent);
+        const nodeById = new Map(allNodes.map(node => [node.id, node]));
+        const frameGroups = new Map<string, CodeNode[]>();
+        for (const node of allNodes) {
+          const parentFile = getParentFile(node);
+          if (!parentFile) continue;
+          if (!frameGroups.has(parentFile)) frameGroups.set(parentFile, []);
+          frameGroups.get(parentFile)!.push(node);
         }
+
+        const layout = layoutGraph(allNodes, allEdges);
 
         // Add frame nodes
         for (const [filePath, framePos] of layout.framePositions) {
-          const childCount = childNodes.filter(n => (n as unknown as { parentId: string }).parentId === filePath).length;
-          const fileName = filePath.split(/[/\\]/).pop() || filePath;
+          const childCount = frameGroups.get(filePath)?.length ?? 0;
           newRfNodes.push({
             id: `frame:${filePath}`,
             type: 'frame',
             position: { x: framePos.x, y: framePos.y },
-            style: { 
-              width: framePos.width, 
+            draggable: false,
+            selectable: false,
+            style: {
+              width: framePos.width,
               height: framePos.height,
-              background: 'rgba(30,30,30,0.3)',
-              border: '2px dashed #6b7280',
-              borderRadius: '8px',
+              background: 'transparent',
+              border: 'none',
             },
-            data: { label: fileName, filePath, childCount, nodeType: 'frame' },
+            data: { label: getFrameLabel(filePath), filePath, childCount, nodeType: 'frame' },
           });
         }
 
-        // Add child nodes inside frames
-        for (const node of childNodes) {
+        // Add all file-scoped nodes inside their frame, including the file node itself.
+        for (const node of allNodes) {
+          const parentFile = getParentFile(node);
+          if (!parentFile) continue;
           const pos = layout.nodePositions.get(node.id);
           if (!pos) continue;
-          const nodeWithParent = node as unknown as { parentId: string };
+          const isFileNode = node.id === parentFile;
+          const line = typeof node.meta?.line === 'number' ? node.meta.line : undefined;
           newRfNodes.push({
             id: node.id,
             type: 'custom',
             position: pos,
-            data: { label: node.label, nodeType: node.type, filePath: node.filePath, line: undefined },
-            parentId: `frame:${nodeWithParent.parentId}`,
+            data: { label: node.label, nodeType: node.type, filePath: node.filePath, line, isFileNode },
+            parentId: `frame:${parentFile}`,
             extent: 'parent' as const,
           });
         }
 
-        // Add edges
+        // Keep edges attached to the real nodes so cross-file usage stays visible.
         for (const e of allEdges) {
           const key = `${e.source}-${e.target}-${e.kind}`;
           if (edgeSet.has(key)) continue;
           edgeSet.add(key);
           const isImport = e.kind === 'import';
           const isCall = e.kind === 'call';
-          
-          // Check if this is an edge between child nodes
-          const sourceNode = childNodes.find(n => n.id === e.source) as unknown as { parentId?: string };
-          const targetNode = childNodes.find(n => n.id === e.target) as unknown as { parentId?: string };
-          
-          // If both are in same file, connect directly
-          // If cross-file, connect to frames
-          let sourceId = e.source;
-          let targetId = e.target;
-          
-          if (sourceNode?.parentId && targetNode?.parentId) {
-            const sourceParent = sourceNode.parentId;
-            const targetParent = targetNode.parentId;
-            if (sourceParent !== targetParent) {
-              sourceId = `frame:${sourceParent}`;
-              targetId = `frame:${targetParent}`;
-            }
-          } else if (sourceNode?.parentId) {
-            sourceId = `frame:${sourceNode.parentId}`;
-          } else if (targetNode?.parentId) {
-            targetId = `frame:${targetNode.parentId}`;
-          }
-          
+          if (!nodeById.has(e.source) || !nodeById.has(e.target)) continue;
           newRfEdges.push({
             id: key,
-            source: sourceId,
-            target: targetId,
-            type: 'step',
+            source: e.source,
+            target: e.target,
+            type: isCall ? 'bezier' : 'smoothstep',
             animated: isCall,
-            style: { stroke: isImport ? '#4EC9B0' : isCall ? '#DCDCAA' : '#C586C0', strokeWidth: 2 },
+            style: { stroke: isImport ? '#4EC9B0' : isCall ? '#DCDCAA' : '#C586C0', strokeWidth: isCall ? 2.4 : 2 },
           });
         }
 
@@ -607,10 +588,15 @@ function App() {
 
     // Request graph data (non-streaming for frame layout)
     const vscode = getVscode();
-    vscode?.postMessage({ type: 'ready', streaming: false, showFns: true });
+    vscode?.postMessage({ type: 'ready', streaming: false, showFns: initialShowFns });
 
     return () => window.removeEventListener('message', handleMessage);
   }, []);
+
+  useEffect(() => {
+    const vscode = getVscode();
+    vscode?.postMessage({ type: 'saveProjectState', state: { filterText: searchTerm } });
+  }, [searchTerm]);
 
   const handleNodeClick = useCallback((node: CodeNode) => {
     const vscode = getVscode();
@@ -632,7 +618,7 @@ function App() {
     const nodeIds = new Set(filteredNodes.map((n: unknown) => (n as { id: string }).id));
     return rfEdges.filter((e: unknown) => {
       const edge = e as { source: string; target: string };
-      return nodeIds.has(edge.source) || nodeIds.has(edge.target);
+      return nodeIds.has(edge.source) && nodeIds.has(edge.target);
     });
   }, [rfEdges, searchTerm, filteredNodes]);
 
