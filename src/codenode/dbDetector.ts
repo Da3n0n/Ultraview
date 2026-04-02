@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { CodeNode, CodeEdge } from './index';
+import type { CodeNode, CodeEdge } from './types';
 
 const DB_EXTS = ['.db', '.sqlite', '.sqlite3', '.db3', '.duckdb', '.ddb', '.mdb', '.accdb'];
 

@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { CodeNode, CodeEdge } from './index';
+import type { CodeNode, CodeEdge } from './types';
 
 const WIKILINK_RE = /\[\[([^\]|#]+?)(?:[|#][^\]]*)?\]\]/g;
 const MDLINK_RE  = /\[(?:[^\]]*)\]\(([^)]+)\)/g;

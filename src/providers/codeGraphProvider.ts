@@ -1377,7 +1377,7 @@ function buildCodeFlowHtml(
   _webview: vscode.Webview,
   initialState: ProjectCodeGraphState
 ): string {
-  const scriptUri = _webview.asWebviewUri(vscode.Uri.file(path.join(extensionPath, 'dist', 'codeFlow.js')));
+  const scriptUri = _webview.asWebviewUri(vscode.Uri.file(path.join(extensionPath, 'dist', 'codeFlow.next.js')));
   
   return /* html */`<!DOCTYPE html>
 <html lang="en">

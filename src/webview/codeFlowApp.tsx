@@ -286,80 +286,232 @@ function filterCodeFlowGraph(nodes: CodeNode[], edges: CodeEdge[]) {
   return { nodes: filteredNodes, edges: filteredEdges, allowedFrameFiles };
 }
 
+interface LayerGraph {
+  adjacency: Map<string, Set<string>>;
+  indegree: Map<string, number>;
+  outdegree: Map<string, number>;
+}
+
+function createLayerGraph(ids: Iterable<string>): LayerGraph {
+  const adjacency = new Map<string, Set<string>>();
+  const indegree = new Map<string, number>();
+  const outdegree = new Map<string, number>();
+
+  for (const id of ids) {
+    adjacency.set(id, new Set());
+    indegree.set(id, 0);
+    outdegree.set(id, 0);
+  }
+
+  return { adjacency, indegree, outdegree };
+}
+
+function addLayerEdge(graph: LayerGraph, source: string, target: string) {
+  if (source === target) return;
+  const next = graph.adjacency.get(source);
+  if (!next || next.has(target)) return;
+  next.add(target);
+  graph.outdegree.set(source, (graph.outdegree.get(source) ?? 0) + 1);
+  graph.indegree.set(target, (graph.indegree.get(target) ?? 0) + 1);
+}
+
+function computeLayerMap(ids: Iterable<string>, graph: LayerGraph): Map<string, number> {
+  const idList = Array.from(ids);
+  const indegree = new Map(graph.indegree);
+  const queue = idList
+    .filter(id => (indegree.get(id) ?? 0) === 0)
+    .sort((a, b) => a.localeCompare(b));
+  const layers = new Map<string, number>();
+  const visited = new Set<string>();
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    visited.add(id);
+    const currentLayer = layers.get(id) ?? 0;
+
+    for (const neighbor of graph.adjacency.get(id) ?? []) {
+      layers.set(neighbor, Math.max(layers.get(neighbor) ?? 0, currentLayer + 1));
+      const nextIndegree = (indegree.get(neighbor) ?? 0) - 1;
+      indegree.set(neighbor, nextIndegree);
+      if (nextIndegree === 0) {
+        queue.push(neighbor);
+        queue.sort((a, b) => a.localeCompare(b));
+      }
+    }
+  }
+
+  for (const id of idList.sort((a, b) => a.localeCompare(b))) {
+    if (visited.has(id)) continue;
+    let inferredLayer = 0;
+    for (const [source, targets] of graph.adjacency) {
+      if (targets.has(id)) {
+        inferredLayer = Math.max(inferredLayer, (layers.get(source) ?? 0) + 1);
+      }
+    }
+    layers.set(id, inferredLayer);
+  }
+
+  return layers;
+}
+
+function compareByFlowPriority(
+  a: string,
+  b: string,
+  indegree: Map<string, number>,
+  outdegree: Map<string, number>,
+  labels?: Map<string, string>
+): number {
+  const aIn = indegree.get(a) ?? 0;
+  const bIn = indegree.get(b) ?? 0;
+  const aOut = outdegree.get(a) ?? 0;
+  const bOut = outdegree.get(b) ?? 0;
+  const aBalance = aOut - aIn;
+  const bBalance = bOut - bIn;
+
+  if (aBalance !== bBalance) return bBalance - aBalance;
+  if (aOut !== bOut) return bOut - aOut;
+  if (aIn !== bIn) return aIn - bIn;
+
+  const aLabel = labels?.get(a) ?? a;
+  const bLabel = labels?.get(b) ?? b;
+  return aLabel.localeCompare(bLabel);
+}
+
 function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
   const nodePositions = new Map<string, { x: number; y: number }>();
   const framePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
 
-  const frameOrder: string[] = [];
   const fileGroups = new Map<string, CodeNode[]>();
+  const nodeById = new Map(nodes.map(node => [node.id, node]));
+  const nodeToFrame = new Map<string, string>();
 
   for (const node of nodes) {
     const parentFile = getParentFile(node);
     if (!parentFile) continue;
     if (!fileGroups.has(parentFile)) {
       fileGroups.set(parentFile, []);
-      frameOrder.push(parentFile);
     }
     fileGroups.get(parentFile)!.push(node);
+    nodeToFrame.set(node.id, parentFile);
   }
 
   const framePaddingX = 32;
   const framePaddingY = 28;
   const frameHeaderHeight = 78;
-  const innerGapX = 32;
+  const innerGapX = 28;
   const innerGapY = 28;
   const cardWidth = 252;
   const cardHeight = 188;
-  const frameSpacingX = 120;
-  const frameSpacingY = 120;
-  const startX = 60;
+  const frameSpacingX = 128;
+  const frameSpacingY = 96;
+  const startX = 72;
   const startY = 60;
-  const maxRowWidth = 3600;
+  const frameIds = Array.from(fileGroups.keys());
+  const frameGraph = createLayerGraph(frameIds);
+  const frameLabels = new Map(frameIds.map(filePath => [filePath, getFrameLabel(filePath)]));
 
-  let frameX = startX;
-  let frameY = startY;
-  let currentRowHeight = 0;
+  for (const edge of edges) {
+    const sourceFrame = nodeToFrame.get(edge.source);
+    const targetFrame = nodeToFrame.get(edge.target);
+    if (!sourceFrame || !targetFrame || sourceFrame === targetFrame) continue;
+    addLayerEdge(frameGraph, sourceFrame, targetFrame);
+  }
 
-  for (const filePath of frameOrder) {
+  const frameLayers = computeLayerMap(frameIds, frameGraph);
+  const frameBoxes = new Map<string, { width: number; height: number }>();
+  const framesByLayer = new Map<number, string[]>();
+
+  for (const filePath of frameIds) {
     const group = fileGroups.get(filePath) ?? [];
     const fileNode = group.find(node => node.id === filePath);
     const memberNodes = group
-      .filter(node => node.id !== filePath)
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .filter(node => node.id !== filePath);
+    const cards = fileNode ? [fileNode, ...memberNodes] : memberNodes;
+    const localIds = new Set(cards.map(node => node.id));
+    const localGraph = createLayerGraph(cards.map(node => node.id));
+    const localLabels = new Map(cards.map(node => [node.id, node.label]));
 
-    const totalCards = 1 + memberNodes.length;
-    const columnCount = Math.max(1, Math.min(2, Math.ceil(Math.sqrt(totalCards))));
-    const rowCount = Math.max(1, Math.ceil(totalCards / columnCount));
+    for (const edge of edges) {
+      if (!localIds.has(edge.source) || !localIds.has(edge.target)) continue;
+      addLayerEdge(localGraph, edge.source, edge.target);
+    }
+
+    const localLayers = computeLayerMap(cards.map(node => node.id), localGraph);
+    const cardsByLayer = new Map<number, CodeNode[]>();
+
+    for (const node of cards) {
+      const baseLayer = localLayers.get(node.id) ?? 0;
+      const incoming = localGraph.indegree.get(node.id) ?? 0;
+      const outgoing = localGraph.outdegree.get(node.id) ?? 0;
+      const externalIncoming = edges.filter(edge => edge.target === node.id && !localIds.has(edge.source)).length;
+      const externalOutgoing = edges.filter(edge => edge.source === node.id && !localIds.has(edge.target)).length;
+      const adjustedLayer = baseLayer + Math.max(0, externalIncoming - externalOutgoing);
+
+      if (!cardsByLayer.has(adjustedLayer)) cardsByLayer.set(adjustedLayer, []);
+      cardsByLayer.get(adjustedLayer)!.push(node);
+
+      localGraph.indegree.set(node.id, incoming + externalIncoming);
+      localGraph.outdegree.set(node.id, outgoing + externalOutgoing);
+    }
+
+    const orderedLayers = Array.from(cardsByLayer.keys()).sort((a, b) => a - b);
+    let tallestColumnCount = 0;
+
+    orderedLayers.forEach((layer) => {
+      cardsByLayer.get(layer)!.sort((a, b) => {
+        if (a.id === filePath) return -1;
+        if (b.id === filePath) return 1;
+        return compareByFlowPriority(a.id, b.id, localGraph.indegree, localGraph.outdegree, localLabels);
+      });
+      tallestColumnCount = Math.max(tallestColumnCount, cardsByLayer.get(layer)!.length);
+    });
+
+    const columnCount = Math.max(1, orderedLayers.length);
     const frameWidth = Math.max(360, framePaddingX * 2 + columnCount * cardWidth + (columnCount - 1) * innerGapX);
     const frameHeight = Math.max(
       220,
-      frameHeaderHeight + framePaddingY * 2 + rowCount * cardHeight + (rowCount - 1) * innerGapY
+      frameHeaderHeight + framePaddingY * 2 + tallestColumnCount * cardHeight + Math.max(0, tallestColumnCount - 1) * innerGapY
     );
 
-    if (frameX > startX && frameX + frameWidth > maxRowWidth) {
-      frameX = startX;
-      frameY += currentRowHeight + frameSpacingY;
-      currentRowHeight = 0;
+    orderedLayers.forEach((layer, columnIndex) => {
+      const layerCards = cardsByLayer.get(layer) ?? [];
+      layerCards.forEach((node, rowIndex) => {
+        const x = framePaddingX + columnIndex * (cardWidth + innerGapX);
+        const y = frameHeaderHeight + framePaddingY + rowIndex * (cardHeight + innerGapY);
+        nodePositions.set(node.id, { x, y });
+      });
+    });
+
+    frameBoxes.set(filePath, { width: frameWidth, height: frameHeight });
+    const frameLayer = frameLayers.get(filePath) ?? 0;
+    if (!framesByLayer.has(frameLayer)) framesByLayer.set(frameLayer, []);
+    framesByLayer.get(frameLayer)!.push(filePath);
+  }
+
+  const orderedFrameLayers = Array.from(framesByLayer.keys()).sort((a, b) => a - b);
+  let frameX = startX;
+
+  for (const layer of orderedFrameLayers) {
+    const layerFrames = framesByLayer.get(layer) ?? [];
+    layerFrames.sort((a, b) => compareByFlowPriority(a, b, frameGraph.indegree, frameGraph.outdegree, frameLabels));
+
+    let frameY = startY;
+    let maxWidthInLayer = 0;
+
+    for (const filePath of layerFrames) {
+      const frameBox = frameBoxes.get(filePath);
+      if (!frameBox) continue;
+      framePositions.set(filePath, {
+        x: frameX,
+        y: frameY,
+        width: frameBox.width,
+        height: frameBox.height,
+      });
+      frameY += frameBox.height + frameSpacingY;
+      maxWidthInLayer = Math.max(maxWidthInLayer, frameBox.width);
     }
 
-    framePositions.set(filePath, {
-      x: frameX,
-      y: frameY,
-      width: frameWidth,
-      height: frameHeight,
-    });
-
-    const cards = fileNode ? [fileNode, ...memberNodes] : memberNodes;
-    cards.forEach((node, idx) => {
-      const col = idx % columnCount;
-      const row = Math.floor(idx / columnCount);
-      const x = framePaddingX + col * (cardWidth + innerGapX);
-      const y = frameHeaderHeight + framePaddingY + row * (cardHeight + innerGapY);
-      nodePositions.set(node.id, { x, y });
-    });
-
-    frameX += frameWidth + frameSpacingX;
-    currentRowHeight = Math.max(currentRowHeight, frameHeight);
+    frameX += maxWidthInLayer + frameSpacingX;
   }
 
   return { nodePositions, framePositions };
@@ -441,10 +593,12 @@ const LogPanel: FC<{ logs: LogEntry[]; phase: string; progress: { scanned: numbe
 interface FlowGraphProps {
   rfNodes: unknown[];
   rfEdges: unknown[];
-  onNodeClick: (node: CodeNode) => void;
+  onNodeOpen: (node: CodeNode) => void;
+  onNodeIsolate: (nodeId: string) => void;
+  onClearIsolation: () => void;
 }
 
-const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeClick }) => {
+const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeOpen, onNodeIsolate, onClearIsolation }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -481,12 +635,16 @@ const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeClick }) => {
     }
   }, []);
 
-  const handleNodeClick = useCallback((_event: React.MouseEvent, node: { id: string; data: CustomNodeData }) => {
+  const handleNodeClick = useCallback((_event: React.MouseEvent, node: { id: string }) => {
+    onNodeIsolate(node.id);
+  }, [onNodeIsolate]);
+
+  const handleNodeDoubleClick = useCallback((_event: React.MouseEvent, node: { id: string; data: CustomNodeData }) => {
     const d = node.data;
     if (d.filePath) {
-      onNodeClick({ id: node.id, label: d.label, type: d.nodeType, filePath: d.filePath, meta: { line: d.line } });
+      onNodeOpen({ id: node.id, label: d.label, type: d.nodeType, filePath: d.filePath, meta: { line: d.line } });
     }
-  }, [onNodeClick]);
+  }, [onNodeOpen]);
 
   useEffect(() => {
     if (!boxSelect) return;
@@ -562,6 +720,8 @@ const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeClick }) => {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
+        onPaneClick={onClearIsolation}
         nodeTypes={nodeTypes}
         fitView={false}
         minZoom={0.1}
@@ -635,6 +795,7 @@ function App() {
   const [phase, setPhase] = useState<string>('waiting');
   const [progress, setProgress] = useState({ scanned: 0, total: 0 });
   const [searchTerm, setSearchTerm] = useState(initialFilterText);
+  const [isolatedNodeId, setIsolatedNodeId] = useState<string | null>(null);
 
   // Accumulators — we use refs so the message handler always sees the latest
   const nodeAccRef = useRef<unknown[]>([]);
@@ -827,34 +988,98 @@ function App() {
     vscode?.postMessage({ type: 'saveProjectState', state: { filterText: searchTerm } });
   }, [searchTerm]);
 
-  const handleNodeClick = useCallback((node: CodeNode) => {
+  const handleNodeOpen = useCallback((node: CodeNode) => {
     const vscode = getVscode();
     vscode?.postMessage({ type: 'openFile', path: node.filePath || node.id, line: node.meta?.line });
   }, []);
 
+  const handleNodeIsolate = useCallback((nodeId: string) => {
+    setIsolatedNodeId((current) => current === nodeId ? null : nodeId);
+  }, []);
+
+  const handleClearIsolation = useCallback(() => {
+    setIsolatedNodeId(null);
+  }, []);
+
+  const isolatedGraph = useMemo(() => {
+    if (!isolatedNodeId) return { nodes: rfNodes, edges: rfEdges };
+
+    const allNodes = rfNodes as Array<{ id: string; parentId?: string }>;
+    const allEdges = rfEdges as Array<{ source: string; target: string }>;
+    const adjacency = new Map<string, Set<string>>();
+
+    for (const edge of allEdges) {
+      if (!adjacency.has(edge.source)) adjacency.set(edge.source, new Set());
+      if (!adjacency.has(edge.target)) adjacency.set(edge.target, new Set());
+      adjacency.get(edge.source)!.add(edge.target);
+      adjacency.get(edge.target)!.add(edge.source);
+    }
+
+    const startIds = new Set<string>();
+    if (isolatedNodeId.startsWith('frame:')) {
+      const frameId = isolatedNodeId;
+      allNodes
+        .filter(node => node.parentId === frameId)
+        .forEach(node => startIds.add(node.id));
+      startIds.add(frameId);
+    } else {
+      startIds.add(isolatedNodeId);
+    }
+
+    const includedIds = new Set<string>(startIds);
+    const queue = Array.from(startIds).filter(id => !id.startsWith('frame:'));
+
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      for (const neighbor of adjacency.get(id) ?? []) {
+        if (includedIds.has(neighbor)) continue;
+        includedIds.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+
+    for (const node of allNodes) {
+      if (includedIds.has(node.id) && node.parentId) {
+        includedIds.add(node.parentId);
+      }
+    }
+
+    const nodes = allNodes.filter(node => includedIds.has(node.id));
+    const nodeIds = new Set(nodes.map(node => node.id));
+    const edges = allEdges.filter(edge => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+
+    return { nodes, edges };
+  }, [isolatedNodeId, rfEdges, rfNodes]);
+
   // Filter if search term is active
   const filteredNodes = useMemo(() => {
-    if (!searchTerm) return rfNodes;
+    if (!searchTerm) return isolatedGraph.nodes;
     const term = searchTerm.toLowerCase();
-    return rfNodes.filter((n: unknown) => {
+    return isolatedGraph.nodes.filter((n: unknown) => {
       const data = (n as { data: CustomNodeData }).data;
       return data.label.toLowerCase().includes(term) || (data.filePath?.toLowerCase().includes(term));
     });
-  }, [rfNodes, searchTerm]);
+  }, [isolatedGraph.nodes, searchTerm]);
 
   const filteredEdges = useMemo(() => {
-    if (!searchTerm) return rfEdges;
+    if (!searchTerm) return isolatedGraph.edges;
     const nodeIds = new Set(filteredNodes.map((n: unknown) => (n as { id: string }).id));
-    return rfEdges.filter((e: unknown) => {
+    return isolatedGraph.edges.filter((e: unknown) => {
       const edge = e as { source: string; target: string };
       return nodeIds.has(edge.source) && nodeIds.has(edge.target);
     });
-  }, [rfEdges, searchTerm, filteredNodes]);
+  }, [isolatedGraph.edges, searchTerm, filteredNodes]);
 
   return (
     <div style={{ width: '100%', height: '100vh', background: 'var(--vscode-editor-background, #1e1e1e)', position: 'relative' }}>
       <ReactFlowProvider>
-        <FlowGraph rfNodes={filteredNodes} rfEdges={filteredEdges} onNodeClick={handleNodeClick} />
+        <FlowGraph
+          rfNodes={filteredNodes}
+          rfEdges={filteredEdges}
+          onNodeOpen={handleNodeOpen}
+          onNodeIsolate={handleNodeIsolate}
+          onClearIsolation={handleClearIsolation}
+        />
         <Panel position="top-left" style={{ width: '250px' }}>
           <input
             type="text"
@@ -870,6 +1095,35 @@ function App() {
             }}
           />
         </Panel>
+        {isolatedNodeId && (
+          <Panel position="top-center" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              padding: '6px 10px',
+              borderRadius: '999px',
+              background: 'rgba(78,201,176,0.14)',
+              border: '1px solid rgba(78,201,176,0.35)',
+              color: 'var(--vscode-editor-foreground, #fff)',
+              fontSize: '11px',
+            }}>
+              Isolated flow
+            </div>
+            <button
+              type="button"
+              onClick={handleClearIsolation}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '999px',
+                border: '1px solid var(--vscode-input-border, rgba(128,128,128,0.4))',
+                background: 'var(--vscode-button-secondaryBackground, rgba(128,128,128,0.15))',
+                color: 'var(--vscode-editor-foreground, #fff)',
+                cursor: 'pointer',
+                fontSize: '11px',
+              }}
+            >
+              Show all
+            </button>
+          </Panel>
+        )}
         <Panel position="top-right" style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground, #888)' }}>
           {filteredNodes.length} nodes | {filteredEdges.length} edges
         </Panel>

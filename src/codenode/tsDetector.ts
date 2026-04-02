@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { CodeNode, CodeEdge } from './index';
+import type { CodeNode, CodeEdge } from './types';
 
 const IMPORT_RE = /(?:import|require)\s*(?:[^'"]*from\s*)?['"]([^'"]+)['"]/g;
 // Named imports: import { foo, bar as baz } from './path'

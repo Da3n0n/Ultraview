@@ -54,7 +54,7 @@ const webviewConfig = {
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: '[name].js',
+    filename: '[name].next.js',
     libraryTarget: 'window',
     publicPath: './'
   },

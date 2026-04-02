@@ -1,43 +1,17 @@
 // Entrypoint for all code node graph logic
 // This will orchestrate language-specific node detectors and graph builders
 
-export interface CodeNode {
-  id: string;
-  label: string;
-  type: string;
-  filePath?: string;
-  meta?: Record<string, unknown>;
-}
-
-export interface CodeEdge {
-  source: string;
-  target: string;
-  kind: string;
-  meta?: Record<string, unknown>;
-}
-
-export interface CodeGraph {
-  nodes: CodeNode[];
-  edges: CodeEdge[];
-}
+export type { CodeNode, CodeEdge, CodeGraph, StreamProgress } from './types';
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { CodeNode, CodeEdge, CodeGraph, StreamProgress } from './types';
 import { detectTs, getNamedImports, getAllFunctionsWithIndex } from './tsDetector';
 import { detectMd } from './mdDetector';
 import { detectDb } from './dbDetector';
 
 const TYPE_NODE_TYPES = new Set(['fn', 'class', 'interface', 'type', 'enum']);
-
-export interface StreamProgress {
-  phase: 'discovering' | 'scanning' | 'linking' | 'done';
-  file?: string;
-  nodes: CodeNode[];
-  edges: CodeEdge[];
-  totalFiles?: number;
-  scannedFiles?: number;
-}
 
 export async function buildCodeGraphStreaming(
   onProgress: (progress: StreamProgress) => void
