@@ -239,7 +239,7 @@ function getFunctionScopes(text: string): FunctionScope[] {
 
 function inferVariableControl(name: string, initializer: string): VariableControl | undefined {
   const value = initializer.trim().replace(/,$/, '');
-  if (/^['"]#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})['"]$/i.test(value) || /^['"](rgb|rgba|hsl|hsla)\(/i.test(value)) {
+  if (/^['"]#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})['"]$/i.test(value)) {
     return { name, controlType: 'color', value: value.slice(1, -1) };
   }
   if (/^(true|false)$/.test(value)) {
