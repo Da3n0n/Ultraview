@@ -216,8 +216,9 @@ function FrameNode({ data }: { data: FrameNodeData }) {
           width: 10,
           height: 10,
           borderRadius: 3,
-          border: '1px solid rgba(255,255,255,0.35)',
-          background: 'var(--vscode-button-background, #0e639c)',
+          border: 'none',
+          background: 'transparent',
+          opacity: 0,
         }}
       />
       <div style={{ fontWeight: 700, marginBottom: '4px', fontSize: '12px', color: 'var(--vscode-editor-foreground, #ddd)' }}>{data.label}</div>
@@ -302,18 +303,18 @@ function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
     fileGroups.get(parentFile)!.push(node);
   }
 
-  const framePaddingX = 28;
-  const framePaddingY = 24;
-  const frameHeaderHeight = 70;
-  const innerGapX = 28;
-  const innerGapY = 18;
-  const cardWidth = 172;
-  const cardHeight = 72;
-  const frameSpacingX = 96;
-  const frameSpacingY = 96;
+  const framePaddingX = 32;
+  const framePaddingY = 28;
+  const frameHeaderHeight = 78;
+  const innerGapX = 32;
+  const innerGapY = 28;
+  const cardWidth = 252;
+  const cardHeight = 188;
+  const frameSpacingX = 120;
+  const frameSpacingY = 120;
   const startX = 60;
   const startY = 60;
-  const maxRowWidth = 3200;
+  const maxRowWidth = 3600;
 
   let frameX = startX;
   let frameY = startY;
@@ -327,11 +328,11 @@ function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
       .sort((a, b) => a.label.localeCompare(b.label));
 
     const totalCards = 1 + memberNodes.length;
-    const columnCount = Math.max(1, Math.min(3, Math.ceil(Math.sqrt(totalCards))));
+    const columnCount = Math.max(1, Math.min(2, Math.ceil(Math.sqrt(totalCards))));
     const rowCount = Math.max(1, Math.ceil(totalCards / columnCount));
-    const frameWidth = Math.max(320, framePaddingX * 2 + columnCount * cardWidth + (columnCount - 1) * innerGapX);
+    const frameWidth = Math.max(360, framePaddingX * 2 + columnCount * cardWidth + (columnCount - 1) * innerGapX);
     const frameHeight = Math.max(
-      180,
+      220,
       frameHeaderHeight + framePaddingY * 2 + rowCount * cardHeight + (rowCount - 1) * innerGapY
     );
 
