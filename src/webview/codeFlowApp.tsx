@@ -13,8 +13,10 @@ import {
   ReactFlowProvider,
   Handle,
   Position,
+  NodeResizer,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import type { ReactNode } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +83,44 @@ interface CustomNodeData {
   [key: string]: unknown;
 }
 
+function renderHighlightedSnippet(snippet: string): ReactNode[] {
+  const tokenRe = /(\/\/.*$|\/\*[\s\S]*?\*\/|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\b\d+(?:\.\d+)?\b|\b(?:export|import|from|return|const|let|var|function|class|interface|type|enum|extends|implements|async|await|if|else|for|while|switch|case|default|new|try|catch|throw|public|private|protected|static)\b)/gm;
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRe.exec(snippet)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(snippet.slice(lastIndex, match.index));
+    }
+
+    const value = match[0];
+    let color = 'var(--vscode-editor-foreground, #d4d4d4)';
+    if (value.startsWith('//') || value.startsWith('/*')) {
+      color = 'var(--vscode-descriptionForeground, #6a9955)';
+    } else if (value.startsWith('"') || value.startsWith("'") || value.startsWith('`')) {
+      color = 'var(--vscode-terminal-ansiGreen, #ce9178)';
+    } else if (/^\d/.test(value)) {
+      color = 'var(--vscode-terminal-ansiMagenta, #b5cea8)';
+    } else {
+      color = 'var(--vscode-symbolIconKeywordForeground, #569cd6)';
+    }
+
+    parts.push(
+      <span key={`${match.index}:${value}`} style={{ color }}>
+        {value}
+      </span>
+    );
+    lastIndex = match.index + value.length;
+  }
+
+  if (lastIndex < snippet.length) {
+    parts.push(snippet.slice(lastIndex));
+  }
+
+  return parts;
+}
+
 function CustomNode({ data }: { data: CustomNodeData }) {
   const color = TYPE_COLORS[data.nodeType] || '#888';
   const label = TYPE_LABELS[data.nodeType] || data.nodeType;
@@ -134,7 +174,8 @@ function CustomNode({ data }: { data: CustomNodeData }) {
           maxHeight: '110px',
           overflow: 'hidden',
         }}>
-          {snippetStartLine ? `${snippetStartLine}| ` : ''}{snippet}
+          {snippetStartLine ? `${snippetStartLine}| ` : ''}
+          {renderHighlightedSnippet(snippet)}
         </pre>
       )}
     </div>
@@ -167,6 +208,18 @@ function FrameNode({ data }: { data: FrameNodeData }) {
       fontSize: '10px',
       boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
     }}>
+      <NodeResizer
+        minWidth={280}
+        minHeight={180}
+        lineStyle={{ borderColor: 'var(--vscode-focusBorder, #4ec9b0)' }}
+        handleStyle={{
+          width: 10,
+          height: 10,
+          borderRadius: 3,
+          border: '1px solid rgba(255,255,255,0.35)',
+          background: 'var(--vscode-button-background, #0e639c)',
+        }}
+      />
       <div style={{ fontWeight: 700, marginBottom: '4px', fontSize: '12px', color: 'var(--vscode-editor-foreground, #ddd)' }}>{data.label}</div>
       <div style={{ fontSize: '9px', opacity: 0.7 }}>{data.childCount} nodes in file</div>
     </div>
@@ -395,10 +448,12 @@ const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeClick }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
-  const { fitView } = useReactFlow();
+  const { fitView, getNodes, screenToFlowPosition } = useReactFlow();
   const fitPendingRef = useRef(false);
   const nodesRef = useRef(rfNodes);
   const edgesRef = useRef(rfEdges);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [boxSelect, setBoxSelect] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
 
   // Only update when the actual data changes (not on every render)
   useEffect(() => {
@@ -432,32 +487,116 @@ const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeClick }) => {
     }
   }, [onNodeClick]);
 
+  useEffect(() => {
+    if (!boxSelect) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      setBoxSelect((current) => current ? { ...current, currentX: event.clientX, currentY: event.clientY } : null);
+    };
+
+    const handleMouseUp = () => {
+      setBoxSelect((current) => {
+        if (!current) return null;
+
+        const start = screenToFlowPosition({ x: current.startX, y: current.startY });
+        const end = screenToFlowPosition({ x: current.currentX, y: current.currentY });
+        const minX = Math.min(start.x, end.x);
+        const maxX = Math.max(start.x, end.x);
+        const minY = Math.min(start.y, end.y);
+        const maxY = Math.max(start.y, end.y);
+        const moved = Math.hypot(current.currentX - current.startX, current.currentY - current.startY) > 5;
+
+        if (moved) {
+          const selectedIds = new Set(
+            getNodes()
+              .filter((node) => {
+                const abs = (node as { positionAbsolute?: { x: number; y: number } }).positionAbsolute ?? node.position;
+                const width = Number((node as { width?: number; measured?: { width?: number } }).width ?? (node as { measured?: { width?: number } }).measured?.width ?? 160);
+                const height = Number((node as { height?: number; measured?: { height?: number } }).height ?? (node as { measured?: { height?: number } }).measured?.height ?? 70);
+                const overlapsX = abs.x <= maxX && abs.x + width >= minX;
+                const overlapsY = abs.y <= maxY && abs.y + height >= minY;
+                return overlapsX && overlapsY;
+              })
+              .map((node) => node.id)
+          );
+
+          setNodes((existing) => existing.map((node) => ({ ...node, selected: selectedIds.has(node.id) })));
+        }
+
+        return null;
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [boxSelect, getNodes, screenToFlowPosition, setNodes]);
+
+  const handleWrapperMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 2) return;
+    event.preventDefault();
+    setBoxSelect({
+      startX: event.clientX,
+      startY: event.clientY,
+      currentX: event.clientX,
+      currentY: event.clientY,
+    });
+  }, []);
+
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onNodeClick={handleNodeClick}
-      nodeTypes={nodeTypes}
-      fitView={false}
-      minZoom={0.1}
-      maxZoom={2}
-      nodesDraggable={true}
-      selectNodesOnDrag={false}
-      panOnDrag={true}
-      defaultEdgeOptions={{ type: 'step', style: { strokeWidth: 2 } }}
-      attributionPosition="bottom-left"
-      style={{ background: 'var(--vscode-editor-background, #1e1e1e)' }}
+    <div
+      ref={wrapperRef}
+      style={{ width: '100%', height: '100%', position: 'relative' }}
+      onMouseDown={handleWrapperMouseDown}
+      onContextMenu={(event) => {
+        if (boxSelect) event.preventDefault();
+      }}
     >
-      <Controls />
-      <MiniMap
-        nodeColor={(n) => TYPE_COLORS[(n.data as CustomNodeData)?.nodeType] || '#888'}
-        style={{ background: 'var(--vscode-sideBar-background, #252526)' }}
-        maskColor="rgba(0,0,0,0.1)"
-      />
-      <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-    </ReactFlow>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeClick={handleNodeClick}
+        nodeTypes={nodeTypes}
+        fitView={false}
+        minZoom={0.1}
+        maxZoom={2}
+        nodesDraggable={true}
+        elementsSelectable={true}
+        selectNodesOnDrag={true}
+        panOnDrag={[1]}
+        defaultEdgeOptions={{ type: 'step', style: { strokeWidth: 2 } }}
+        attributionPosition="bottom-left"
+        style={{ background: 'var(--vscode-editor-background, #1e1e1e)' }}
+      >
+        <Controls />
+        <MiniMap
+          nodeColor={(n) => TYPE_COLORS[(n.data as CustomNodeData)?.nodeType] || '#888'}
+          style={{ background: 'var(--vscode-sideBar-background, #252526)' }}
+          maskColor="rgba(0,0,0,0.1)"
+        />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+      </ReactFlow>
+      {boxSelect && (
+        <div
+          style={{
+            position: 'fixed',
+            left: Math.min(boxSelect.startX, boxSelect.currentX),
+            top: Math.min(boxSelect.startY, boxSelect.currentY),
+            width: Math.abs(boxSelect.currentX - boxSelect.startX),
+            height: Math.abs(boxSelect.currentY - boxSelect.startY),
+            border: '1px solid rgba(255,255,255,0.55)',
+            background: 'rgba(255,255,255,0.10)',
+            pointerEvents: 'none',
+            zIndex: 20,
+          }}
+        />
+      )}
+    </div>
   );
 };
 
@@ -536,8 +675,6 @@ function App() {
             id: `frame:${filePath}`,
             type: 'frame',
             position: { x: framePos.x, y: framePos.y },
-            draggable: false,
-            selectable: false,
             style: {
               width: framePos.width,
               height: framePos.height,
