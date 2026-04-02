@@ -19,7 +19,7 @@ interface GNode {
 interface GEdge {
   source: string;
   target: string;
-  kind: 'import' | 'link' | 'call';
+  kind: string;
 }
 
 interface GraphData {
@@ -123,30 +123,118 @@ function getFileLinesCached(filePath: string, cache: Map<string, string[]>): str
   }
 }
 
+function stripStringsAndComments(line: string): string {
+  let result = '';
+  let inSingle = false;
+  let inDouble = false;
+  let inTemplate = false;
+  let escaped = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    const next = line[i + 1];
+
+    if (!inSingle && !inDouble && !inTemplate && ch === '/' && next === '/') break;
+
+    if (escaped) {
+      escaped = false;
+      result += ' ';
+      continue;
+    }
+
+    if (ch === '\\') {
+      escaped = true;
+      result += ' ';
+      continue;
+    }
+
+    if (!inDouble && !inTemplate && ch === '\'') {
+      inSingle = !inSingle;
+      result += ' ';
+      continue;
+    }
+    if (!inSingle && !inTemplate && ch === '"') {
+      inDouble = !inDouble;
+      result += ' ';
+      continue;
+    }
+    if (!inSingle && !inDouble && ch === '`') {
+      inTemplate = !inTemplate;
+      result += ' ';
+      continue;
+    }
+
+    result += inSingle || inDouble || inTemplate ? ' ' : ch;
+  }
+
+  return result;
+}
+
+function countChar(text: string, ch: string): number {
+  return Array.from(text).filter(c => c === ch).length;
+}
+
+function extractCodeUnitSnippet(lines: string[], declarationLine: number): { snippet: string; startLine: number } | null {
+  const startIndex = Math.max(0, declarationLine - 1);
+  const maxLines = Math.min(lines.length, startIndex + 40);
+  const snippetLines: string[] = [];
+  let braceDepth = 0;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let sawContent = false;
+  let sawBlock = false;
+
+  for (let i = startIndex; i < maxLines; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+    const cleanLine = stripStringsAndComments(rawLine);
+
+    snippetLines.push(rawLine.trimEnd());
+
+    if (trimmed.length > 0) sawContent = true;
+    if (cleanLine.includes('{')) sawBlock = true;
+
+    braceDepth += countChar(cleanLine, '{') - countChar(cleanLine, '}');
+    parenDepth += countChar(cleanLine, '(') - countChar(cleanLine, ')');
+    bracketDepth += countChar(cleanLine, '[') - countChar(cleanLine, ']');
+
+    if (i === startIndex) continue;
+
+    if (sawBlock && braceDepth <= 0 && parenDepth <= 0 && bracketDepth <= 0) {
+      break;
+    }
+
+    if (!sawBlock && sawContent && braceDepth <= 0 && parenDepth <= 0 && bracketDepth <= 0) {
+      if (/[;}]$/.test(trimmed)) break;
+      if (trimmed.length === 0) break;
+    }
+  }
+
+  const snippet = snippetLines.join('\n').trim();
+  if (!snippet) return null;
+  return { snippet, startLine: startIndex + 1 };
+}
+
 function buildNodeSnippet(filePath: string, meta: Record<string, unknown> | undefined, cache: Map<string, string[]>): Record<string, unknown> | undefined {
+  if (typeof meta?.snippet === 'string' && meta.snippet.trim()) return meta;
   if (!filePath) return meta;
   const lines = getFileLinesCached(filePath, cache);
   if (!lines || lines.length === 0) return meta;
 
-  let startLine = typeof meta?.line === 'number' ? Math.max(1, Math.floor(meta.line)) : 1;
-  let endLine = startLine;
-
   if (typeof meta?.line === 'number') {
-    endLine = Math.min(lines.length, startLine + 2);
+    const extracted = extractCodeUnitSnippet(lines, Math.max(1, Math.floor(meta.line)));
+    if (extracted) {
+      return { ...(meta ?? {}), snippet: extracted.snippet, snippetStartLine: extracted.startLine };
+    }
   } else {
     const firstNonEmpty = lines.findIndex(line => line.trim().length > 0);
-    startLine = firstNonEmpty >= 0 ? firstNonEmpty + 1 : 1;
-    endLine = Math.min(lines.length, startLine + 3);
+    const startLine = firstNonEmpty >= 0 ? firstNonEmpty + 1 : 1;
+    const extracted = extractCodeUnitSnippet(lines, startLine);
+    if (extracted) {
+      return { ...(meta ?? {}), snippet: extracted.snippet, snippetStartLine: extracted.startLine };
+    }
   }
-
-  const snippet = lines
-    .slice(startLine - 1, endLine)
-    .map(line => line.trimEnd())
-    .join('\n')
-    .trim();
-
-  if (!snippet) return meta;
-  return { ...(meta ?? {}), snippet, snippetStartLine: startLine };
+  return meta;
 }
 
 async function buildGraph(includeFns: boolean): Promise<GraphData> {
@@ -193,6 +281,8 @@ async function buildGraph(includeFns: boolean): Promise<GraphData> {
     target: e.target,
     kind: ['import', 'declares'].includes(e.kind) ? 'import'
         : e.kind === 'call' ? 'call'
+        : e.kind === 'use' ? 'use'
+        : e.kind === 'export' ? 'export'
         : 'link'
   }));
   return { nodes, edges };
@@ -371,6 +461,9 @@ const TYPE_DEFAULTS = {
   js:    { color: '#F0DB4F', label: 'JavaScript' },
   md:    { color: '#C586C0', label: 'Markdown' },
   fn:    { color: '#DCDCAA', label: 'Function' },
+  interface: { color: '#9CDCFE', label: 'Interface' },
+  import: { color: '#4FC1FF', label: 'Import' },
+  export: { color: '#F9A8D4', label: 'Export' },
   url:   { color: '#569CD6', label: 'URL' },
   db:    { color: '#CE9178', label: 'Database' },
   py:    { color: '#3572A5', label: 'Python' },
@@ -402,7 +495,7 @@ function typeColor(t) {
 function getTypeColor(t) {
   return COLORS[t] || (TYPE_DEFAULTS[t] && TYPE_DEFAULTS[t].color) || typeColor(t);
 }
-const RADIUS_DEFAULTS = { ts: 9, js: 8, md: 9, fn: 6, url: 7, db: 8, cpp: 8, c: 8, py: 8 };
+const RADIUS_DEFAULTS = { ts: 9, js: 8, md: 9, fn: 6, interface: 6, import: 6, export: 6, url: 7, db: 8, cpp: 8, c: 8, py: 8 };
 function getTypeRadius(t) { return RADIUS_DEFAULTS[t] || 7; }
 
 // ── Runtime colour table (edge colours + user overrides; type colours seeded by buildLegend) ──
@@ -410,6 +503,8 @@ let COLORS = {
   edge_import: 'rgba(78,201,176,0.25)',
   edge_link:   'rgba(197,134,192,0.30)',
   edge_call:   'rgba(220,180,120,0.28)',
+  edge_use:    'rgba(125,211,252,0.24)',
+  edge_export: 'rgba(249,168,212,0.26)',
   selected: '#FFFFFF',
   hovered:  'rgba(255,255,255,0.85)',
 };
@@ -774,9 +869,12 @@ function applyFilter() {
   const q = filterText.toLowerCase();
 
   let visNodes = allNodes.filter(n => {
-    if (!showFns && n.type === 'fn') return false;
+    if (!showFns && (n.type === 'fn' || n.type === 'interface')) return false;
     if (hiddenTypes.has(n.type)) return false;
-    if (q && !n.label.toLowerCase().includes(q) && !n.filePath.toLowerCase().includes(q)) return false;
+    const memberText = Array.isArray(n.meta?.members)
+      ? n.meta.members.filter(name => typeof name === 'string').join(' ').toLowerCase()
+      : '';
+    if (q && !n.label.toLowerCase().includes(q) && !n.filePath.toLowerCase().includes(q) && !memberText.includes(q)) return false;
     return true;
   });
 
@@ -1668,7 +1766,15 @@ function mapNode(n: { id: string; label: string; type: string; filePath?: string
 function mapEdge(e: { source: string; target: string; kind: string }): GEdge {
   return {
     source: e.source, target: e.target,
-    kind: ['import', 'declares'].includes(e.kind) ? 'import' : e.kind === 'call' ? 'call' : 'link'
+    kind: ['import', 'declares'].includes(e.kind)
+      ? 'import'
+      : e.kind === 'call'
+        ? 'call'
+        : e.kind === 'use'
+          ? 'use'
+          : e.kind === 'export'
+            ? 'export'
+            : 'link'
   };
 }
 

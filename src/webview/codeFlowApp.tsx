@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useState, useMemo, useRef, type FC } fro
 import { createRoot } from 'react-dom/client';
 import {
   ReactFlow,
-  MiniMap,
-  Controls,
   Background,
   useNodesState,
   useEdgesState,
@@ -48,6 +46,7 @@ const TYPE_COLORS: Record<string, string> = {
   db: '#CE9178', py: '#3572A5', rs: '#DEA584', go: '#00ADD8', cpp: '#F34B7D',
   c: '#A97BFF', cs: '#178600', java: '#B07219', class: '#4EC9B0',
   interface: '#C586C0', type: '#DCDCAA', enum: '#569CD6', const: '#DCDCAA',
+  import: '#7dd3fc', export: '#f9a8d4',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -55,6 +54,7 @@ const TYPE_LABELS: Record<string, string> = {
   url: 'URL', db: 'Database', py: 'Python', rs: 'Rust', go: 'Go',
   cpp: 'C++', c: 'C', cs: 'C#', java: 'Java', class: 'Class',
   interface: 'Interface', type: 'Type', enum: 'Enum', const: 'Const',
+  import: 'Import', export: 'Export',
 };
 
 const CODEFLOW_FRAME_TYPES = new Set([
@@ -80,6 +80,14 @@ interface CustomNodeData {
   line?: number;
   snippet?: string;
   snippetStartLine?: number;
+  controls?: Array<{
+    name: string;
+    controlType: 'color' | 'range' | 'toggle' | 'text';
+    value: string | number | boolean;
+    min?: number;
+    max?: number;
+    step?: number;
+  }>;
   [key: string]: unknown;
 }
 
@@ -127,6 +135,10 @@ function CustomNode({ data }: { data: CustomNodeData }) {
   const isFileNode = Boolean(data.isFileNode);
   const snippet = typeof data.snippet === 'string' ? data.snippet : '';
   const snippetStartLine = typeof data.snippetStartLine === 'number' ? data.snippetStartLine : undefined;
+  const controls = Array.isArray(data.controls) ? data.controls : [];
+  const [controlValues, setControlValues] = useState<Record<string, string | number | boolean>>(() =>
+    Object.fromEntries(controls.map(control => [control.name, control.value]))
+  );
   return (
     <>
       <Handle type="target" position={Position.Left} style={{ background: color, border: 'none', width: 8, height: 8 }} />
@@ -158,6 +170,58 @@ function CustomNode({ data }: { data: CustomNodeData }) {
           {typeof data.line === 'number' ? `:${data.line}` : ''}
         </div>
       )}
+      {controls.length > 0 && (
+        <div style={{ marginTop: '8px', display: 'grid', gap: '8px' }}>
+          {controls.map((control) => (
+            <label key={control.name} style={{ display: 'grid', gap: '4px', fontSize: '10px' }}>
+              <span style={{ color: 'var(--vscode-descriptionForeground, #999)' }}>{control.name}</span>
+              {control.controlType === 'color' && (
+                <input
+                  type="color"
+                  value={typeof controlValues[control.name] === 'string' ? String(controlValues[control.name]) : '#ffffff'}
+                  onChange={(event) => setControlValues(prev => ({ ...prev, [control.name]: event.target.value }))}
+                  style={{ width: '100%', height: '28px', background: 'transparent', border: 'none', padding: 0 }}
+                />
+              )}
+              {control.controlType === 'range' && (
+                <div style={{ display: 'grid', gap: '4px' }}>
+                  <input
+                    type="range"
+                    min={control.min}
+                    max={control.max}
+                    step={control.step ?? 1}
+                    value={typeof controlValues[control.name] === 'number' ? Number(controlValues[control.name]) : Number(control.value)}
+                    onChange={(event) => setControlValues(prev => ({ ...prev, [control.name]: Number(event.target.value) }))}
+                  />
+                  <span style={{ color: 'var(--vscode-descriptionForeground, #999)' }}>{String(controlValues[control.name] ?? control.value)}</span>
+                </div>
+              )}
+              {control.controlType === 'toggle' && (
+                <input
+                  type="checkbox"
+                  checked={Boolean(controlValues[control.name])}
+                  onChange={(event) => setControlValues(prev => ({ ...prev, [control.name]: event.target.checked }))}
+                />
+              )}
+              {control.controlType === 'text' && (
+                <input
+                  type="text"
+                  value={String(controlValues[control.name] ?? control.value)}
+                  onChange={(event) => setControlValues(prev => ({ ...prev, [control.name]: event.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    background: 'rgba(255,255,255,0.04)',
+                    color: 'var(--vscode-editor-foreground, #fff)'
+                  }}
+                />
+              )}
+            </label>
+          ))}
+        </div>
+      )}
       {snippet && (
         <pre style={{
           marginTop: '8px',
@@ -171,8 +235,8 @@ function CustomNode({ data }: { data: CustomNodeData }) {
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
           fontFamily: "Consolas, 'Courier New', monospace",
-          maxHeight: '110px',
-          overflow: 'hidden',
+          maxHeight: '180px',
+          overflow: 'auto',
         }}>
           {snippetStartLine ? `${snippetStartLine}| ` : ''}
           {renderHighlightedSnippet(snippet)}
@@ -377,6 +441,16 @@ function compareByFlowPriority(
   return aLabel.localeCompare(bLabel);
 }
 
+function getLaneOrder(node: CodeNode, filePath: string): number {
+  if (node.id === filePath) return 1;
+  if (node.type === 'import') return 0;
+  if (['class', 'interface', 'type', 'enum'].includes(node.type)) return 2;
+  if (node.type === 'const') return 3;
+  if (node.type === 'fn') return 4;
+  if (node.type === 'export') return 5;
+  return 4;
+}
+
 function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
   const nodePositions = new Map<string, { x: number; y: number }>();
   const framePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
@@ -402,6 +476,7 @@ function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
   const innerGapY = 28;
   const cardWidth = 252;
   const cardHeight = 188;
+  const maxRowsPerColumn = 5;
   const frameSpacingX = 128;
   const frameSpacingY = 96;
   const startX = 72;
@@ -445,7 +520,9 @@ function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
       const outgoing = localGraph.outdegree.get(node.id) ?? 0;
       const externalIncoming = edges.filter(edge => edge.target === node.id && !localIds.has(edge.source)).length;
       const externalOutgoing = edges.filter(edge => edge.source === node.id && !localIds.has(edge.target)).length;
-      const adjustedLayer = baseLayer + Math.max(0, externalIncoming - externalOutgoing);
+      const ownerBump = typeof node.meta?.owner === 'string' ? 50 : 0;
+      const laneOffset = getLaneOrder(node, filePath) * 1000 + ownerBump;
+      const adjustedLayer = laneOffset + baseLayer + Math.max(0, externalIncoming - externalOutgoing);
 
       if (!cardsByLayer.has(adjustedLayer)) cardsByLayer.set(adjustedLayer, []);
       cardsByLayer.get(adjustedLayer)!.push(node);
@@ -456,29 +533,48 @@ function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
 
     const orderedLayers = Array.from(cardsByLayer.keys()).sort((a, b) => a - b);
     let tallestColumnCount = 0;
+    let totalColumnCount = 0;
+    const layerColumns = new Map<number, CodeNode[][]>();
 
     orderedLayers.forEach((layer) => {
-      cardsByLayer.get(layer)!.sort((a, b) => {
+      const sortedLayerCards = cardsByLayer.get(layer)!;
+      sortedLayerCards.sort((a, b) => {
         if (a.id === filePath) return -1;
         if (b.id === filePath) return 1;
         return compareByFlowPriority(a.id, b.id, localGraph.indegree, localGraph.outdegree, localLabels);
       });
-      tallestColumnCount = Math.max(tallestColumnCount, cardsByLayer.get(layer)!.length);
+
+      const columns: CodeNode[][] = [];
+      for (let i = 0; i < sortedLayerCards.length; i += maxRowsPerColumn) {
+        columns.push(sortedLayerCards.slice(i, i + maxRowsPerColumn));
+      }
+
+      layerColumns.set(layer, columns);
+      totalColumnCount += Math.max(1, columns.length);
+      tallestColumnCount = Math.max(
+        tallestColumnCount,
+        ...columns.map(column => column.length),
+        0
+      );
     });
 
-    const columnCount = Math.max(1, orderedLayers.length);
+    const columnCount = Math.max(1, totalColumnCount);
     const frameWidth = Math.max(360, framePaddingX * 2 + columnCount * cardWidth + (columnCount - 1) * innerGapX);
     const frameHeight = Math.max(
       220,
       frameHeaderHeight + framePaddingY * 2 + tallestColumnCount * cardHeight + Math.max(0, tallestColumnCount - 1) * innerGapY
     );
 
-    orderedLayers.forEach((layer, columnIndex) => {
-      const layerCards = cardsByLayer.get(layer) ?? [];
-      layerCards.forEach((node, rowIndex) => {
-        const x = framePaddingX + columnIndex * (cardWidth + innerGapX);
-        const y = frameHeaderHeight + framePaddingY + rowIndex * (cardHeight + innerGapY);
-        nodePositions.set(node.id, { x, y });
+    let visualColumnIndex = 0;
+    orderedLayers.forEach((layer) => {
+      const columns = layerColumns.get(layer) ?? [];
+      columns.forEach((columnNodes) => {
+        columnNodes.forEach((node, rowIndex) => {
+          const x = framePaddingX + visualColumnIndex * (cardWidth + innerGapX);
+          const y = frameHeaderHeight + framePaddingY + rowIndex * (cardHeight + innerGapY);
+          nodePositions.set(node.id, { x, y });
+        });
+        visualColumnIndex++;
       });
     });
 
@@ -594,50 +690,39 @@ interface FlowGraphProps {
   rfNodes: unknown[];
   rfEdges: unknown[];
   onNodeOpen: (node: CodeNode) => void;
-  onNodeIsolate: (nodeId: string) => void;
-  onClearIsolation: () => void;
+  onSelectionChange: (selectedIds: string[]) => void;
 }
 
-const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeOpen, onNodeIsolate, onClearIsolation }) => {
+const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeOpen, onSelectionChange }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const { fitView, getNodes, screenToFlowPosition } = useReactFlow();
   const fitPendingRef = useRef(false);
+  const hasAutoFitRef = useRef(false);
   const nodesRef = useRef(rfNodes);
   const edgesRef = useRef(rfEdges);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [boxSelect, setBoxSelect] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
 
-  // Only update when the actual data changes (not on every render)
+  // Keep the rendered graph in sync, but only auto-fit on first load.
   useEffect(() => {
     nodesRef.current = rfNodes;
     edgesRef.current = rfEdges;
-    if (rfNodes.length > 0 && !fitPendingRef.current) {
+    setNodes(rfNodes as never[]);
+    setEdges(rfEdges as never[]);
+
+    if (rfNodes.length > 0 && !fitPendingRef.current && !hasAutoFitRef.current) {
       fitPendingRef.current = true;
-      // Delay fitView to allow initial layout to settle
       const timer = setTimeout(() => {
-        setNodes(rfNodes as never[]);
-        setEdges(rfEdges as never[]);
         fitView({ padding: 0.2, duration: 0 });
         fitPendingRef.current = false;
+        hasAutoFitRef.current = true;
       }, 800);
       return () => clearTimeout(timer);
     }
   }, [rfNodes, rfEdges]);
-
-  // Initial node/edge set
-  useEffect(() => {
-    if (rfNodes.length > 0) {
-      setNodes(rfNodes as never[]);
-      setEdges(rfEdges as never[]);
-    }
-  }, []);
-
-  const handleNodeClick = useCallback((_event: React.MouseEvent, node: { id: string }) => {
-    onNodeIsolate(node.id);
-  }, [onNodeIsolate]);
 
   const handleNodeDoubleClick = useCallback((_event: React.MouseEvent, node: { id: string; data: CustomNodeData }) => {
     const d = node.data;
@@ -719,9 +804,10 @@ const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeOpen, onNodeIso
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
         onNodeDoubleClick={handleNodeDoubleClick}
-        onPaneClick={onClearIsolation}
+        onSelectionChange={({ nodes: selectedNodes }) => {
+          onSelectionChange(selectedNodes.map((node) => node.id));
+        }}
         nodeTypes={nodeTypes}
         fitView={false}
         minZoom={0.1}
@@ -734,12 +820,6 @@ const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeOpen, onNodeIso
         attributionPosition="bottom-left"
         style={{ background: 'var(--vscode-editor-background, #1e1e1e)' }}
       >
-        <Controls />
-        <MiniMap
-          nodeColor={(n) => TYPE_COLORS[(n.data as CustomNodeData)?.nodeType] || '#888'}
-          style={{ background: 'var(--vscode-sideBar-background, #252526)' }}
-          maskColor="rgba(0,0,0,0.1)"
-        />
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
       </ReactFlow>
       {boxSelect && (
@@ -788,14 +868,13 @@ function getVscode(): VsCodeApi | undefined {
 
 function App() {
   const initialShowFns = window.__ultraviewCodeGraphState?.showFns ?? true;
-  const initialFilterText = window.__ultraviewCodeGraphState?.filterText ?? '';
   const [rfNodes, setRfNodes] = useState<unknown[]>([]);
   const [rfEdges, setRfEdges] = useState<unknown[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [phase, setPhase] = useState<string>('waiting');
   const [progress, setProgress] = useState({ scanned: 0, total: 0 });
-  const [searchTerm, setSearchTerm] = useState(initialFilterText);
-  const [isolatedNodeId, setIsolatedNodeId] = useState<string | null>(null);
+  const [isolatedNodeIds, setIsolatedNodeIds] = useState<string[]>([]);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
 
   // Accumulators — we use refs so the message handler always sees the latest
   const nodeAccRef = useRef<unknown[]>([]);
@@ -867,6 +946,7 @@ function App() {
               isFileNode,
               snippet: typeof node.meta?.snippet === 'string' ? node.meta.snippet : undefined,
               snippetStartLine: typeof node.meta?.snippetStartLine === 'number' ? node.meta.snippetStartLine : undefined,
+              controls: Array.isArray(node.meta?.controls) ? node.meta.controls : undefined,
             },
             parentId: `frame:${parentFile}`,
             extent: 'parent' as const,
@@ -880,6 +960,8 @@ function App() {
           edgeSet.add(key);
           const isImport = e.kind === 'import';
           const isCall = e.kind === 'call';
+          const isUse = e.kind === 'use';
+          const isExport = e.kind === 'export';
           if (!nodeById.has(e.source) || !nodeById.has(e.target)) continue;
           newRfEdges.push({
             id: key,
@@ -887,7 +969,11 @@ function App() {
             target: e.target,
             type: isCall ? 'bezier' : 'smoothstep',
             animated: isCall,
-            style: { stroke: isImport ? '#4EC9B0' : isCall ? '#DCDCAA' : '#C586C0', strokeWidth: isCall ? 2.4 : 2 },
+            style: {
+              stroke: isImport ? '#4EC9B0' : isCall ? '#DCDCAA' : isUse ? '#7dd3fc' : isExport ? '#f9a8d4' : '#C586C0',
+              strokeWidth: isCall ? 2.4 : isUse ? 1.8 : 2,
+              strokeDasharray: isUse ? '6 4' : undefined,
+            },
           });
         }
 
@@ -983,30 +1069,56 @@ function App() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  useEffect(() => {
-    const vscode = getVscode();
-    vscode?.postMessage({ type: 'saveProjectState', state: { filterText: searchTerm } });
-  }, [searchTerm]);
-
   const handleNodeOpen = useCallback((node: CodeNode) => {
     const vscode = getVscode();
     vscode?.postMessage({ type: 'openFile', path: node.filePath || node.id, line: node.meta?.line });
   }, []);
 
-  const handleNodeIsolate = useCallback((nodeId: string) => {
-    setIsolatedNodeId((current) => current === nodeId ? null : nodeId);
-  }, []);
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'i') return;
+      const target = event.target as HTMLElement | null;
+      if (target && (
+        target.tagName === 'INPUT'
+        || target.tagName === 'TEXTAREA'
+        || target.isContentEditable
+      )) {
+        return;
+      }
+      if (selectedNodeIds.length === 0) return;
 
-  const handleClearIsolation = useCallback(() => {
-    setIsolatedNodeId(null);
-  }, []);
+      event.preventDefault();
+      setIsolatedNodeIds((current) => {
+        const next = new Set(current);
+        for (const nodeId of selectedNodeIds) {
+          if (next.has(nodeId)) {
+            next.delete(nodeId);
+          } else {
+            next.add(nodeId);
+          }
+        }
+        return Array.from(next);
+      });
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeIds]);
 
   const isolatedGraph = useMemo(() => {
-    if (!isolatedNodeId) return { nodes: rfNodes, edges: rfEdges };
+    if (isolatedNodeIds.length === 0) return { nodes: rfNodes, edges: rfEdges };
 
     const allNodes = rfNodes as Array<{ id: string; parentId?: string }>;
     const allEdges = rfEdges as Array<{ source: string; target: string }>;
+    const childrenByFrame = new Map<string, string[]>();
+    const includedIds = new Set<string>();
     const adjacency = new Map<string, Set<string>>();
+
+    for (const node of allNodes) {
+      if (!node.parentId) continue;
+      if (!childrenByFrame.has(node.parentId)) childrenByFrame.set(node.parentId, []);
+      childrenByFrame.get(node.parentId)!.push(node.id);
+    }
 
     for (const edge of allEdges) {
       if (!adjacency.has(edge.source)) adjacency.set(edge.source, new Set());
@@ -1015,26 +1127,21 @@ function App() {
       adjacency.get(edge.target)!.add(edge.source);
     }
 
-    const startIds = new Set<string>();
-    if (isolatedNodeId.startsWith('frame:')) {
-      const frameId = isolatedNodeId;
-      allNodes
-        .filter(node => node.parentId === frameId)
-        .forEach(node => startIds.add(node.id));
-      startIds.add(frameId);
-    } else {
-      startIds.add(isolatedNodeId);
-    }
+    for (const isolatedNodeId of isolatedNodeIds) {
+      includedIds.add(isolatedNodeId);
+      const seedIds = isolatedNodeId.startsWith('frame:')
+        ? (childrenByFrame.get(isolatedNodeId) ?? [])
+        : [isolatedNodeId];
+      const queue = seedIds.filter((id) => !includedIds.has(id));
+      seedIds.forEach((id) => includedIds.add(id));
 
-    const includedIds = new Set<string>(startIds);
-    const queue = Array.from(startIds).filter(id => !id.startsWith('frame:'));
-
-    while (queue.length > 0) {
-      const id = queue.shift()!;
-      for (const neighbor of adjacency.get(id) ?? []) {
-        if (includedIds.has(neighbor)) continue;
-        includedIds.add(neighbor);
-        queue.push(neighbor);
+      while (queue.length > 0) {
+        const currentId = queue.shift()!;
+        for (const neighbor of adjacency.get(currentId) ?? []) {
+          if (includedIds.has(neighbor)) continue;
+          includedIds.add(neighbor);
+          queue.push(neighbor);
+        }
       }
     }
 
@@ -1049,26 +1156,42 @@ function App() {
     const edges = allEdges.filter(edge => nodeIds.has(edge.source) && nodeIds.has(edge.target));
 
     return { nodes, edges };
-  }, [isolatedNodeId, rfEdges, rfNodes]);
+  }, [isolatedNodeIds, rfEdges, rfNodes]);
 
-  // Filter if search term is active
-  const filteredNodes = useMemo(() => {
-    if (!searchTerm) return isolatedGraph.nodes;
-    const term = searchTerm.toLowerCase();
-    return isolatedGraph.nodes.filter((n: unknown) => {
-      const data = (n as { data: CustomNodeData }).data;
-      return data.label.toLowerCase().includes(term) || (data.filePath?.toLowerCase().includes(term));
-    });
-  }, [isolatedGraph.nodes, searchTerm]);
+  const filteredNodes = isolatedGraph.nodes;
+  const filteredEdges = isolatedGraph.edges;
 
-  const filteredEdges = useMemo(() => {
-    if (!searchTerm) return isolatedGraph.edges;
-    const nodeIds = new Set(filteredNodes.map((n: unknown) => (n as { id: string }).id));
-    return isolatedGraph.edges.filter((e: unknown) => {
-      const edge = e as { source: string; target: string };
-      return nodeIds.has(edge.source) && nodeIds.has(edge.target);
-    });
-  }, [isolatedGraph.edges, searchTerm, filteredNodes]);
+  const summaryText = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const rawNode of filteredNodes as Array<{ id: string; data?: CustomNodeData }>) {
+      if (rawNode.id.startsWith('frame:')) continue;
+      const nodeType = rawNode.data?.nodeType;
+      if (!nodeType) continue;
+      counts.set(nodeType, (counts.get(nodeType) ?? 0) + 1);
+    }
+
+    const orderedTypes: Array<[string, string]> = [
+      ['ts', 'files'],
+      ['js', 'js'],
+      ['fn', 'functions'],
+      ['const', 'variables'],
+      ['interface', 'interfaces'],
+      ['type', 'types'],
+      ['class', 'classes'],
+      ['enum', 'enums'],
+      ['import', 'imports'],
+      ['export', 'exports'],
+    ];
+
+    return orderedTypes
+      .map(([type, label]) => {
+        const count = counts.get(type) ?? 0;
+        return count > 0 ? `${count} ${label}` : null;
+      })
+      .filter((value): value is string => Boolean(value))
+      .join('  |  ');
+  }, [filteredNodes]);
 
   return (
     <div style={{ width: '100%', height: '100vh', background: 'var(--vscode-editor-background, #1e1e1e)', position: 'relative' }}>
@@ -1077,55 +1200,10 @@ function App() {
           rfNodes={filteredNodes}
           rfEdges={filteredEdges}
           onNodeOpen={handleNodeOpen}
-          onNodeIsolate={handleNodeIsolate}
-          onClearIsolation={handleClearIsolation}
+          onSelectionChange={setSelectedNodeIds}
         />
-        <Panel position="top-left" style={{ width: '250px' }}>
-          <input
-            type="text"
-            placeholder="Filter nodes…"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: '100%', padding: '6px 10px',
-              background: 'var(--vscode-input-background, #3c3c3c)',
-              color: 'var(--vscode-input-foreground, #fff)',
-              border: '1px solid var(--vscode-input-border, rgba(128,128,128,0.4))',
-              borderRadius: '4px', fontSize: '12px',
-            }}
-          />
-        </Panel>
-        {isolatedNodeId && (
-          <Panel position="top-center" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              padding: '6px 10px',
-              borderRadius: '999px',
-              background: 'rgba(78,201,176,0.14)',
-              border: '1px solid rgba(78,201,176,0.35)',
-              color: 'var(--vscode-editor-foreground, #fff)',
-              fontSize: '11px',
-            }}>
-              Isolated flow
-            </div>
-            <button
-              type="button"
-              onClick={handleClearIsolation}
-              style={{
-                padding: '6px 10px',
-                borderRadius: '999px',
-                border: '1px solid var(--vscode-input-border, rgba(128,128,128,0.4))',
-                background: 'var(--vscode-button-secondaryBackground, rgba(128,128,128,0.15))',
-                color: 'var(--vscode-editor-foreground, #fff)',
-                cursor: 'pointer',
-                fontSize: '11px',
-              }}
-            >
-              Show all
-            </button>
-          </Panel>
-        )}
         <Panel position="top-right" style={{ fontSize: '11px', color: 'var(--vscode-descriptionForeground, #888)' }}>
-          {filteredNodes.length} nodes | {filteredEdges.length} edges
+          {summaryText}
         </Panel>
       </ReactFlowProvider>
       <LogPanel logs={logs} phase={phase} progress={progress} />
@@ -1145,3 +1223,4 @@ if (loadingEl) loadingEl.style.display = 'none';
 
 const root = createRoot(document.getElementById('app')!);
 root.render(React.createElement(App));
+

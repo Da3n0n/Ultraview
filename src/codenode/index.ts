@@ -7,11 +7,30 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { CodeNode, CodeEdge, CodeGraph, StreamProgress } from './types';
-import { detectTs, getNamedImports, getAllFunctionsWithIndex } from './tsDetector';
+import {
+  detectTs,
+  getNamedImports,
+  getAllFunctionsWithIndex
+} from './tsDetector';
 import { detectMd } from './mdDetector';
 import { detectDb } from './dbDetector';
 
-const TYPE_NODE_TYPES = new Set(['fn', 'class', 'interface', 'type', 'enum']);
+function buildExportTargets(nodes: CodeNode[]): Map<string, Map<string, string>> {
+  const fileExports = new Map<string, Map<string, string>>();
+  for (const node of nodes) {
+    if (!node.filePath || !node.meta?.parent) continue;
+    const parent = node.meta.parent as string;
+    const exportedMembers = Array.isArray(node.meta.exportedMembers)
+      ? node.meta.exportedMembers.filter((value): value is string => typeof value === 'string')
+      : [];
+    if (exportedMembers.length === 0) continue;
+    if (!fileExports.has(parent)) fileExports.set(parent, new Map());
+    for (const name of exportedMembers) {
+      fileExports.get(parent)!.set(name, node.id);
+    }
+  }
+  return fileExports;
+}
 
 export async function buildCodeGraphStreaming(
   onProgress: (progress: StreamProgress) => void
@@ -117,13 +136,10 @@ export async function buildCodeGraphStreaming(
   // Phase 2: Cross-file call edges
   onProgress({ phase: 'linking', nodes: [], edges: [] });
 
-  const fileExports = new Map<string, Map<string, string>>();
+  const fileExports = buildExportTargets(allNodes);
+  const fileFunctionGroups = new Map<string, string>();
   for (const node of allNodes) {
-    if (TYPE_NODE_TYPES.has(node.type) && node.meta?.parent) {
-      const parent = node.meta.parent as string;
-      if (!fileExports.has(parent)) fileExports.set(parent, new Map());
-      fileExports.get(parent)!.set(node.label, node.type);
-    }
+    if (node.type === 'fn' && node.filePath) fileFunctionGroups.set(node.filePath, node.id);
   }
 
   const CALL_RE = /\b(\w+)\s*\(/g;
@@ -149,7 +165,10 @@ export async function buildCodeGraphStreaming(
     let m2: RegExpExecArray | null;
     while ((m2 = CALL_RE.exec(text2)) !== null) {
       const localName = m2[1];
-      const targetId = importedItems.get(localName);
+      const qualifiedId = importedItems.get(localName);
+      if (!qualifiedId) continue;
+      const [srcFile, importedName] = qualifiedId.split('::');
+      const targetId = fileExports.get(srcFile)?.get(importedName);
       if (!targetId) continue;
       
       let callerName: string | null = null;
@@ -160,7 +179,7 @@ export async function buildCodeGraphStreaming(
         }
       }
       
-      const sourceId = callerName ? `${fp}::${callerName}` : fp;
+      const sourceId = callerName ? (fileFunctionGroups.get(fp) ?? fp) : fp;
       const edgeKey = `${sourceId}→${targetId}→call`;
       if (!edgeSet.has(edgeKey)) {
         edgeSet.add(edgeKey);
@@ -238,13 +257,10 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
   }
 
   // Build file → exported names map (including all types)
-  const fileExports = new Map<string, Map<string, string>>();
+  const fileExports = buildExportTargets(nodes);
+  const fileFunctionGroups = new Map<string, string>();
   for (const node of nodes) {
-    if (TYPE_NODE_TYPES.has(node.type) && node.meta?.parent) {
-      const parent = node.meta.parent as string;
-      if (!fileExports.has(parent)) fileExports.set(parent, new Map());
-      fileExports.get(parent)!.set(node.label, node.type);
-    }
+    if (node.type === 'fn' && node.filePath) fileFunctionGroups.set(node.filePath, node.id);
   }
 
   // Cross-file call edges for all exported types
@@ -270,7 +286,10 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
     let m2: RegExpExecArray | null;
     while ((m2 = CALL_RE.exec(text2)) !== null) {
       const localName = m2[1];
-      const targetId = importedItems.get(localName);
+      const qualifiedId = importedItems.get(localName);
+      if (!qualifiedId) continue;
+      const [srcFile, importedName] = qualifiedId.split('::');
+      const targetId = fileExports.get(srcFile)?.get(importedName);
       if (!targetId) continue;
       
       let callerName: string | null = null;
@@ -281,7 +300,7 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
         }
       }
       
-      const sourceId = callerName ? `${fp}::${callerName}` : fp;
+      const sourceId = callerName ? (fileFunctionGroups.get(fp) ?? fp) : fp;
       const edgeKey = `${sourceId}→${targetId}→call`;
       if (!edgeSet.has(edgeKey)) {
         edgeSet.add(edgeKey);
