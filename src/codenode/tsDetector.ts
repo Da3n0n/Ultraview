@@ -33,6 +33,7 @@ interface VariableControl {
   min?: number;
   max?: number;
   step?: number;
+  quote?: string;
 }
 
 interface VariableSnippetMember extends SnippetMember {
@@ -240,7 +241,7 @@ function getFunctionScopes(text: string): FunctionScope[] {
 function inferVariableControl(name: string, initializer: string): VariableControl | undefined {
   const value = initializer.trim().replace(/,$/, '');
   if (/^['"]#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})['"]$/i.test(value)) {
-    return { name, controlType: 'color', value: value.slice(1, -1) };
+    return { name, controlType: 'color', value: value.slice(1, -1), quote: value[0] };
   }
   if (/^(true|false)$/.test(value)) {
     return { name, controlType: 'toggle', value: value === 'true' };
@@ -258,7 +259,7 @@ function inferVariableControl(name: string, initializer: string): VariableContro
     };
   }
   if (/^['"].*['"]$/.test(value)) {
-    return { name, controlType: 'text', value: value.slice(1, -1) };
+    return { name, controlType: 'text', value: value.slice(1, -1), quote: value[0] };
   }
   return undefined;
 }

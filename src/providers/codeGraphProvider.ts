@@ -1642,6 +1642,16 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
         }
       } else if (msg.type === 'saveProjectState') {
         void saveProjectGraphState(ctx, (msg.state as Partial<ProjectCodeGraphState>) ?? {});
+      } else if (msg.type === 'updateVariableControl') {
+        void updateVariableControl(
+          String(msg.path),
+          String(msg.variableName),
+          msg.value as string | number | boolean,
+          String(msg.controlType),
+          typeof msg.quote === 'string' ? msg.quote : undefined,
+          panel.webview,
+          ctx
+        );
       }
     });
   }
@@ -1683,6 +1693,17 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
           sendGraph(webview, state.showFns, this.ctx);
         }
         break;
+      case 'updateVariableControl':
+        void updateVariableControl(
+          String(msg.path),
+          String(msg.variableName),
+          msg.value as string | number | boolean,
+          String(msg.controlType),
+          typeof msg.quote === 'string' ? msg.quote : undefined,
+          webview,
+          this.ctx
+        );
+        break;
     }
   }
 
@@ -1709,6 +1730,13 @@ export class CodeGraphProvider implements vscode.WebviewViewProvider {
     const colors = getColors();
     for (const webview of CodeGraphProvider.activeWebviews) {
       webview.postMessage({ type: 'configUpdate', colors });
+    }
+  }
+
+  static refreshAllGraphs(ctx: vscode.ExtensionContext): void {
+    const state = getProjectGraphState(ctx);
+    for (const webview of CodeGraphProvider.activeWebviews) {
+      void sendGraph(webview, state.showFns, ctx);
     }
   }
 }
@@ -1796,6 +1824,48 @@ async function sendGraphStreaming(webview: vscode.Webview): Promise<void> {
     });
   } catch (err) {
     vscode.window.showErrorMessage('Code Graph streaming error: ' + String(err));
+  }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function serializeVariableControlValue(
+  value: string | number | boolean,
+  controlType: string,
+  quote?: string
+): string {
+  if (controlType === 'color' || controlType === 'text') {
+    const q = quote === '"' || quote === '\'' ? quote : '\'';
+    return `${q}${String(value).split(q).join(`\\${q}`)}${q}`;
+  }
+  if (controlType === 'toggle') return value ? 'true' : 'false';
+  if (controlType === 'range') return String(value);
+  return String(value);
+}
+
+async function updateVariableControl(
+  filePath: string,
+  variableName: string,
+  value: string | number | boolean,
+  controlType: string,
+  quote: string | undefined,
+  currentWebview: vscode.Webview,
+  ctx: vscode.ExtensionContext
+): Promise<void> {
+  try {
+    const original = fs.readFileSync(filePath, 'utf8');
+    const pattern = new RegExp(`(\\b(?:const|let|var)\\s+${escapeRegExp(variableName)}\\s*=\\s*)([^;\\r\\n]+)`, 'm');
+    if (!pattern.test(original)) return;
+    const next = original.replace(pattern, (_, prefix: string) => `${prefix}${serializeVariableControlValue(value, controlType, quote)}`);
+    if (next === original) return;
+    fs.writeFileSync(filePath, next, 'utf8');
+
+    CodeGraphProvider.refreshAllGraphs(ctx);
+    void sendGraph(currentWebview, getProjectGraphState(ctx).showFns, ctx);
+  } catch (error) {
+    vscode.window.showErrorMessage(`Failed to update variable ${variableName}: ${String(error)}`);
   }
 }
 

@@ -87,6 +87,7 @@ interface CustomNodeData {
     min?: number;
     max?: number;
     step?: number;
+    quote?: string;
   }>;
   [key: string]: unknown;
 }
@@ -139,6 +140,23 @@ function CustomNode({ data }: { data: CustomNodeData }) {
   const [controlValues, setControlValues] = useState<Record<string, string | number | boolean>>(() =>
     Object.fromEntries(controls.map(control => [control.name, control.value]))
   );
+  const preventNodeDrag = (event: React.SyntheticEvent) => {
+    event.stopPropagation();
+  };
+  const sendControlUpdate = (
+    control: NonNullable<CustomNodeData['controls']>[number],
+    value: string | number | boolean
+  ) => {
+    if (!data.filePath) return;
+    getVscode()?.postMessage({
+      type: 'updateVariableControl',
+      path: data.filePath,
+      variableName: control.name,
+      value,
+      controlType: control.controlType,
+      quote: control.quote,
+    });
+  };
   return (
     <>
       <Handle type="target" position={Position.Left} style={{ background: color, border: 'none', width: 8, height: 8 }} />
@@ -177,37 +195,69 @@ function CustomNode({ data }: { data: CustomNodeData }) {
               <span style={{ color: 'var(--vscode-descriptionForeground, #999)' }}>{control.name}</span>
               {control.controlType === 'color' && (
                 <input
+                  className="nodrag"
                   type="color"
                   value={typeof controlValues[control.name] === 'string' ? String(controlValues[control.name]) : '#ffffff'}
-                  onChange={(event) => setControlValues(prev => ({ ...prev, [control.name]: event.target.value }))}
+                  onPointerDown={preventNodeDrag}
+                  onMouseDown={preventNodeDrag}
+                  onClick={preventNodeDrag}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setControlValues(prev => ({ ...prev, [control.name]: value }));
+                    sendControlUpdate(control, value);
+                  }}
                   style={{ width: '100%', height: '28px', background: 'transparent', border: 'none', padding: 0 }}
                 />
               )}
               {control.controlType === 'range' && (
                 <div style={{ display: 'grid', gap: '4px' }}>
                   <input
+                    className="nodrag"
                     type="range"
                     min={control.min}
                     max={control.max}
                     step={control.step ?? 1}
                     value={typeof controlValues[control.name] === 'number' ? Number(controlValues[control.name]) : Number(control.value)}
-                    onChange={(event) => setControlValues(prev => ({ ...prev, [control.name]: Number(event.target.value) }))}
+                    onPointerDown={preventNodeDrag}
+                    onMouseDown={preventNodeDrag}
+                    onClick={preventNodeDrag}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setControlValues(prev => ({ ...prev, [control.name]: value }));
+                      sendControlUpdate(control, value);
+                    }}
                   />
                   <span style={{ color: 'var(--vscode-descriptionForeground, #999)' }}>{String(controlValues[control.name] ?? control.value)}</span>
                 </div>
               )}
               {control.controlType === 'toggle' && (
                 <input
+                  className="nodrag"
                   type="checkbox"
                   checked={Boolean(controlValues[control.name])}
-                  onChange={(event) => setControlValues(prev => ({ ...prev, [control.name]: event.target.checked }))}
+                  onPointerDown={preventNodeDrag}
+                  onMouseDown={preventNodeDrag}
+                  onClick={preventNodeDrag}
+                  onChange={(event) => {
+                    const value = event.target.checked;
+                    setControlValues(prev => ({ ...prev, [control.name]: value }));
+                    sendControlUpdate(control, value);
+                  }}
                 />
               )}
               {control.controlType === 'text' && (
                 <input
+                  className="nodrag"
                   type="text"
                   value={String(controlValues[control.name] ?? control.value)}
-                  onChange={(event) => setControlValues(prev => ({ ...prev, [control.name]: event.target.value }))}
+                  onPointerDown={preventNodeDrag}
+                  onMouseDown={preventNodeDrag}
+                  onClick={preventNodeDrag}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setControlValues(prev => ({ ...prev, [control.name]: value }));
+                    sendControlUpdate(control, value);
+                  }}
                   style={{
                     width: '100%',
                     padding: '6px 8px',

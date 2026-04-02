@@ -15,7 +15,7 @@ interface IndexTable {
   columns: IndexColumn[];
 }
 
-const TEXT_LINE_LIMIT = 10000;
+const TEXT_LINE_LIMIT = 11854;
 const BINARY_ROW_LIMIT = 5000;
 const BINARY_CHUNK_SIZE = 32;
 
