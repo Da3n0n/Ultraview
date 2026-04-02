@@ -137,6 +137,7 @@ function CustomNode({ data }: { data: CustomNodeData }) {
   const snippet = typeof data.snippet === 'string' ? data.snippet : '';
   const snippetStartLine = typeof data.snippetStartLine === 'number' ? data.snippetStartLine : undefined;
   const controls = Array.isArray(data.controls) ? data.controls : [];
+  const [isSnippetExpanded, setIsSnippetExpanded] = useState(false);
   const [controlValues, setControlValues] = useState<Record<string, string | number | boolean>>(() =>
     Object.fromEntries(controls.map(control => [control.name, control.value]))
   );
@@ -157,6 +158,8 @@ function CustomNode({ data }: { data: CustomNodeData }) {
       quote: control.quote,
     });
   };
+  const snippetToggleLabel = isSnippetExpanded ? 'Hide code' : 'Show code';
+
   return (
     <>
       <Handle type="target" position={Position.Left} style={{ background: color, border: 'none', width: 8, height: 8 }} />
@@ -169,6 +172,7 @@ function CustomNode({ data }: { data: CustomNodeData }) {
       fontSize: '11px',
       minWidth: isFileNode ? '220px' : '210px',
       maxWidth: '280px',
+      boxSizing: 'border-box',
     }}>
       <div style={{ fontWeight: 600, marginBottom: '2px', color }}>{isFileNode ? 'File' : label}</div>
       <div style={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -186,6 +190,35 @@ function CustomNode({ data }: { data: CustomNodeData }) {
         }}>
           {data.filePath?.split(/[/\\]/).pop()}
           {typeof data.line === 'number' ? `:${data.line}` : ''}
+        </div>
+      )}
+      {snippet && (
+        <div style={{ marginTop: '8px' }}>
+          <button
+            className="nodrag"
+            type="button"
+            onPointerDown={preventNodeDrag}
+            onMouseDown={preventNodeDrag}
+            onClick={(event) => {
+              preventNodeDrag(event);
+              setIsSnippetExpanded(prev => !prev);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 8px',
+              borderRadius: '999px',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.05)',
+              color: 'var(--vscode-editor-foreground, #d4d4d4)',
+              fontSize: '10px',
+              cursor: 'pointer',
+            }}
+          >
+            <span aria-hidden="true">{isSnippetExpanded ? '▾' : '▸'}</span>
+            {snippetToggleLabel}
+          </button>
         </div>
       )}
       {controls.length > 0 && (
@@ -272,7 +305,7 @@ function CustomNode({ data }: { data: CustomNodeData }) {
           ))}
         </div>
       )}
-      {snippet && (
+      {snippet && isSnippetExpanded && (
         <pre style={{
           marginTop: '8px',
           padding: '8px 10px',
@@ -322,6 +355,8 @@ function FrameNode({ data }: { data: FrameNodeData }) {
       fontSize: '10px',
       boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
     }}>
+      <Handle type="target" position={Position.Left} style={{ background: 'rgba(156,163,175,0.9)', border: 'none', width: 10, height: 10 }} />
+      <Handle type="source" position={Position.Right} style={{ background: 'rgba(156,163,175,0.9)', border: 'none', width: 10, height: 10 }} />
       <NodeResizer
         minWidth={280}
         minHeight={180}
@@ -501,6 +536,35 @@ function getLaneOrder(node: CodeNode, filePath: string): number {
   return 4;
 }
 
+function estimateControlHeight(controlType: unknown): number {
+  if (controlType === 'toggle') return 44;
+  if (controlType === 'color') return 64;
+  if (controlType === 'range') return 68;
+  if (controlType === 'text') return 64;
+  return 56;
+}
+
+function estimateNodeCardHeight(node: CodeNode): number {
+  let height = 92;
+  const controls = Array.isArray(node.meta?.controls)
+    ? node.meta.controls as Array<Record<string, unknown>>
+    : [];
+
+  if (controls.length > 0) {
+    height += 10;
+    controls.forEach((control, index) => {
+      height += estimateControlHeight(control.controlType);
+      if (index < controls.length - 1) height += 8;
+    });
+  }
+
+  if (typeof node.meta?.snippet === 'string' && node.meta.snippet.trim().length > 0) {
+    height += 38;
+  }
+
+  return Math.max(118, height);
+}
+
 function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
   const nodePositions = new Map<string, { x: number; y: number }>();
   const framePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
@@ -522,11 +586,8 @@ function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
   const framePaddingX = 32;
   const framePaddingY = 28;
   const frameHeaderHeight = 78;
-  const innerGapX = 28;
-  const innerGapY = 28;
-  const cardWidth = 252;
-  const cardHeight = 188;
-  const maxRowsPerColumn = 5;
+  const innerGapY = 24;
+  const cardWidth = 280;
   const frameSpacingX = 128;
   const frameSpacingY = 96;
   const startX = 72;
@@ -548,84 +609,28 @@ function layoutGraph(nodes: CodeNode[], edges: CodeEdge[]): LayoutResult {
 
   for (const filePath of frameIds) {
     const group = fileGroups.get(filePath) ?? [];
-    const fileNode = group.find(node => node.id === filePath);
     const memberNodes = group
       .filter(node => node.id !== filePath);
-    const cards = fileNode ? [fileNode, ...memberNodes] : memberNodes;
-    const localIds = new Set(cards.map(node => node.id));
-    const localGraph = createLayerGraph(cards.map(node => node.id));
-    const localLabels = new Map(cards.map(node => [node.id, node.label]));
-
-    for (const edge of edges) {
-      if (!localIds.has(edge.source) || !localIds.has(edge.target)) continue;
-      addLayerEdge(localGraph, edge.source, edge.target);
-    }
-
-    const localLayers = computeLayerMap(cards.map(node => node.id), localGraph);
-    const cardsByLayer = new Map<number, CodeNode[]>();
-
-    for (const node of cards) {
-      const baseLayer = localLayers.get(node.id) ?? 0;
-      const incoming = localGraph.indegree.get(node.id) ?? 0;
-      const outgoing = localGraph.outdegree.get(node.id) ?? 0;
-      const externalIncoming = edges.filter(edge => edge.target === node.id && !localIds.has(edge.source)).length;
-      const externalOutgoing = edges.filter(edge => edge.source === node.id && !localIds.has(edge.target)).length;
-      const ownerBump = typeof node.meta?.owner === 'string' ? 50 : 0;
-      const laneOffset = getLaneOrder(node, filePath) * 1000 + ownerBump;
-      const adjustedLayer = laneOffset + baseLayer + Math.max(0, externalIncoming - externalOutgoing);
-
-      if (!cardsByLayer.has(adjustedLayer)) cardsByLayer.set(adjustedLayer, []);
-      cardsByLayer.get(adjustedLayer)!.push(node);
-
-      localGraph.indegree.set(node.id, incoming + externalIncoming);
-      localGraph.outdegree.set(node.id, outgoing + externalOutgoing);
-    }
-
-    const orderedLayers = Array.from(cardsByLayer.keys()).sort((a, b) => a - b);
-    let tallestColumnCount = 0;
-    let totalColumnCount = 0;
-    const layerColumns = new Map<number, CodeNode[][]>();
-
-    orderedLayers.forEach((layer) => {
-      const sortedLayerCards = cardsByLayer.get(layer)!;
-      sortedLayerCards.sort((a, b) => {
-        if (a.id === filePath) return -1;
-        if (b.id === filePath) return 1;
-        return compareByFlowPriority(a.id, b.id, localGraph.indegree, localGraph.outdegree, localLabels);
-      });
-
-      const columns: CodeNode[][] = [];
-      for (let i = 0; i < sortedLayerCards.length; i += maxRowsPerColumn) {
-        columns.push(sortedLayerCards.slice(i, i + maxRowsPerColumn));
-      }
-
-      layerColumns.set(layer, columns);
-      totalColumnCount += Math.max(1, columns.length);
-      tallestColumnCount = Math.max(
-        tallestColumnCount,
-        ...columns.map(column => column.length),
-        0
-      );
+    const cards = [...memberNodes].sort((a, b) => {
+      const lane = getLaneOrder(a, filePath) - getLaneOrder(b, filePath);
+      if (lane !== 0) return lane;
+      return a.label.localeCompare(b.label);
     });
+    const cardHeights = cards.map(estimateNodeCardHeight);
 
-    const columnCount = Math.max(1, totalColumnCount);
-    const frameWidth = Math.max(360, framePaddingX * 2 + columnCount * cardWidth + (columnCount - 1) * innerGapX);
+    const frameWidth = Math.max(372, framePaddingX * 2 + cardWidth);
+    const contentHeight = cardHeights.reduce((sum, height) => sum + height, 0);
     const frameHeight = Math.max(
       220,
-      frameHeaderHeight + framePaddingY * 2 + tallestColumnCount * cardHeight + Math.max(0, tallestColumnCount - 1) * innerGapY
+      frameHeaderHeight + framePaddingY * 2 + contentHeight + Math.max(0, cards.length - 1) * innerGapY
     );
 
-    let visualColumnIndex = 0;
-    orderedLayers.forEach((layer) => {
-      const columns = layerColumns.get(layer) ?? [];
-      columns.forEach((columnNodes) => {
-        columnNodes.forEach((node, rowIndex) => {
-          const x = framePaddingX + visualColumnIndex * (cardWidth + innerGapX);
-          const y = frameHeaderHeight + framePaddingY + rowIndex * (cardHeight + innerGapY);
-          nodePositions.set(node.id, { x, y });
-        });
-        visualColumnIndex++;
-      });
+    let currentY = frameHeaderHeight + framePaddingY;
+    cards.forEach((node, index) => {
+      const x = framePaddingX;
+      const y = currentY;
+      nodePositions.set(node.id, { x, y });
+      currentY += cardHeights[index] + innerGapY;
     });
 
     frameBoxes.set(filePath, { width: frameWidth, height: frameHeight });
@@ -739,11 +744,12 @@ const LogPanel: FC<{ logs: LogEntry[]; phase: string; progress: { scanned: numbe
 interface FlowGraphProps {
   rfNodes: unknown[];
   rfEdges: unknown[];
+  visibleNodeIds?: Set<string> | null;
   onNodeOpen: (node: CodeNode) => void;
   onSelectionChange: (selectedIds: string[]) => void;
 }
 
-const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeOpen, onSelectionChange }) => {
+const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, visibleNodeIds, onNodeOpen, onSelectionChange }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -773,6 +779,17 @@ const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, onNodeOpen, onSelecti
       return () => clearTimeout(timer);
     }
   }, [rfNodes, rfEdges]);
+
+  useEffect(() => {
+    setNodes((existing) => existing.map((node) => ({
+      ...node,
+      hidden: visibleNodeIds ? !visibleNodeIds.has(node.id) : false,
+    })));
+    setEdges((existing) => existing.map((edge) => ({
+      ...edge,
+      hidden: visibleNodeIds ? !visibleNodeIds.has(edge.source) || !visibleNodeIds.has(edge.target) : false,
+    })));
+  }, [visibleNodeIds, setEdges, setNodes]);
 
   const handleNodeDoubleClick = useCallback((_event: React.MouseEvent, node: { id: string; data: CustomNodeData }) => {
     const d = node.data;
@@ -923,7 +940,7 @@ function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [phase, setPhase] = useState<string>('waiting');
   const [progress, setProgress] = useState({ scanned: 0, total: 0 });
-  const [isolatedNodeIds, setIsolatedNodeIds] = useState<string[]>([]);
+  const [isolatedSeedIds, setIsolatedSeedIds] = useState<string[]>([]);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
 
   // Accumulators — we use refs so the message handler always sees the latest
@@ -976,13 +993,13 @@ function App() {
           });
         }
 
-        // Add all file-scoped nodes inside their frame, including the file node itself.
+        // Add grouped file-scoped nodes inside their frame.
         for (const node of filteredNodes) {
           const parentFile = getParentFile(node);
           if (!parentFile) continue;
+          if (node.id === parentFile) continue;
           const pos = layout.nodePositions.get(node.id);
           if (!pos) continue;
-          const isFileNode = node.id === parentFile;
           const line = typeof node.meta?.line === 'number' ? node.meta.line : undefined;
           newRfNodes.push({
             id: node.id,
@@ -993,7 +1010,6 @@ function App() {
               nodeType: node.type,
               filePath: node.filePath,
               line,
-              isFileNode,
               snippet: typeof node.meta?.snippet === 'string' ? node.meta.snippet : undefined,
               snippetStartLine: typeof node.meta?.snippetStartLine === 'number' ? node.meta.snippetStartLine : undefined,
               controls: Array.isArray(node.meta?.controls) ? node.meta.controls : undefined,
@@ -1008,11 +1024,14 @@ function App() {
           const key = `${e.source}-${e.target}-${e.kind}`;
           if (edgeSet.has(key)) continue;
           edgeSet.add(key);
+          const sourceNode = nodeById.get(e.source);
+          const targetNode = nodeById.get(e.target);
+          if (!sourceNode || !targetNode) continue;
+          if (sourceNode.id === getParentFile(sourceNode) || targetNode.id === getParentFile(targetNode)) continue;
           const isImport = e.kind === 'import';
           const isCall = e.kind === 'call';
           const isUse = e.kind === 'use';
           const isExport = e.kind === 'export';
-          if (!nodeById.has(e.source) || !nodeById.has(e.target)) continue;
           newRfEdges.push({
             id: key,
             source: e.source,
@@ -1024,6 +1043,28 @@ function App() {
               strokeWidth: isCall ? 2.4 : isUse ? 1.8 : 2,
               strokeDasharray: isUse ? '6 4' : undefined,
             },
+          });
+        }
+
+        const frameEdgeSet = new Set<string>();
+        for (const e of filteredEdges) {
+          const sourceFrame = getParentFile(nodeById.get(e.source)!);
+          const targetFrame = getParentFile(nodeById.get(e.target)!);
+          if (!sourceFrame || !targetFrame || sourceFrame === targetFrame) continue;
+          const frameKey = `frame:${sourceFrame}->frame:${targetFrame}`;
+          if (frameEdgeSet.has(frameKey)) continue;
+          frameEdgeSet.add(frameKey);
+          newRfEdges.push({
+            id: frameKey,
+            source: `frame:${sourceFrame}`,
+            target: `frame:${targetFrame}`,
+            type: 'smoothstep',
+            animated: false,
+            style: {
+              stroke: 'rgba(156,163,175,0.35)',
+              strokeWidth: 1.4,
+            },
+            zIndex: 0,
           });
         }
 
@@ -1135,19 +1176,11 @@ function App() {
       )) {
         return;
       }
-      if (selectedNodeIds.length === 0) return;
-
       event.preventDefault();
-      setIsolatedNodeIds((current) => {
-        const next = new Set(current);
-        for (const nodeId of selectedNodeIds) {
-          if (next.has(nodeId)) {
-            next.delete(nodeId);
-          } else {
-            next.add(nodeId);
-          }
-        }
-        return Array.from(next);
+      setIsolatedSeedIds((current) => {
+        if (current.length > 0) return [];
+        if (selectedNodeIds.length === 0) return current;
+        return [...selectedNodeIds];
       });
     };
 
@@ -1155,8 +1188,8 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedNodeIds]);
 
-  const isolatedGraph = useMemo(() => {
-    if (isolatedNodeIds.length === 0) return { nodes: rfNodes, edges: rfEdges };
+  const isolatedVisibleIds = useMemo(() => {
+    if (isolatedSeedIds.length === 0) return null;
 
     const allNodes = rfNodes as Array<{ id: string; parentId?: string }>;
     const allEdges = rfEdges as Array<{ source: string; target: string }>;
@@ -1177,7 +1210,7 @@ function App() {
       adjacency.get(edge.target)!.add(edge.source);
     }
 
-    for (const isolatedNodeId of isolatedNodeIds) {
+    for (const isolatedNodeId of isolatedSeedIds) {
       includedIds.add(isolatedNodeId);
       const seedIds = isolatedNodeId.startsWith('frame:')
         ? (childrenByFrame.get(isolatedNodeId) ?? [])
@@ -1200,21 +1233,14 @@ function App() {
         includedIds.add(node.parentId);
       }
     }
-
-    const nodes = allNodes.filter(node => includedIds.has(node.id));
-    const nodeIds = new Set(nodes.map(node => node.id));
-    const edges = allEdges.filter(edge => nodeIds.has(edge.source) && nodeIds.has(edge.target));
-
-    return { nodes, edges };
-  }, [isolatedNodeIds, rfEdges, rfNodes]);
-
-  const filteredNodes = isolatedGraph.nodes;
-  const filteredEdges = isolatedGraph.edges;
+    return includedIds;
+  }, [isolatedSeedIds, rfEdges, rfNodes]);
 
   const summaryText = useMemo(() => {
     const counts = new Map<string, number>();
 
-    for (const rawNode of filteredNodes as Array<{ id: string; data?: CustomNodeData }>) {
+    for (const rawNode of rfNodes as Array<{ id: string; data?: CustomNodeData }>) {
+      if (isolatedVisibleIds && !isolatedVisibleIds.has(rawNode.id)) continue;
       if (rawNode.id.startsWith('frame:')) continue;
       const nodeType = rawNode.data?.nodeType;
       if (!nodeType) continue;
@@ -1241,14 +1267,15 @@ function App() {
       })
       .filter((value): value is string => Boolean(value))
       .join('  |  ');
-  }, [filteredNodes]);
+  }, [isolatedVisibleIds, rfNodes]);
 
   return (
     <div style={{ width: '100%', height: '100vh', background: 'var(--vscode-editor-background, #1e1e1e)', position: 'relative' }}>
       <ReactFlowProvider>
         <FlowGraph
-          rfNodes={filteredNodes}
-          rfEdges={filteredEdges}
+          rfNodes={rfNodes}
+          rfEdges={rfEdges}
+          visibleNodeIds={isolatedVisibleIds}
           onNodeOpen={handleNodeOpen}
           onSelectionChange={setSelectedNodeIds}
         />
