@@ -1,3 +1,4 @@
 {
-    "workbench.browser.dataStorage": "workspace"
+    "workbench.browser.dataStorage": "workspace",
+    "ultraview.dokploy.url": "https://admin.foundr.tech"
 }

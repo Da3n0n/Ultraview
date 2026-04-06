@@ -55,6 +55,11 @@ Automatically detect runnable commands across the whole workspace, including mon
 Easily manage and kill open ports and processes within a simple UI. Identify locked ports in use, free up resources, and kill ports instantly with a clean GUI.
 
 
+### **Dokploy Sidebar**
+
+Open your Dokploy instance directly from a dedicated Ultraview sidebar icon, sign in from inside VS Code, and jump to a full editor browser view when you need more room.
+
+
 ### **Cross-IDE Sync**
 
 Settings, projects, and Git accounts are synced across VS Code, Antigravity, Cursor, and Windsurf automatically via local storage.

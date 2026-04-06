@@ -255,6 +255,12 @@ export function getSvgEditorHtml(): string {
         <rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5.5 8h5M8 5.5v5"/>
       </svg>1:1
     </button>
+    <button class="tb-btn" id="btn-replace" title="Replace this SVG with another SVG or image">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M3 5h6M9 3l2 2-2 2"/>
+        <path d="M13 11H7M7 9l-2 2 2 2"/>
+      </svg>Replace
+    </button>
     <button class="tb-btn" id="btn-zoom-out" title="Zoom out (-)">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
         <circle cx="7" cy="7" r="5"/><path d="M5 7h4M13 13l-2.5-2.5"/>

@@ -3,7 +3,7 @@
   "icon": "images/icon.png",
   "displayName": "Ultraview “ All in One VS Code Extension",
   "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
-  "version": "0.2.223",
+  "version": "0.2.228",
   "publisher": "Da3n0n",
   "engines": {
     "vscode": "^1.85.0"
@@ -25,14 +25,7 @@
     "visualization"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onCommand:ultraview.openCodeGraph",
-    "onCommand:ultraview.openGitProjects",
-    "onCommand:ultraview.openPorts",
-    "onView:ultraview.codeGraph",
-    "onView:ultraview.git",
-    "onView:ultraview.ports",
-    "onView:ultraview.commands"
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -250,6 +243,11 @@
           "type": "string",
           "default": "",
           "description": "Text color for comments (e.g., '#6A9955', 'green'). Leave empty to use theme color."
+        },
+        "ultraview.dokploy.url": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for your Dokploy instance, used by the Dokploy sidebar and browser commands."
         }
       }
     },
@@ -274,6 +272,11 @@
           "id": "ultraview-commands",
           "title": "Commands",
           "icon": "images/commands.svg"
+        },
+        {
+          "id": "ultraview-dokploy",
+          "title": "Dokploy",
+          "icon": "images/dokploy.svg"
         }
       ]
     },
@@ -282,28 +285,40 @@
         {
           "type": "webview",
           "id": "ultraview.codeGraph",
-          "name": "Code Graph"
+          "name": "Code Graph",
+          "icon": "$(type-hierarchy)"
         }
       ],
       "ultraview-git": [
         {
           "type": "webview",
           "id": "ultraview.git",
-          "name": "Project Manager"
+          "name": "Project Manager",
+          "icon": "images/git.svg"
         }
       ],
       "ultraview-ports": [
         {
           "type": "webview",
           "id": "ultraview.ports",
-          "name": "Ports & Processes"
+          "name": "Ports & Processes",
+          "icon": "images/ports.svg"
         }
       ],
       "ultraview-commands": [
         {
           "type": "webview",
           "id": "ultraview.commands",
-          "name": "Commands"
+          "name": "Commands",
+          "icon": "images/commands.svg"
+        }
+      ],
+      "ultraview-dokploy": [
+        {
+          "type": "webview",
+          "id": "ultraview.dokploy",
+          "name": "Dokploy",
+          "icon": "images/dokploy.svg"
         }
       ]
     },
@@ -327,6 +342,16 @@
         "command": "ultraview.openCommands",
         "title": "Ultraview: Open Commands",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "ultraview.openDokploy",
+        "title": "Ultraview: Open Dokploy in Editor",
+        "icon": "$(browser)"
+      },
+      {
+        "command": "ultraview.configureDokployUrl",
+        "title": "Ultraview: Configure Dokploy URL",
+        "icon": "$(gear)"
       },
       {
         "command": "ultraview.openUrl",
@@ -371,6 +396,18 @@
           "command": "ultraview.forceDelete",
           "group": "7_modification",
           "when": "resourceScheme == 'file'"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "ultraview.openDokploy",
+          "group": "navigation",
+          "when": "view == ultraview.dokploy"
+        },
+        {
+          "command": "ultraview.configureDokployUrl",
+          "group": "navigation@1",
+          "when": "view == ultraview.dokploy"
         }
       ]
     },
@@ -610,6 +647,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "sql.js": "^1.11.0",
-    "turndown": "^7.2.2"
+    "turndown": "^7.2.2",
+    "vsce": "^2.15.0"
   }
 }

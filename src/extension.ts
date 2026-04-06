@@ -10,6 +10,11 @@ import { CodeGraphProvider } from './providers/codeGraphProvider';
 import { GitProvider } from './providers/gitProvider';
 import { PortsProvider } from './providers/portsProvider';
 import { CommandsProvider } from './providers/commandsProvider';
+import {
+  DokployProvider,
+  configureDokployUrl,
+  openDokployInEditor,
+} from './providers/dokployProvider';
 import { CustomComments } from './customComments/index';
 import { SharedStore } from './sync/sharedStore';
 import { Model3dProvider } from './model3dViewer';
@@ -99,8 +104,23 @@ export async function activate(context: vscode.ExtensionContext) {
       new CommandsProvider(context),
       { webviewOptions: { retainContextWhenHidden: true } }
     ),
+    vscode.window.registerWebviewViewProvider(
+      DokployProvider.viewId,
+      new DokployProvider(context),
+      { webviewOptions: { retainContextWhenHidden: true } }
+    ),
     vscode.commands.registerCommand('ultraview.openCommands', () => {
       CommandsProvider.openAsPanel(context);
+    }),
+    vscode.commands.registerCommand('ultraview.openDokployPanel', () => {
+      DokployProvider.openAsPanel(context);
+    }),
+    vscode.commands.registerCommand('ultraview.openDokploy', async () => {
+      await openDokployInEditor();
+    }),
+    vscode.commands.registerCommand('ultraview.configureDokployUrl', async () => {
+      await configureDokployUrl(context);
+      await DokployProvider.refreshAllViews();
     }),
     vscode.commands.registerCommand('ultraview.openUrl', async (url?: string) => {
       if (url && typeof url === 'string') {

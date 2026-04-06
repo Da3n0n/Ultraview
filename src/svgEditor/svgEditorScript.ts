@@ -464,6 +464,9 @@ document.getElementById('btn-actual').addEventListener('click', function() {
   } else { panX = cw/2; panY = ch/2; }
   applyTransform();
 });
+document.getElementById('btn-replace').addEventListener('click', function() {
+  vscode.postMessage({ type: 'replaceAsset' });
+});
 document.getElementById('btn-zoom-in').addEventListener('click',  function() { zoomBy(1.3); });
 document.getElementById('btn-zoom-out').addEventListener('click', function() { zoomBy(1/1.3); });
 
@@ -476,6 +479,10 @@ window.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') deselectElement();
   if ((e.ctrlKey||e.metaKey) && e.key === '0') { e.preventDefault(); fitToCanvas(currentSvgEl); }
   if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'r') {
+    e.preventDefault();
+    vscode.postMessage({ type: 'replaceAsset' });
+  }
 });
 
 document.getElementById('inspector-close').addEventListener('click', deselectElement);
