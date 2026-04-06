@@ -26,13 +26,6 @@ export function buildDokployHtml(isPanel: boolean): string {
   .tbtn.primary{
     background:var(--vscode-button-background,rgba(0,120,212,.9));
     color:var(--vscode-button-foreground,#fff)}
-  .url-pill{
-    min-width:0;flex:1 1 auto;height:26px;display:flex;align-items:center;
-    padding:0 10px;border-radius:6px;
-    color:var(--vscode-descriptionForeground);
-    background:var(--vscode-editor-background,rgba(0,0,0,.12));
-    border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #content{position:fixed;top:40px;left:0;right:0;bottom:0;overflow:auto}
   .empty,.shell{
     width:100%;min-height:100%;display:flex;flex-direction:column}
@@ -76,10 +69,7 @@ export function buildDokployHtml(isPanel: boolean): string {
 </head>
 <body>
 <div id="toolbar">
-  <button class="tbtn primary" id="btn-editor" title="Open Dokploy in the editor browser">Open in Editor</button>
-  <button class="tbtn" id="btn-add" title="Add a Dokploy profile">Add Profile</button>
-  <button class="tbtn" id="btn-configure" title="Edit the active Dokploy profile">Edit Active</button>
-  <div class="url-pill mono" id="url-pill">No Dokploy URL configured</div>
+  <button class="tbtn primary" id="btn-add" title="Add a Dokploy profile">Add Profile</button>
 </div>
 <div id="content"></div>
 
@@ -90,18 +80,8 @@ const vscode = acquireVsCodeApi();
 let state = { url: '', profiles: [], activeProfileId: '', mode: ${isPanel ? `'panel'` : `'sidebar'`} };
 
 const contentEl = document.getElementById('content');
-const urlPill = document.getElementById('url-pill');
-
-document.getElementById('btn-editor').addEventListener('click', function(){
-  vscode.postMessage({ type: 'openEditor' });
-});
-
 document.getElementById('btn-add').addEventListener('click', function(){
   vscode.postMessage({ type: 'addProfile' });
-});
-
-document.getElementById('btn-configure').addEventListener('click', function(){
-  vscode.postMessage({ type: 'configure' });
 });
 
 window.addEventListener('message', function(event){
@@ -115,8 +95,6 @@ window.addEventListener('message', function(event){
     activeProfileId: typeof msg.activeProfileId === 'string' ? msg.activeProfileId : '',
     mode: msg.mode === 'panel' ? 'panel' : 'sidebar'
   };
-  urlPill.textContent = state.url || 'No Dokploy URL configured';
-  urlPill.title = state.url || 'No Dokploy URL configured';
   render();
 });
 
@@ -146,7 +124,8 @@ function render() {
         '</div>' +
         '<div class="profile-actions">' +
           (isActive ? '' : '<button class="tbtn" data-action="activate" data-id="' + escAttr(profile.id) + '">Make Active</button>') +
-          '<button class="tbtn primary" data-action="open" data-id="' + escAttr(profile.id) + '">Open</button>' +
+          '<button class="tbtn primary" data-action="open" data-id="' + escAttr(profile.id) + '">Open in Editor</button>' +
+          '<button class="tbtn primary" data-action="openExt" data-id="' + escAttr(profile.id) + '">Open in Browser</button>' +
           '<button class="tbtn" data-action="edit" data-id="' + escAttr(profile.id) + '">Edit</button>' +
           '<button class="tbtn" data-action="delete" data-id="' + escAttr(profile.id) + '">Remove</button>' +
         '</div>' +
@@ -168,6 +147,7 @@ function render() {
       }
       if (action === 'activate') vscode.postMessage({ type: 'activateProfile', profileId: profileId });
       if (action === 'open') vscode.postMessage({ type: 'openProfile', profileId: profileId });
+      if (action === 'openExt') vscode.postMessage({ type: 'openProfileExt', profileId: profileId });
       if (action === 'edit') vscode.postMessage({ type: 'editProfile', profileId: profileId });
       if (action === 'delete') vscode.postMessage({ type: 'deleteProfile', profileId: profileId });
     });

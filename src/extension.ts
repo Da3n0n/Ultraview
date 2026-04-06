@@ -19,6 +19,7 @@ import { CustomComments } from './customComments/index';
 import { SharedStore } from './sync/sharedStore';
 import { Model3dProvider } from './model3dViewer';
 import { forceDelete } from './utils/forceDelete';
+import { openUrlInVsCodeBrowser } from './utils/browser';
 
 
 let customComments: CustomComments;
@@ -127,7 +128,10 @@ export async function activate(context: vscode.ExtensionContext) {
         if (!/^https?:\/\//.test(url)) {
           url = 'https://' + url;
         }
-        vscode.commands.executeCommand('simpleBrowser.show', url);
+        await openUrlInVsCodeBrowser(url, {
+          promptExternalOnFailure: true,
+          failureContext: 'Ultraview URL opening',
+        });
       } else {
         const input = await vscode.window.showInputBox({
           prompt: 'Enter URL to open',
@@ -139,7 +143,10 @@ export async function activate(context: vscode.ExtensionContext) {
           if (!/^https?:\/\//.test(finalUrl)) {
             finalUrl = 'https://' + finalUrl;
           }
-          vscode.commands.executeCommand('simpleBrowser.show', finalUrl);
+          await openUrlInVsCodeBrowser(finalUrl, {
+            promptExternalOnFailure: true,
+            failureContext: 'Ultraview URL opening',
+          });
         }
       }
     }),
