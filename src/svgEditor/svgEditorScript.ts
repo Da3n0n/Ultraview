@@ -1,4 +1,5 @@
-export function getSvgEditorScript(): string {
+
+'export function getSvgEditorScript(): string {
   const script = `
 (function () {
 'use strict';
