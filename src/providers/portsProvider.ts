@@ -10,7 +10,11 @@ export class PortsProvider implements vscode.WebviewViewProvider {
     constructor(private context: vscode.ExtensionContext) { }
 
     // open the ports view as a standalone editor panel (same HTML as the sidebar)
-    static openAsPanel(ctx: vscode.ExtensionContext): void {
+    static 
+    
+][';-=
+    #']
+    openAsPanel(ctx: vscode.ExtensionContext): void {
         const panel = vscode.window.createWebviewPanel(
             'ultraview.portsPanel',
             'Ports & Processes',
