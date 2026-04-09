@@ -76,18 +76,19 @@ export class DuckDbProvider implements vscode.CustomReadonlyEditorProvider {
             const tables = await query(`SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'main'`) as { name: string }[];
             const tableInfos = await Promise.all(tables.map(async (t) => {
               const cols = await query(`SELECT column_name as name, data_type as type FROM information_schema.columns WHERE table_name='${t.name}' AND table_schema='main'`);
-              const cnt = await query(`SELECT COUNT(*) as c FROM "${t.name}"`);
-              return { name: t.name, rowCount: (cnt[0] as { c: number }).c, columns: cols };
+              return { name: t.name, rowCount: null, columns: cols };
             }));
             const dbSize = fs.statSync(filePath).size;
             panel.webview.postMessage({ type: 'schema', tables: tableInfos, dbSize, filePath, dbType: 'DuckDB' });
             break;
           }
           case 'getTableData': {
+            const cnt = await query(`SELECT COUNT(*) as c FROM "${msg.table}"`);
+            const rowCount = (cnt[0] as { c: number }).c;
             const offset = (msg.page ?? 0) * (msg.pageSize ?? 200);
             const rows = await query(`SELECT * FROM "${msg.table}" LIMIT ${msg.pageSize ?? 200} OFFSET ${offset}`);
             const cols = rows.length > 0 ? Object.keys(rows[0] as object) : [];
-            panel.webview.postMessage({ type: 'tableData', table: msg.table, columns: cols, rows, page: msg.page ?? 0 });
+            panel.webview.postMessage({ type: 'tableData', table: msg.table, columns: cols, rows, page: msg.page ?? 0, rowCount });
             break;
           }
           case 'runQuery': {

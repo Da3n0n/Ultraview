@@ -35,7 +35,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
     const openDb = async () => {
       if (!db) {
         const sql = await getSqlJs(this.ctx.extensionUri);
-        const buf = fs.readFileSync(filePath);
+        const buf = await fs.promises.readFile(filePath);
         db = new sql.Database(buf);
       }
       return db!;
@@ -55,9 +55,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
               const cols: ColInfo[] = colsRes.length > 0
                 ? colsRes[0].values.map(r => ({ name: String(r[1]), type: String(r[2]), pk: Number(r[5]), notnull: Number(r[3]) }))
                 : [];
-              const cntRes = d.exec(`SELECT COUNT(*) FROM "${name}"`);
-              const rowCount = cntRes.length > 0 ? Number(cntRes[0].values[0][0]) : 0;
-              return { name, rowCount, columns: cols };
+              return { name, rowCount: null, columns: cols };
             });
             const dbSize = fs.statSync(filePath).size;
             panel.webview.postMessage({ type: 'schema', tables, dbSize, filePath, dbType: 'SQLite' });
@@ -67,9 +65,14 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
             const d = await openDb();
             const pageSize = msg.pageSize ?? 200;
             const offset = (msg.page ?? 0) * pageSize;
+
+            // Fetch row count for this table specifically to update the UI
+            const cntRes = d.exec(`SELECT COUNT(*) FROM "${msg.table}"`);
+            const rowCount = cntRes.length > 0 ? Number(cntRes[0].values[0][0]) : 0;
+
             const res = d.exec(`SELECT * FROM "${msg.table}" LIMIT ${pageSize} OFFSET ${offset}`);
             if (res.length === 0) {
-              panel.webview.postMessage({ type: 'tableData', table: msg.table, columns: [], rows: [], page: msg.page ?? 0 });
+              panel.webview.postMessage({ type: 'tableData', table: msg.table, columns: [], rows: [], page: msg.page ?? 0, rowCount });
               break;
             }
             const { columns, values } = res[0];
@@ -78,7 +81,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
               columns.forEach((c, i) => { obj[c] = row[i]; });
               return obj;
             });
-            panel.webview.postMessage({ type: 'tableData', table: msg.table, columns, rows, page: msg.page ?? 0 });
+            panel.webview.postMessage({ type: 'tableData', table: msg.table, columns, rows, page: msg.page ?? 0, rowCount });
             break;
           }
           case 'runQuery': {

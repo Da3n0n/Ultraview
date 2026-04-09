@@ -283,7 +283,7 @@ td { padding: 6px 12px; border-bottom: 1px solid var(--border);
     document.getElementById('meta-tables').textContent = schema.tables.length;
 
     list.innerHTML = schema.tables.map((t, i) =>
-      '<div class="tbl-item" data-idx="' + i + '">' +
+      '<div class="tbl-item" data-idx="' + i + '" data-name="' + t.name.replace(/"/g,'&quot;') + '">' +
         '<span class="tbl-icon">&#9706;</span>' +
         '<span class="tbl-name">' + t.name.replace(/</g,'&lt;') + '</span>' +
         '<span class="tbl-count">' + (t.rowCount != null ? t.rowCount.toLocaleString() : '?') + '</span>' +
@@ -393,9 +393,23 @@ td { padding: 6px 12px; border-bottom: 1px solid var(--border);
         document.getElementById('loader-main').style.display = 'none';
         const view = document.getElementById('table-view');
         view.style.display = 'flex';
-        // Update total from schema
-        const tblMeta = schema && schema.tables.find(t => t.name === msg.table);
-        if (tblMeta && tblMeta.rowCount != null) totalRows = tblMeta.rowCount;
+        
+        // Update row count in schema and UI if provided
+        if (msg.rowCount !== undefined) {
+          totalRows = msg.rowCount;
+          const tblMeta = schema && schema.tables.find(t => t.name === msg.table);
+          if (tblMeta) {
+            tblMeta.rowCount = msg.rowCount;
+            // Update sidebar count label
+            const sidebarItem = document.querySelector(`.tbl-item[data-name="${msg.table.replace(/"/g,'\\"')}"] .tbl-count`);
+            if (sidebarItem) sidebarItem.textContent = msg.rowCount.toLocaleString();
+          }
+        } else {
+          // Fallback to schema total
+          const tblMeta = schema && schema.tables.find(t => t.name === msg.table);
+          if (tblMeta && tblMeta.rowCount != null) totalRows = tblMeta.rowCount;
+        }
+
         page = msg.page;
         // Header
         document.getElementById('thead-row').innerHTML =

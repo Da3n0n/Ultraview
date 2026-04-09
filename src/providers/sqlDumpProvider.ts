@@ -72,9 +72,9 @@ export class SqlDumpProvider implements vscode.CustomReadonlyEditorProvider {
     const filePath = document.uri.fsPath;
 
     let parsed: ParsedTable[] | null = null;
-    const getParsed = () => {
+    const getParsed = async () => {
       if (!parsed) {
-        const sql = fs.readFileSync(filePath, 'utf8');
+        const sql = await fs.promises.readFile(filePath, 'utf8');
         parsed = parseSqlDump(sql);
       }
       return parsed;
@@ -84,7 +84,7 @@ export class SqlDumpProvider implements vscode.CustomReadonlyEditorProvider {
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {
-        const tables = getParsed();
+        const tables = await getParsed();
         switch (msg.type) {
           case 'ready': {
             const schema = tables.map((t) => ({
