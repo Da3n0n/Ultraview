@@ -18,6 +18,138 @@ interface GitStatus {
   branch: string;
 }
 
+type GitConflictStrategy = 'ours' | 'theirs';
+type GitCommandRunner = (cmd: string) => Promise<{ stdout: string; stderr: string }>;
+
+function createGitRunner(projectPath: string, timeout: number = 30000): GitCommandRunner {
+  return (cmd: string) => execAsync(cmd, {
+    cwd: projectPath,
+    env: process.env,
+    timeout,
+    maxBuffer: 1024 * 1024,
+  });
+}
+
+function trimGitOutput(stdout?: string, stderr?: string): string {
+  return stdout?.trim() || stderr?.trim() || '';
+}
+
+function formatGitError(err: any): string {
+  return err?.stderr?.trim() || err?.stdout?.trim() || err?.message || 'Git command failed';
+}
+
+function strategyLabel(strategy: GitConflictStrategy): 'local' | 'remote' {
+  return strategy === 'ours' ? 'local' : 'remote';
+}
+
+async function listUnmergedFiles(run: GitCommandRunner): Promise<string[]> {
+  try {
+    const { stdout } = await run('git diff --name-only --diff-filter=U');
+    return stdout
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function tryGit(run: GitCommandRunner, cmd: string): Promise<boolean> {
+  try {
+    await run(cmd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function createSafetyBranch(run: GitCommandRunner, prefix: string): Promise<string | undefined> {
+  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+  const branchName = `ultraview-${prefix}-${stamp}`;
+  try {
+    await run(`git branch ${branchName} HEAD`);
+    return branchName;
+  } catch {
+    return undefined;
+  }
+}
+
+async function recoverInterruptedGitState(projectPath: string, strategy: GitConflictStrategy): Promise<string[]> {
+  const run = createGitRunner(projectPath);
+  const notes: string[] = [];
+
+  const abortSteps: Array<{ label: string; cmd: string }> = [
+    { label: 'merge', cmd: 'git merge --abort' },
+    { label: 'rebase', cmd: 'git rebase --abort' },
+    { label: 'cherry-pick', cmd: 'git cherry-pick --abort' },
+    { label: 'revert', cmd: 'git revert --abort' },
+  ];
+
+  for (const step of abortSteps) {
+    if (await tryGit(run, step.cmd)) {
+      notes.push(`aborted stale ${step.label}`);
+    }
+  }
+
+  await tryGit(run, 'git reset --merge');
+
+  const unmerged = await listUnmergedFiles(run);
+  if (!unmerged.length) {
+    return notes;
+  }
+
+  const backupBranch = await createSafetyBranch(run, 'recovery');
+  await run(`git checkout --${strategy} -- .`);
+  await run('git add -A');
+
+  const remaining = await listUnmergedFiles(run);
+  if (remaining.length) {
+    throw new Error(`Repository still has unmerged files: ${remaining.join(', ')}`);
+  }
+
+  notes.push(
+    `resolved ${unmerged.length} stale conflicted file(s) using ${strategyLabel(strategy)} changes${backupBranch ? ` (backup: ${backupBranch})` : ''}`
+  );
+
+  return notes;
+}
+
+async function mergeRemoteBranch(projectPath: string, branch: string, strategy: GitConflictStrategy): Promise<string[]> {
+  const run = createGitRunner(projectPath);
+  const notes: string[] = [];
+
+  await run(`git fetch --quiet origin ${branch}`);
+
+  try {
+    const { stdout, stderr } = await run(`git merge --no-edit -X ${strategy} origin/${branch}`);
+    const output = trimGitOutput(stdout, stderr);
+    if (output && !/^already up to date\.?$/i.test(output)) {
+      notes.push(output);
+    }
+    return notes;
+  } catch (err: any) {
+    const unmerged = await listUnmergedFiles(run);
+    if (!unmerged.length) {
+      throw new Error(formatGitError(err));
+    }
+
+    const backupBranch = await createSafetyBranch(run, 'merge-backup');
+    await run(`git checkout --${strategy} -- .`);
+    await run('git add -A');
+
+    const remaining = await listUnmergedFiles(run);
+    if (remaining.length) {
+      throw new Error(`Repository still has unmerged files after auto-resolution: ${remaining.join(', ')}`);
+    }
+
+    await run('git commit --no-edit');
+    notes.push(
+      `auto-resolved ${unmerged.length} conflicted file(s) using ${strategyLabel(strategy)} changes${backupBranch ? ` (backup: ${backupBranch})` : ''}`
+    );
+    return notes;
+  }
+}
+
 async function getProjectGitStatus(projectPath: string): Promise<GitStatus> {
   const empty: GitStatus = { isGitRepo: false, localChanges: 0, ahead: 0, behind: 0, branch: '' };
   const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 8000 });
@@ -67,7 +199,7 @@ async function getProjectGitStatus(projectPath: string): Promise<GitStatus> {
 }
 
 async function getCurrentBranch(projectPath: string): Promise<string> {
-  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 8000 });
+  const run = createGitRunner(projectPath, 8000);
   try {
     const { stdout } = await run('git branch --show-current');
     const branch = stdout.trim();
@@ -83,18 +215,24 @@ async function getCurrentBranch(projectPath: string): Promise<string> {
 }
 
 async function gitPull(projectPath: string): Promise<string> {
-  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const notes = await recoverInterruptedGitState(projectPath, 'theirs');
   const branch = await getCurrentBranch(projectPath);
+
   try {
-    const { stdout, stderr } = await run(`git pull origin ${branch}`);
-    return stdout.trim() || stderr.trim() || 'Pull complete';
+    const committed = await gitCommitLocal(projectPath);
+    if (committed) {
+      notes.push('committed local changes before pull');
+    }
+
+    notes.push(...await mergeRemoteBranch(projectPath, branch, 'theirs'));
+    return notes.length ? notes.join(' | ') : 'Pull complete';
   } catch (err: any) {
-    throw new Error(err.stderr?.trim() || err.message);
+    throw new Error(formatGitError(err));
   }
 }
 
 async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<boolean> {
-  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const run = createGitRunner(projectPath);
   const { stdout: statusOut } = await run('git status --porcelain');
   if (!statusOut.trim()) { return false; }
   await run('git add -A');
@@ -103,7 +241,7 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
     .map(line => {
       // git status --porcelain: first 2 chars are status, then space, then filename
       // Handle renamed files: " R  oldname → newname"
-      const match = line.match(/^\s*[A-Z\?]{1,2} (.+)$/i);
+      const match = line.match(/^\s*[A-Z?]{1,2} (.+)$/i);
       return match ? match[1].trim() : '';
     })
     .filter(Boolean);
@@ -115,58 +253,56 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
     // Append filenames even when custom message is provided
     msg = `${msg}\n\nFiles changed:\n` + files.map(f => `- ${f}`).join('\n');
   }
-  await run(`git commit -m "${msg.replace(/"/g, '\"')}"`);
+  await run(`git commit -m "${msg.replace(/"/g, '\\"')}"`);
   return true;
 }
 
 async function gitPush(projectPath: string, commitMsg?: string): Promise<string> {
-  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const run = createGitRunner(projectPath);
   const branch = await getCurrentBranch(projectPath);
   try {
     await gitCommitLocal(projectPath, commitMsg);
     const { stdout, stderr } = await run(`git push -u origin ${branch}`);
-    return stdout.trim() || stderr.trim() || 'Push complete';
+    return trimGitOutput(stdout, stderr) || 'Push complete';
   } catch (err: any) {
-    throw new Error(err.stderr?.trim() || err.message);
+    throw new Error(formatGitError(err));
   }
 }
 
 async function gitSync(projectPath: string, commitMsg?: string): Promise<string> {
-  const run = (cmd: string) => execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 30000 });
+  const run = createGitRunner(projectPath);
   const branch = await getCurrentBranch(projectPath);
-  const errors: string[] = [];
+  const notes = await recoverInterruptedGitState(projectPath, 'theirs');
 
   // 1. Commit local changes first
   try {
-    await gitCommitLocal(projectPath, commitMsg);
+    const committed = await gitCommitLocal(projectPath, commitMsg);
+    if (committed) {
+      notes.push('committed local changes');
+    }
   } catch (err: any) {
-    errors.push(`Commit: ${err.stderr?.trim() || err.message}`);
+    throw new Error(`Commit: ${formatGitError(err)}`);
   }
 
-  // 2. Pull remote changes with rebase; abort + merge-fallback on conflict
+  // 2. Merge remote changes, preferring remote on any remaining conflict.
   try {
-    await run(`git pull --rebase origin ${branch}`);
-  } catch {
-    // Rebase conflict — abort and retry as merge
-    try { await run('git rebase --abort'); } catch { /* already clean */ }
-    try {
-      await run(`git pull --no-rebase origin ${branch}`);
-    } catch (err: any) {
-      errors.push(`Pull: ${err.stderr?.trim() || err.message}`);
-    }
+    notes.push(...await mergeRemoteBranch(projectPath, branch, 'theirs'));
+  } catch (err: any) {
+    throw new Error(`Pull: ${formatGitError(err)}`);
   }
 
   // 3. Push
   try {
-    await run(`git push -u origin ${branch}`);
+    const { stdout, stderr } = await run(`git push -u origin ${branch}`);
+    const pushOutput = trimGitOutput(stdout, stderr);
+    if (pushOutput && !/^branch .* set up to track /i.test(pushOutput)) {
+      notes.push(pushOutput);
+    }
   } catch (err: any) {
-    errors.push(`Push: ${err.stderr?.trim() || err.message}`);
+    throw new Error(`Push: ${formatGitError(err)}`);
   }
 
-  if (errors.length) {
-    throw new Error(errors.join('\n'));
-  }
-  return 'Sync complete';
+  return notes.length ? notes.join(' | ') : 'Sync complete';
 }
 
 export class GitProvider implements vscode.WebviewViewProvider {
