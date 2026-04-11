@@ -877,11 +877,12 @@ const FlowGraph: FC<FlowGraphProps> = ({ rfNodes, rfEdges, visibleNodeIds, onNod
         }}
         nodeTypes={nodeTypes}
         fitView={false}
-        minZoom={0.1}
-        maxZoom={2}
+        minZoom={0.2}
+        maxZoom={2.2}
         nodesDraggable={true}
         elementsSelectable={true}
         selectNodesOnDrag={true}
+        onlyRenderVisibleElements={false}
         panOnDrag={[1]}
         defaultEdgeOptions={{ type: 'step', style: { strokeWidth: 2 } }}
         attributionPosition="bottom-left"
@@ -919,6 +920,54 @@ interface InitialCodeGraphState {
   filterText?: string;
 }
 
+function buildSearchVisibleIds(
+  rfNodes: Array<{ id: string; parentId?: string; data?: CustomNodeData }>,
+  searchText: string
+): Set<string> | null {
+  const query = searchText.trim().toLowerCase();
+  if (!query) return null;
+
+  const visibleIds = new Set<string>();
+  const childrenByFrame = new Map<string, string[]>();
+
+  for (const node of rfNodes) {
+    if (!node.parentId) continue;
+    if (!childrenByFrame.has(node.parentId)) childrenByFrame.set(node.parentId, []);
+    childrenByFrame.get(node.parentId)!.push(node.id);
+  }
+
+  for (const node of rfNodes) {
+    const haystack = [
+      node.data?.label,
+      node.data?.filePath,
+      node.data?.nodeType,
+    ]
+      .filter((value): value is string => typeof value === 'string' && value.length > 0)
+      .join(' ')
+      .toLowerCase();
+
+    if (!haystack.includes(query)) continue;
+
+    visibleIds.add(node.id);
+    if (node.parentId) visibleIds.add(node.parentId);
+
+    if (node.id.startsWith('frame:')) {
+      for (const childId of childrenByFrame.get(node.id) ?? []) {
+        visibleIds.add(childId);
+      }
+    }
+  }
+
+  return visibleIds;
+}
+
+function intersectVisibleIds(...sets: Array<Set<string> | null>): Set<string> | null {
+  const activeSets = sets.filter((set): set is Set<string> => Boolean(set));
+  if (activeSets.length === 0) return null;
+  const [first, ...rest] = activeSets;
+  return new Set(Array.from(first).filter((id) => rest.every((set) => set.has(id))));
+}
+
 declare global {
   interface Window {
     acquireVsCodeApi?: () => VsCodeApi;
@@ -934,7 +983,7 @@ function getVscode(): VsCodeApi | undefined {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 function App() {
-  const initialShowFns = window.__ultraviewCodeGraphState?.showFns ?? true;
+  const initialShowFns = window.__ultraviewCodeGraphState?.showFns ?? false;
   const [rfNodes, setRfNodes] = useState<unknown[]>([]);
   const [rfEdges, setRfEdges] = useState<unknown[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -942,12 +991,28 @@ function App() {
   const [progress, setProgress] = useState({ scanned: 0, total: 0 });
   const [isolatedSeedIds, setIsolatedSeedIds] = useState<string[]>([]);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [searchText, setSearchText] = useState(window.__ultraviewCodeGraphState?.filterText ?? '');
 
   // Accumulators — we use refs so the message handler always sees the latest
   const nodeAccRef = useRef<unknown[]>([]);
   const edgeAccRef = useRef<unknown[]>([]);
   const nodeCountRef = useRef(0);
   const edgeSetRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    const searchInput = document.getElementById('search') as HTMLInputElement | null;
+    if (!searchInput) return;
+
+    searchInput.value = searchText;
+    const handleInput = (event: Event) => {
+      const nextValue = (event.target as HTMLInputElement).value;
+      setSearchText(nextValue);
+      getVscode()?.postMessage({ type: 'saveProjectState', state: { filterText: nextValue } });
+    };
+
+    searchInput.addEventListener('input', handleInput);
+    return () => searchInput.removeEventListener('input', handleInput);
+  }, [searchText]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -988,6 +1053,7 @@ function App() {
               height: framePos.height,
               background: 'transparent',
               border: 'none',
+              overflow: 'visible',
             },
             data: { label: getFrameLabel(filePath), filePath, childCount, nodeType: 'frame' },
           });
@@ -1236,11 +1302,21 @@ function App() {
     return includedIds;
   }, [isolatedSeedIds, rfEdges, rfNodes]);
 
+  const searchVisibleIds = useMemo(
+    () => buildSearchVisibleIds(rfNodes as Array<{ id: string; parentId?: string; data?: CustomNodeData }>, searchText),
+    [rfNodes, searchText]
+  );
+
+  const visibleNodeIds = useMemo(
+    () => intersectVisibleIds(isolatedVisibleIds, searchVisibleIds),
+    [isolatedVisibleIds, searchVisibleIds]
+  );
+
   const summaryText = useMemo(() => {
     const counts = new Map<string, number>();
 
     for (const rawNode of rfNodes as Array<{ id: string; data?: CustomNodeData }>) {
-      if (isolatedVisibleIds && !isolatedVisibleIds.has(rawNode.id)) continue;
+      if (visibleNodeIds && !visibleNodeIds.has(rawNode.id)) continue;
       if (rawNode.id.startsWith('frame:')) continue;
       const nodeType = rawNode.data?.nodeType;
       if (!nodeType) continue;
@@ -1267,7 +1343,7 @@ function App() {
       })
       .filter((value): value is string => Boolean(value))
       .join('  |  ');
-  }, [isolatedVisibleIds, rfNodes]);
+  }, [visibleNodeIds, rfNodes]);
 
   return (
     <div style={{ width: '100%', height: '100vh', background: 'var(--vscode-editor-background, #1e1e1e)', position: 'relative' }}>
@@ -1275,7 +1351,7 @@ function App() {
         <FlowGraph
           rfNodes={rfNodes}
           rfEdges={rfEdges}
-          visibleNodeIds={isolatedVisibleIds}
+          visibleNodeIds={visibleNodeIds}
           onNodeOpen={handleNodeOpen}
           onSelectionChange={setSelectedNodeIds}
         />

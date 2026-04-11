@@ -21,6 +21,11 @@ export function getEditorStyles(): string {
 :focus { outline: none !important; }
 :focus-visible { outline: none !important; }
 html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+body[data-style="obsidian"] {
+  --surface: color-mix(in srgb, var(--vscode-editor-background) 76%, black);
+  --surface2: color-mix(in srgb, var(--vscode-editor-background) 82%, white 6%);
+  --code-bg: color-mix(in srgb, var(--vscode-editor-background) 86%, black);
+}
 
 #app { display: flex; flex-direction: column; height: 100vh; }
 
@@ -64,6 +69,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   font-size: 14px; line-height: 1.7; padding: 20px;
   outline: none; tab-size: 2; caret-color: var(--text);
 }
+#editor.no-wrap { white-space: pre; overflow-wrap: normal; word-break: normal; }
 
 #editor:focus { outline: none; border: none; }
 
@@ -112,15 +118,34 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 #preview pre { background: var(--code-bg); padding: 16px; border-radius: 6px; overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--border); }
 #preview pre code { background: transparent; padding: 0; font-size: 85%; }
 #preview blockquote { border-left: 0.25em solid var(--border); margin: 0 0 16px; padding: 0 1em; color: var(--muted); }
-#preview table { width: 100%; border-collapse: collapse; margin: 0 0 16px; }
+#preview table { width: 100%; border-collapse: collapse; margin: 0 0 16px; display: block; overflow-x: auto; max-width: 100%; }
 #preview th, #preview td { padding: 6px 13px; border: 1px solid var(--border); }
 #preview th { font-weight: 600; background: var(--surface); }
 #preview tr:nth-child(2n) { background: var(--surface); }
 #preview ul, #preview ol { margin: 0 0 16px; padding-left: 2em; }
 #preview li { margin: 0.25em 0; }
+#preview li > p { margin-bottom: 0.4em; }
+#preview ul.contains-task-list,
+#preview ol.contains-task-list { list-style: none; padding-left: 1.2em; }
+#preview ul.contains-task-list li,
+#preview ol.contains-task-list li { position: relative; }
 #preview hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; height: 0.25em; background: transparent; }
 #preview img { max-width: 100%; box-sizing: content-box; background: var(--surface); }
 #preview input[type=checkbox] { margin-right: 0.5em; }
+body[data-style="obsidian"] #preview h1,
+body[data-style="obsidian"] #preview h2 { border-bottom: none; padding-bottom: 0; }
+body[data-style="obsidian"] #preview blockquote {
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px;
+}
+body[data-style="obsidian"] #preview pre {
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+body[data-style="obsidian"] #preview table th {
+  background: color-mix(in srgb, var(--surface) 90%, white 5%);
+}
 
 .status-bar {
   display: flex; align-items: center; gap: 16px;

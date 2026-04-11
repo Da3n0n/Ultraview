@@ -3,17 +3,118 @@ export function getEditorScript(): string {
 (function() {
   'use strict';
   const vscode = acquireVsCodeApi();
+  const settings = window.__ultraviewMarkdownSettings || {};
   const editor = document.getElementById('editor');
   const preview = document.getElementById('preview');
   const wrap = document.getElementById('editor-wrap');
   const viewMode = document.getElementById('view-mode');
+  const statusBar = document.querySelector('.status-bar');
 
   let saveTimeout = null;
   let previewSyncTimeout = null;
   let content = '';
   let lastPreviewHtml = '';
-  let currentMode = 'preview'; // 'preview' (RICH), 'split', 'edit' (RAW)
+  let currentMode = settings.defaultView || 'preview'; // 'preview' (RICH), 'split', 'edit' (RAW)
   let lastFocusedArea = 'preview'; // 'editor' or 'preview'
+
+  if (typeof marked !== 'undefined' && typeof marked.setOptions === 'function') {
+    marked.setOptions({
+      gfm: true,
+      breaks: true,
+    });
+  }
+
+  function escapeMarkdownTableCell(value) {
+    return String(value || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\n/g, '<br>')
+      .split('|').join('\\|')
+      .trim();
+  }
+
+  function serializeTable(table) {
+    const rows = Array.from(table.querySelectorAll('tr'));
+    if (rows.length === 0) return '';
+
+    const matrix = rows.map((row) =>
+      Array.from(row.children)
+        .filter((cell) => /^(TH|TD)$/.test(cell.tagName))
+        .map((cell) => escapeMarkdownTableCell(cell.textContent))
+    ).filter((row) => row.length > 0);
+
+    if (matrix.length === 0) return '';
+
+    const columnCount = Math.max(...matrix.map((row) => row.length));
+    const normalizeRow = (row) => {
+      const next = row.slice();
+      while (next.length < columnCount) next.push('');
+      return '| ' + next.join(' | ') + ' |';
+    };
+
+    const header = normalizeRow(matrix[0]);
+    const divider = '| ' + Array.from({ length: columnCount }, () => '---').join(' | ') + ' |';
+    const body = matrix.slice(1).map(normalizeRow);
+    return [header, divider, ...body].join('\n');
+  }
+
+  function createTurndownService() {
+    const turndown = new TurndownService({
+      headingStyle: 'atx',
+      codeBlockStyle: 'fenced',
+      bulletListMarker: '-',
+      emDelimiter: '*',
+      strongDelimiter: '**',
+    });
+
+    turndown.addRule('strikethrough', {
+      filter: ['del', 's', 'strike'],
+      replacement(content) {
+        return '~~' + content + '~~';
+      },
+    });
+
+    turndown.addRule('taskListCheckbox', {
+      filter(node) {
+        return node.nodeName === 'INPUT' && node.getAttribute('type') === 'checkbox';
+      },
+      replacement(_content, node) {
+        return node.checked ? '[x] ' : '[ ] ';
+      },
+    });
+
+    turndown.addRule('table', {
+      filter: 'table',
+      replacement(_content, node) {
+        const markdown = serializeTable(node);
+        return markdown ? '\n\n' + markdown + '\n\n' : '\n\n';
+      },
+    });
+
+    return turndown;
+  }
+
+  function applyRuntimeSettings() {
+    const fontSize = Number(settings.fontSize);
+    if (Number.isFinite(fontSize) && fontSize > 0) {
+      editor.style.fontSize = fontSize + 'px';
+      preview.style.fontSize = fontSize + 'px';
+    }
+
+    const wordWrap = settings.wordWrap !== false;
+    editor.wrap = wordWrap ? 'soft' : 'off';
+    editor.classList.toggle('no-wrap', !wordWrap);
+
+    if (statusBar) {
+      statusBar.style.display = settings.showStatusBar === false ? 'none' : 'flex';
+    }
+
+    document.body.dataset.style = settings.style === 'github' ? 'github' : 'obsidian';
+    viewMode.value = currentMode;
+    wrap.className = 'editor-wrap ' + currentMode;
+    wrap.classList.toggle('preview-only', currentMode === 'preview');
+    wrap.classList.toggle('edit-only', currentMode === 'edit');
+    wrap.classList.toggle('split', currentMode === 'split');
+  }
 
   // --- Undo / redo stack for the preview (contenteditable) pane ---
   const previewUndoStack = [];
@@ -106,7 +207,7 @@ export function getEditorScript(): string {
 
   function htmlToMarkdown(html) {
     if (typeof TurndownService !== 'undefined') {
-      const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+      const turndown = createTurndownService();
       return turndown.turndown(html);
     }
     return html.replace(/<br\\s*\\/?>/gi, '\\n')
@@ -118,8 +219,9 @@ export function getEditorScript(): string {
                .replace(/<b>/gi, '**').replace(/<\\/b>/gi, '**')
                .replace(/<em>/gi, '*').replace(/<\\/em>/gi, '*')
                .replace(/<i>/gi, '*').replace(/<\\/i>/gi, '*')
+               .replace(/<(?:del|s|strike)>/gi, '~~').replace(/<\\/(?:del|s|strike)>/gi, '~~')
                .replace(/<code>/gi, '\`').replace(/<\\/code>/gi, '\`')
-               .replace(/<a href="([^"]+)">/gi, '[').replace(/<\\/a>/gi, ']($1)')
+               .replace(/<a[^>]*href="([^"]+)"[^>]*>(.*?)<\\/a>/gi, '[$2]($1)')
                .replace(/<li>/gi, '- ').replace(/<\\/li>/gi, '\\n')
                .replace(/<[^>]+>/g, '');
   }
@@ -160,8 +262,10 @@ export function getEditorScript(): string {
   }
 
   function autoSave() {
+    if (settings.autoSave === false) return;
     clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(save, 1000);
+    const delay = Number(settings.autoSaveDelay);
+    saveTimeout = setTimeout(save, Number.isFinite(delay) && delay >= 0 ? delay : 1000);
   }
 
   // --- Raw textarea operations ---
@@ -539,6 +643,8 @@ export function getEditorScript(): string {
     }
   });
 
+  applyRuntimeSettings();
+  viewMode.dispatchEvent(new Event('change'));
   preview.contentEditable = 'true';
   vscode.postMessage({ type: 'ready' });
 })();`;

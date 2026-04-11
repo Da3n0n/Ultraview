@@ -1,8 +1,7 @@
-import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as path from 'path';
 import { getEditorStyles, getEditorHtml } from './editorHtml';
 import { getEditorScript } from './editorScript';
+import { getMarkdownSettings } from '../settings/markdownSettings';
 
 function getInlineScript(filename: string): string {
   try {
@@ -13,7 +12,8 @@ function getInlineScript(filename: string): string {
   }
 }
 
-export function buildEditorPage(_webview: vscode.Webview): string {
+export function buildEditorPage(): string {
+  const settings = getMarkdownSettings();
   const styles = getEditorStyles();
   const html = getEditorHtml();
   const script = getEditorScript();
@@ -34,6 +34,9 @@ ${turndownSrc ? `<script>${turndownSrc}</script>` : ''}
 </head>
 <body>
 ${html}
+<script>
+window.__ultraviewMarkdownSettings = ${JSON.stringify(settings)};
+</script>
 <script>
 ${script}
 </script>
