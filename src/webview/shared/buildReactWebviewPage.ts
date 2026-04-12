@@ -2,30 +2,30 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 interface ReactWebviewPageOptions {
-  extensionPath: string;
-  webview: vscode.Webview;
-  bundleName: string;
-  title: string;
-  initialState: Record<string, unknown>;
-  loadingLabel?: string;
+    extensionPath: string;
+    webview: vscode.Webview;
+    bundleName: string;
+    title: string;
+    initialState: Record<string, unknown>;
+    loadingLabel?: string;
 }
 
 export function buildReactWebviewPage(options: ReactWebviewPageOptions): string {
-  const {
-    extensionPath,
-    webview,
-    bundleName,
-    title,
-    initialState,
-    loadingLabel = 'Loading...',
-  } = options;
+    const {
+        extensionPath,
+        webview,
+        bundleName,
+        title,
+        initialState,
+        loadingLabel = 'Loading...',
+    } = options;
 
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.file(path.join(extensionPath, 'dist', `${bundleName}.next.js`))
-  );
-  const serializedState = JSON.stringify(initialState).replace(/</g, '\\u003c');
+    const scriptUri = webview.asWebviewUri(
+        vscode.Uri.file(path.join(extensionPath, 'dist', `${bundleName}.next.js`))
+    );
+    const serializedState = JSON.stringify(initialState).replace(/</g, '\\u003c');
 
-  return /* html */ `<!DOCTYPE html>
+    return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
