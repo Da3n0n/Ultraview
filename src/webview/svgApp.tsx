@@ -60,8 +60,10 @@ function App() {
   const [content, setContent] = useState(state.initialContent ?? '');
   const [viewMode, setViewMode] = useState<SvgViewMode>(state.defaultView ?? 'preview');
   const [zoom, setZoom] = useState(1);
+  const [fitToView, setFitToView] = useState(true);
   const [remoteUpdate, setRemoteUpdate] = useState(false);
   const textRef = useRef<HTMLTextAreaElement | null>(null);
+  const previewCanvasRef = useRef<HTMLDivElement | null>(null);
   const saveTimerRef = useRef<number | null>(null);
 
   const parsed = useMemo(() => parseSvg(content), [content]);
@@ -69,10 +71,6 @@ function App() {
     lines: content.split('\n').length,
     size: countBytes(content),
   }), [content]);
-
-  useEffect(() => {
-    getVscode()?.postMessage({ type: 'ready' satisfies SvgToExtensionMessage['type'] });
-  }, []);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent<SvgToWebviewMessage>) => {
@@ -105,6 +103,33 @@ function App() {
       textRef.current?.focus();
     }
   }, [viewMode]);
+
+  useEffect(() => {
+    if (!fitToView) return;
+    const canvas = previewCanvasRef.current;
+    if (!canvas || !parsed.width || !parsed.height) {
+      setZoom(1);
+      return;
+    }
+
+    const svgWidth = parsed.width;
+    const svgHeight = parsed.height;
+
+    const updateFitZoom = () => {
+      const bounds = canvas.getBoundingClientRect();
+      const widthScale = (bounds.width - 48) / svgWidth;
+      const heightScale = (bounds.height - 48) / svgHeight;
+      const nextZoom = Math.min(widthScale, heightScale);
+      if (Number.isFinite(nextZoom) && nextZoom > 0) {
+        setZoom(Math.max(0.1, Math.min(8, nextZoom)));
+      }
+    };
+
+    updateFitZoom();
+    const observer = new ResizeObserver(() => updateFitZoom());
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [fitToView, parsed.width, parsed.height, content, viewMode]);
 
   const dimensionsLabel = parsed.width && parsed.height ? `${parsed.width} x ${parsed.height} px` : '';
 
@@ -160,11 +185,12 @@ function App() {
           <option value="split">Split</option>
           <option value="preview">Preview</option>
         </select>
-        <button className="svg-button" onClick={() => setZoom(1)}>1:1</button>
-        <button className="svg-button" onClick={() => setZoom((current) => Math.max(0.1, current / 1.2))}>-</button>
-        <button className="svg-button" onClick={() => setZoom((current) => Math.min(8, current * 1.2))}>+</button>
+        <button className="svg-button" onClick={() => { setFitToView(false); setZoom(1); }}>1:1</button>
+        <button className="svg-button" onClick={() => { setFitToView(false); setZoom((current) => Math.max(0.1, current / 1.2)); }}>-</button>
+        <button className="svg-button" onClick={() => { setFitToView(false); setZoom((current) => Math.min(8, current * 1.2)); }}>+</button>
+        <button className="svg-button" onClick={() => setFitToView(true)}>Fit</button>
         <button className="svg-button" onClick={() => getVscode()?.postMessage({ type: 'replaceAsset' satisfies SvgToExtensionMessage['type'] })}>Replace</button>
-        <span className="svg-spacer">{dimensionsLabel}</span>
+        <span className="svg-spacer">{dimensionsLabel}{fitToView ? ' • Fit' : ''}</span>
       </div>
 
       <div className={`svg-shell ${viewMode}`}>
@@ -182,7 +208,7 @@ function App() {
         </div>
 
         <div className="svg-preview-pane">
-          <div className="svg-preview-canvas">
+          <div ref={previewCanvasRef} className="svg-preview-canvas">
             {parsed.markup ? (
               <div
                 className="svg-preview-stage"

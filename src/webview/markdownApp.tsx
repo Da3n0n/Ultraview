@@ -76,10 +76,6 @@ function App() {
   }), [content]);
 
   useEffect(() => {
-    getVscode()?.postMessage({ type: 'ready' });
-  }, []);
-
-  useEffect(() => {
     if (typeof state.initialContent === 'string') {
       setContent(state.initialContent);
     }

@@ -1,5 +1,4 @@
 
-
 export function getEditorStyles(): string {
   return /* css */`
 :root {
@@ -96,7 +95,6 @@ body[data-style="obsidian"] {
 
 .split .editor-pane:first-child { border-right: 1px solid var(--border); }
 
-/* === GitHub Style (default) === */
 #preview {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
   line-height: 1.6;

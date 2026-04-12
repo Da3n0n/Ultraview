@@ -214,51 +214,21 @@ export class SvgProvider implements vscode.CustomEditorProvider<SvgDocument> {
         panel: vscode.WebviewPanel,
         _token: vscode.CancellationToken
     ): Promise<void> {
-        const uri = document.uri;
-
-        // Yield one tick so VS Code can finish registering tabs (diff guard).
-        await new Promise<void>(resolve => setTimeout(resolve, 0));
-
-        const isInDiff = vscode.window.tabGroups.all.some(group =>
-            group.tabs.some(tab => {
-                if (tab.input instanceof vscode.TabInputTextDiff) {
-                    return (tab.input as vscode.TabInputTextDiff).modified.toString() === uri.toString();
-                }
-                if (tab.input instanceof vscode.TabInputCustom) {
-                    const c = tab.input as vscode.TabInputCustom;
-                    return c.uri.toString() === uri.toString() && tab.label.includes('Working Tree');
-                }
-                return false;
-            })
-        );
-
-        if (isInDiff) {
-            panel.dispose();
-            return;
-        }
-
         panel.webview.options = {
             enableScripts: true,
             localResourceRoots: [vscode.Uri.file(path.join(this.ctx.extensionPath, 'dist'))]
         };
         const filePath = document.uri.fsPath;
         let lastSelfWriteTime = 0;
-        let webviewReady = false;
 
         const updateContent = () => {
             const raw = fs.readFileSync(filePath, 'utf8');
             document.setContent(raw);
-            if (webviewReady) {
-                panel.webview.postMessage({ type: 'setContent', content: raw });
-            }
+            void panel.webview.postMessage({ type: 'setContent', content: raw });
         };
 
         panel.webview.onDidReceiveMessage((msg: { type: string; content?: string }) => {
             switch (msg.type) {
-                case 'ready':
-                    webviewReady = true;
-                    updateContent();
-                    break;
                 case 'save':
                     if (msg.content !== undefined) {
                         lastSelfWriteTime = Date.now();

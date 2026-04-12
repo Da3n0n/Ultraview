@@ -3,7 +3,7 @@
   "icon": "images/icon.png",
   "displayName": "Ultraview “ All in One VS Code Extension",
   "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
-  "version": "0.2.248",
+  "version": "0.2.250",
   "publisher": "Da3n0n",
   "engines": {
     "vscode": "^1.85.0"
@@ -25,7 +25,9 @@
     "visualization"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onCustomEditor:ultraview.markdown",
+    "onCustomEditor:ultraview.svg"
   ],
   "main": "./dist/extension.js",
   "contributes": {

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { MarkdownDocument, buildEditorPage } from '../editor';
+import { MarkdownDocument, buildEditorPage } from '../markdown';
 
 export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDocument> {
   private readonly _onDidChangeCustomDocument = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<MarkdownDocument>>();
@@ -28,29 +28,19 @@ export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDoc
     };
     const filePath = document.uri.fsPath;
     let lastSelfWriteTime = 0;
-    let webviewReady = false;
-    let latestContent = '';
 
     const updateContent = () => {
       const raw = fs.readFileSync(filePath, 'utf8');
-      latestContent = raw;
       document.setContent(raw);
-      if (webviewReady) {
-        panel.webview.postMessage({ type: 'setContent', content: raw });
-      }
+      void panel.webview.postMessage({ type: 'setContent', content: raw });
     };
 
     panel.webview.onDidReceiveMessage((msg: { type: string; content?: string }) => {
       switch (msg.type) {
-        case 'ready':
-          webviewReady = true;
-          panel.webview.postMessage({ type: 'setContent', content: latestContent });
-          break;
         case 'save':
           if (msg.content !== undefined) {
             lastSelfWriteTime = Date.now();
             fs.writeFileSync(filePath, msg.content, 'utf8');
-            latestContent = msg.content;
             document.setContent(msg.content);
           }
           break;
@@ -58,7 +48,6 @@ export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDoc
     });
 
     const initialContent = fs.readFileSync(filePath, 'utf8');
-    latestContent = initialContent;
     document.setContent(initialContent);
     panel.webview.html = buildEditorPage(this.ctx.extensionPath, panel.webview, initialContent);
 

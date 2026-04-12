@@ -11,6 +11,6 @@ export interface SvgToWebviewMessage {
 }
 
 export interface SvgToExtensionMessage {
-  type: 'ready' | 'save' | 'replaceAsset';
+  type: 'save' | 'replaceAsset';
   content?: string;
 }
