@@ -58,7 +58,7 @@ export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDoc
       panel.webview.postMessage({ type: 'setContent', content: raw });
     };
 
-    panel.webview.html = buildEditorPage(panel.webview);
+    panel.webview.html = buildEditorPage();
 
     panel.webview.onDidReceiveMessage((msg: { type: string; content?: string }) => {
       switch (msg.type) {

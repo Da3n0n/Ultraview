@@ -401,7 +401,7 @@ td { padding: 6px 12px; border-bottom: 1px solid var(--border);
           if (tblMeta) {
             tblMeta.rowCount = msg.rowCount;
             // Update sidebar count label
-            const sidebarItem = document.querySelector(`.tbl-item[data-name="${msg.table.replace(/"/g,'\\"')}"] .tbl-count`);
+            const sidebarItem = document.querySelector(\`.tbl-item[data-name="\${msg.table.replace(/"/g,'\\\\\\"')}"] .tbl-count\`);
             if (sidebarItem) sidebarItem.textContent = msg.rowCount.toLocaleString();
           }
         } else {
