@@ -199,7 +199,7 @@ export class SvgProvider implements vscode.CustomEditorProvider<SvgDocument> {
         new vscode.EventEmitter<vscode.CustomDocumentEditEvent<SvgDocument>>();
     onDidChangeCustomDocument = this._onDidChangeCustomDocument.event;
 
-    constructor(_ctx: vscode.ExtensionContext) { }
+    constructor(private readonly ctx: vscode.ExtensionContext) { }
 
     openCustomDocument(
         uri: vscode.Uri,
@@ -237,20 +237,26 @@ export class SvgProvider implements vscode.CustomEditorProvider<SvgDocument> {
             return;
         }
 
-        panel.webview.options = { enableScripts: true };
+        panel.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.file(path.join(this.ctx.extensionPath, 'dist'))]
+        };
         const filePath = document.uri.fsPath;
         let lastSelfWriteTime = 0;
+        let webviewReady = false;
 
         const updateContent = () => {
             const raw = fs.readFileSync(filePath, 'utf8');
-            panel.webview.postMessage({ type: 'setContent', content: raw });
+            document.setContent(raw);
+            if (webviewReady) {
+                panel.webview.postMessage({ type: 'setContent', content: raw });
+            }
         };
-
-        panel.webview.html = buildSvgEditorPage(panel.webview);
 
         panel.webview.onDidReceiveMessage((msg: { type: string; content?: string }) => {
             switch (msg.type) {
                 case 'ready':
+                    webviewReady = true;
                     updateContent();
                     break;
                 case 'save':
@@ -293,6 +299,10 @@ export class SvgProvider implements vscode.CustomEditorProvider<SvgDocument> {
                     break;
             }
         });
+
+        const initialContent = fs.readFileSync(filePath, 'utf8');
+        document.setContent(initialContent);
+        panel.webview.html = buildSvgEditorPage(this.ctx.extensionPath, panel.webview, initialContent);
 
         const watcher = fs.watch(filePath, () => {
             if (Date.now() - lastSelfWriteTime < 500) return;

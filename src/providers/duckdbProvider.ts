@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { buildDbHtml } from '../webview/ultraview';
+import * as path from 'path';
+import { buildDbHtml } from '../webview/dbHtml';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function tryLoadDuckDb(): { duckdb: any } | null {
@@ -24,12 +25,15 @@ export class DuckDbProvider implements vscode.CustomReadonlyEditorProvider {
     document: vscode.CustomDocument,
     panel: vscode.WebviewPanel
   ): Promise<void> {
-    panel.webview.options = { enableScripts: true };
+    panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.file(path.join(this.ctx.extensionPath, 'dist'))],
+    };
     const filePath = document.uri.fsPath;
 
     const mod = tryLoadDuckDb();
 
-    panel.webview.html = buildDbHtml(panel.webview, this.ctx.extensionUri, 'DuckDB');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'DuckDB');
 
     if (!mod) {
       // DuckDB native module not installed — show install instructions

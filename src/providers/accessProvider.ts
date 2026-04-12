@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { buildDbHtml } from '../webview/ultraview';
+import * as path from 'path';
+import { buildDbHtml } from '../webview/dbHtml';
 
  
 const MDBReader = require('mdb-reader');
@@ -16,7 +17,10 @@ export class AccessProvider implements vscode.CustomReadonlyEditorProvider {
     document: vscode.CustomDocument,
     panel: vscode.WebviewPanel
   ): Promise<void> {
-    panel.webview.options = { enableScripts: true };
+    panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.file(path.join(this.ctx.extensionPath, 'dist'))],
+    };
     const filePath = document.uri.fsPath;
 
     let reader: typeof MDBReader | null = null;
@@ -28,7 +32,7 @@ export class AccessProvider implements vscode.CustomReadonlyEditorProvider {
       return reader;
     };
 
-    panel.webview.html = buildDbHtml(panel.webview, this.ctx.extensionUri, 'Access DB');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'Access DB');
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {

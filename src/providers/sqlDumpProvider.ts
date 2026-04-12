@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { buildDbHtml } from '../webview/ultraview';
+import * as path from 'path';
+import { buildDbHtml } from '../webview/dbHtml';
 
 interface ParsedTable {
   name: string;
@@ -68,7 +69,10 @@ export class SqlDumpProvider implements vscode.CustomReadonlyEditorProvider {
     document: vscode.CustomDocument,
     panel: vscode.WebviewPanel
   ): Promise<void> {
-    panel.webview.options = { enableScripts: true };
+    panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.file(path.join(this.ctx.extensionPath, 'dist'))],
+    };
     const filePath = document.uri.fsPath;
 
     let parsed: ParsedTable[] | null = null;
@@ -80,7 +84,7 @@ export class SqlDumpProvider implements vscode.CustomReadonlyEditorProvider {
       return parsed;
     };
 
-    panel.webview.html = buildDbHtml(panel.webview, this.ctx.extensionUri, 'SQL Dump');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'SQL Dump');
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {

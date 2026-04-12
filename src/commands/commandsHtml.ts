@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
 import { buildReactWebviewPage } from '../webview/shared/buildReactWebviewPage';
 
-export function buildGitHtml(extensionPath: string, webview: vscode.Webview): string {
+export function buildCommandsHtml(extensionPath: string, webview: vscode.Webview): string {
   return buildReactWebviewPage({
     extensionPath,
     webview,
-    bundleName: 'gitPanel',
-    title: 'Ultraview Projects',
-    loadingLabel: 'Loading project manager...',
+    bundleName: 'commandsPanel',
+    title: 'Ultraview Commands',
+    loadingLabel: 'Loading commands...',
     initialState: {},
   });
 }

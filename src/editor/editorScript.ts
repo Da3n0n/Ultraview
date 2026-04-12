@@ -16,6 +16,7 @@ export function getEditorScript(): string {
   let lastPreviewHtml = '';
   let currentMode = settings.defaultView || 'preview'; // 'preview' (RICH), 'split', 'edit' (RAW)
   let lastFocusedArea = 'preview'; // 'editor' or 'preview'
+  let renderFailureShown = false;
 
   if (typeof marked !== 'undefined' && typeof marked.setOptions === 'function') {
     marked.setOptions({
@@ -110,8 +111,51 @@ export function getEditorScript(): string {
 
     document.body.dataset.style = settings.style === 'github' ? 'github' : 'obsidian';
     viewMode.value = currentMode;
+    applyMode(currentMode, false);
+  }
+
+  function applyMode(mode, focusTarget) {
+    currentMode = mode === 'split' || mode === 'edit' || mode === 'preview' ? mode : 'preview';
+    viewMode.value = currentMode;
+
     wrap.classList.remove('preview-only', 'edit-only', 'split');
-    wrap.classList.add(currentMode);
+    if (currentMode === 'edit') {
+      wrap.classList.add('edit-only');
+    } else if (currentMode === 'split') {
+      wrap.classList.add('split');
+    } else {
+      wrap.classList.add('preview-only');
+    }
+
+    const editPane = document.getElementById('edit-pane');
+    const previewPane = document.getElementById('preview-pane');
+    editPane.classList.remove('visible');
+    previewPane.classList.remove('visible');
+
+    if (currentMode === 'split') {
+      editPane.classList.add('visible');
+      previewPane.classList.add('visible');
+      preview.contentEditable = 'true';
+      updatePreview();
+      return;
+    }
+
+    if (currentMode === 'edit') {
+      editPane.classList.add('visible');
+      preview.contentEditable = 'false';
+      if (focusTarget !== false) {
+        editor.focus({ preventScroll: true });
+      }
+      return;
+    }
+
+    previewPane.classList.add('visible');
+    preview.contentEditable = 'true';
+    lastFocusedArea = 'preview';
+    updatePreview();
+    if (focusTarget !== false) {
+      preview.focus({ preventScroll: true });
+    }
   }
 
   // --- Undo / redo stack for the preview (contenteditable) pane ---
@@ -208,26 +252,53 @@ export function getEditorScript(): string {
       const turndown = createTurndownService();
       return turndown.turndown(html);
     }
-    return html.replace(/<br\\s*\\/?>/gi, '\\n')
-               .replace(/<p>/gi, '').replace(/<\\/p>/gi, '\\n\\n')
-               .replace(/<h1>/gi, '# ').replace(/<\\/h1>/gi, '\\n')
-               .replace(/<h2>/gi, '## ').replace(/<\\/h2>/gi, '\\n')
-               .replace(/<h3>/gi, '### ').replace(/<\\/h3>/gi, '\\n')
-               .replace(/<strong>/gi, '**').replace(/<\\/strong>/gi, '**')
-               .replace(/<b>/gi, '**').replace(/<\\/b>/gi, '**')
-               .replace(/<em>/gi, '*').replace(/<\\/em>/gi, '*')
-               .replace(/<i>/gi, '*').replace(/<\\/i>/gi, '*')
-               .replace(/<(?:del|s|strike)>/gi, '~~').replace(/<\\/(?:del|s|strike)>/gi, '~~')
+    return html.replace(/<br\s*\/?>/gi, '\n')
+               .replace(/<p>/gi, '').replace(/<\/p>/gi, '\n\n')
+               .replace(/<h1>/gi, '# ').replace(/<\/h1>/gi, '\n')
+               .replace(/<h2>/gi, '## ').replace(/<\/h2>/gi, '\n')
+               .replace(/<h3>/gi, '### ').replace(/<\/h3>/gi, '\n')
+               .replace(/<strong>/gi, '**').replace(/<\/strong>/gi, '**')
+               .replace(/<b>/gi, '**').replace(/<\/b>/gi, '**')
+               .replace(/<em>/gi, '*').replace(/<\/em>/gi, '*')
+               .replace(/<i>/gi, '*').replace(/<\/i>/gi, '*')
+               .replace(/<(?:del|s|strike)>/gi, '~~').replace(/<\/(?:del|s|strike)>/gi, '~~')
                .replace(/<code>/gi, String.fromCharCode(96)).replace(/<\/code>/gi, String.fromCharCode(96))
-               .replace(/<a[^>]*href="([^"]+)"[^>]*>(.*?)<\\/a>/gi, '[$2]($1)')
-               .replace(/<li>/gi, '- ').replace(/<\\/li>/gi, '\\n')
+               .replace(/<a[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)')
+               .replace(/<li>/gi, '- ').replace(/<\/li>/gi, '\n')
                .replace(/<[^>]+>/g, '');
+  }
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderMarkdown(markdown) {
+    if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
+      try {
+        renderFailureShown = false;
+        return marked.parse(markdown);
+      } catch (error) {
+        console.error('Ultraview markdown render failed', error);
+      }
+    }
+
+    if (!renderFailureShown) {
+      renderFailureShown = true;
+      console.warn('Ultraview markdown fallback renderer is active');
+    }
+
+    return '<pre>' + escapeHtml(markdown) + '</pre>';
   }
 
   function updatePreview() {
     content = editor.value;
     const scrollTop = preview.scrollTop;
-    const newHtml = marked.parse(content);
+    const newHtml = renderMarkdown(content);
     if (preview.innerHTML !== newHtml) {
       preview.innerHTML = newHtml;
       preview.scrollTop = scrollTop;
@@ -599,28 +670,7 @@ export function getEditorScript(): string {
   document.addEventListener('keydown', handleZoomReset);
 
   viewMode.addEventListener('change', () => {
-    currentMode = viewMode.value;
-    wrap.className = 'editor-wrap ' + viewMode.value;
-    const editPane = document.getElementById('edit-pane');
-    const previewPane = document.getElementById('preview-pane');
-
-    editPane.classList.remove('visible');
-    previewPane.classList.remove('visible');
-
-    if (viewMode.value === 'split') {
-      editPane.classList.add('visible');
-      previewPane.classList.add('visible');
-      preview.contentEditable = 'true';
-      updatePreview();
-    } else if (viewMode.value === 'edit') {
-      editPane.classList.add('visible');
-      preview.contentEditable = 'false';
-      editor.focus({ preventScroll: true });
-    } else {
-      previewPane.classList.add('visible');
-      preview.contentEditable = 'true';
-      lastFocusedArea = 'preview';
-    }
+    applyMode(viewMode.value, true);
   });
 
   window.addEventListener('message', (e) => {
@@ -642,8 +692,7 @@ export function getEditorScript(): string {
   });
 
   applyRuntimeSettings();
-  viewMode.dispatchEvent(new Event('change'));
-  preview.contentEditable = 'true';
+  applyMode(currentMode, false);
   vscode.postMessage({ type: 'ready' });
 })();`;
 

@@ -217,8 +217,10 @@ function computeCommandPriority(name: string, runCmd: string): number {
   const r = runCmd.toLowerCase();
   // Dev commands - highest priority
   if (n === 'dev' || n === 'develop' || n.startsWith('dev:') || n.startsWith('develop:')) { return 0; }
+  if (/\b(next dev|vite|astro dev|nuxt dev|svelte-kit|react-scripts start|webpack serve|cmake\s+-s|cargo run|dotnet run)\b/.test(r)) { return 0; }
   // Build commands
   if (n === 'build' || n.startsWith('build:')) { return 1; }
+  if (/\b(next build|vite build|astro build|nuxt build|cmake --build|cargo build|go build|dotnet build)\b/.test(r)) { return 1; }
   // Start/serve/preview
   if (n === 'start' || n === 'serve' || n === 'preview' || n.startsWith('start:') || n.startsWith('serve:')) { return 2; }
   // Test

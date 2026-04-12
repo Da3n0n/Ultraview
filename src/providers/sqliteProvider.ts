@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildDbHtml } from '../webview/ultraview';
+import { buildDbHtml } from '../webview/dbHtml';
 import type { SqlJsStatic, Database } from 'sql.js';
 
 let SQL: SqlJsStatic | null = null;
@@ -28,7 +28,10 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
     document: vscode.CustomDocument,
     panel: vscode.WebviewPanel
   ): Promise<void> {
-    panel.webview.options = { enableScripts: true };
+    panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.file(path.join(this.ctx.extensionPath, 'dist'))],
+    };
     const filePath = document.uri.fsPath;
     let db: Database | null = null;
 
@@ -41,7 +44,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
       return db!;
     };
 
-    panel.webview.html = buildDbHtml(panel.webview, this.ctx.extensionUri, 'SQLite');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'SQLite');
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {

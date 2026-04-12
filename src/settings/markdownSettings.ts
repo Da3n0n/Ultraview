@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 
 export type MarkdownStyle = 'obsidian' | 'github';
+type MarkdownViewSetting = 'rich' | 'split' | 'raw' | 'preview' | 'edit';
 
 export interface MarkdownSettings {
-  defaultView: 'split' | 'edit' | 'preview';
+  defaultView: 'rich' | 'split' | 'raw';
   style: MarkdownStyle;
   autoSave: boolean;
   autoSaveDelay: number;
@@ -13,7 +14,7 @@ export interface MarkdownSettings {
 }
 
 export const defaultMarkdownSettings: MarkdownSettings = {
-  defaultView: 'preview',
+  defaultView: 'split',
   style: 'obsidian',
   autoSave: true,
   autoSaveDelay: 1000,
@@ -24,8 +25,14 @@ export const defaultMarkdownSettings: MarkdownSettings = {
 
 export function getMarkdownSettings(): MarkdownSettings {
   const config = vscode.workspace.getConfiguration('ultraview.markdown');
+  const configuredView = config.get('defaultView', defaultMarkdownSettings.defaultView) as MarkdownViewSetting;
+  const normalizedView = configuredView === 'preview'
+    ? 'rich'
+    : configuredView === 'edit'
+      ? 'raw'
+      : configuredView;
   return {
-    defaultView: config.get('defaultView', defaultMarkdownSettings.defaultView) as 'split' | 'edit' | 'preview',
+    defaultView: normalizedView,
     style: config.get('style', defaultMarkdownSettings.style) as MarkdownStyle,
     autoSave: config.get('autoSave', defaultMarkdownSettings.autoSave),
     autoSaveDelay: config.get('autoSaveDelay', defaultMarkdownSettings.autoSaveDelay),

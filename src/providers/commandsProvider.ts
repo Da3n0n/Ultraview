@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { buildCommandsHtml } from '../commands/commandsUi';
+import { buildCommandsHtml } from '../commands/commandsHtml';
 import { ProjectCommand, scanWorkspaceCommands } from '../commands/commandScanner';
 
 export class CommandsProvider implements vscode.WebviewViewProvider {
@@ -18,10 +18,14 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
       'ultraview.commandsPanel',
       'Commands',
       vscode.ViewColumn.One,
-      { enableScripts: true, retainContextWhenHidden: true }
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.file(path.join(ctx.extensionPath, 'dist'))],
+      }
     );
     CommandsProvider.trackWebview(panel.webview, panel.onDidDispose);
-    panel.webview.html = buildCommandsHtml();
+    panel.webview.html = buildCommandsHtml(ctx.extensionPath, panel.webview);
     panel.webview.onDidReceiveMessage(async msg => {
       switch (msg.type) {
         case 'ready':
@@ -38,8 +42,11 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
     CommandsProvider.trackWebview(webviewView.webview, webviewView.onDidDispose);
-    webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.html = buildCommandsHtml();
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.file(path.join(this.context.extensionPath, 'dist'))],
+    };
+    webviewView.webview.html = buildCommandsHtml(this.context.extensionPath, webviewView.webview);
 
     webviewView.webview.onDidReceiveMessage(async msg => {
       switch (msg.type) {

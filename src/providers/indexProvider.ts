@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { buildDbHtml } from '../webview/ultraview';
+import * as path from 'path';
+import { buildDbHtml } from '../webview/dbHtml';
 
 interface IndexColumn {
   name: string;
@@ -30,7 +31,10 @@ export class IndexProvider implements vscode.CustomReadonlyEditorProvider {
     document: vscode.CustomDocument,
     panel: vscode.WebviewPanel
   ): Promise<void> {
-    panel.webview.options = { enableScripts: true };
+    panel.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.file(path.join(this.ctx.extensionPath, 'dist'))],
+    };
     const filePath = document.uri.fsPath;
 
     let tables: IndexTable[] = [];
@@ -45,7 +49,7 @@ export class IndexProvider implements vscode.CustomReadonlyEditorProvider {
       tableRows = parsed.rowsByTable;
     };
 
-    panel.webview.html = buildDbHtml(panel.webview, this.ctx.extensionUri, 'Index File');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'Index File');
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {

@@ -3,7 +3,7 @@
   "icon": "images/icon.png",
   "displayName": "Ultraview “ All in One VS Code Extension",
   "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
-  "version": "0.2.241",
+  "version": "0.2.248",
   "publisher": "Da3n0n",
   "engines": {
     "vscode": "^1.85.0"
@@ -34,16 +34,16 @@
       "properties": {
         "ultraview.markdown.defaultView": {
           "type": "string",
-          "default": "preview",
+          "default": "split",
           "enum": [
+            "rich",
             "split",
-            "edit",
-            "preview"
+            "raw"
           ],
           "enumDescriptions": [
+            "Rich editor only",
             "Split view with raw and rich",
-            "Raw markdown only",
-            "Rich preview only"
+            "Raw markdown only"
           ],
           "description": "Default view mode for markdown files"
         },
@@ -475,7 +475,7 @@
       },
       {
         "viewType": "ultraview.markdown",
-        "displayName": "Markdown Preview",
+        "displayName": "Markdown Editor",
         "selector": [
           {
             "filenamePattern": "*.md"

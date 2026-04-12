@@ -50,7 +50,13 @@ const webviewConfig = {
   target: 'web',
   mode: 'production',
   entry: {
-    codeFlow: './src/webview/codeFlowApp.tsx'
+    codeFlow: './src/webview/codeFlowApp.tsx',
+    markdown: './src/webview/markdownApp.tsx',
+    svg: './src/webview/svgApp.tsx',
+    gitPanel: './src/webview/gitPanelApp.tsx',
+    db: './src/webview/dbApp.tsx',
+    commandsPanel: './src/webview/commandsPanelApp.tsx',
+    portsPanel: './src/webview/portsPanelApp.tsx'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { buildPortsHtml } from '../ports/portsUi';
+import * as path from 'path';
+import { buildPortsHtml } from '../ports/portsHtml';
 import { getOpenPorts, killProcess, killProcesses } from '../ports/portManager';
 
 export class PortsProvider implements vscode.WebviewViewProvider {
@@ -15,9 +16,13 @@ export class PortsProvider implements vscode.WebviewViewProvider {
             'ultraview.portsPanel',
             'Ports & Processes',
             vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: [vscode.Uri.file(path.join(ctx.extensionPath, 'dist'))]
+            }
         );
-        panel.webview.html = buildPortsHtml();
+        panel.webview.html = buildPortsHtml(ctx.extensionPath, panel.webview);
         let devOnly = false;
 
         panel.webview.onDidReceiveMessage(async msg => {
@@ -66,8 +71,11 @@ export class PortsProvider implements vscode.WebviewViewProvider {
     resolveWebviewView(webviewView: vscode.WebviewView) {
         this.view = webviewView;
         this.devOnly = false;
-        webviewView.webview.options = { enableScripts: true };
-        webviewView.webview.html = buildPortsHtml();
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.file(path.join(this.context.extensionPath, 'dist'))]
+        };
+        webviewView.webview.html = buildPortsHtml(this.context.extensionPath, webviewView.webview);
 
         webviewView.webview.onDidReceiveMessage(async msg => {
             switch (msg.type) {

@@ -483,8 +483,11 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
     resolveWebviewView(webviewView: vscode.WebviewView) {
         this.view = webviewView;
-        webviewView.webview.options = { enableScripts: true };
-        webviewView.webview.html = buildGitHtml();
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.file(require('path').join(this.context.extensionPath, 'dist'))]
+        };
+        webviewView.webview.html = buildGitHtml(this.context.extensionPath, webviewView.webview);
 
         // Hot-reload when another IDE writes the shared sync file
         this.store.on('changed', () => this.postState());
@@ -1110,7 +1113,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
-        panel.webview.html = buildGitHtml();
+        panel.webview.html = buildGitHtml(context.extensionPath, panel.webview);
 
         const manager = new GitProjects(context, store);
         const accounts = new GitAccounts(context, store);
