@@ -21,6 +21,11 @@ export function buildEditorPage(): string {
   const markedSrc = getInlineScript('marked/marked.min.js');
   const turndownSrc = getInlineScript('turndown/dist/turndown.js');
 
+  const safeSettings = JSON.stringify(settings).replace(/</g, '\\u003c');
+  const safeScript = script.replace(/<\/script>/g, '<\\/script>');
+  const safeMarked = markedSrc.replace(/<\/script>/g, '<\\/script>');
+  const safeTurndown = turndownSrc.replace(/<\/script>/g, '<\\/script>');
+
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,16 +34,16 @@ export function buildEditorPage(): string {
 <style>
 ${styles}
 </style>
-${markedSrc ? `<script>${markedSrc}</script>` : ''}
-${turndownSrc ? `<script>${turndownSrc}</script>` : ''}
+${safeMarked ? `<script>${safeMarked}</script>` : ''}
+${safeTurndown ? `<script>${safeTurndown}</script>` : ''}
 </head>
 <body>
 ${html}
 <script>
-window.__ultraviewMarkdownSettings = ${JSON.stringify(settings)};
+window.__ultraviewMarkdownSettings = ${safeSettings};
 </script>
 <script>
-${script}
+${safeScript}
 </script>
 </body>
 </html>`;

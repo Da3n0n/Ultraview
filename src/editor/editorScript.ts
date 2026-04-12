@@ -121,12 +121,12 @@ export function getEditorScript(): string {
   const previewRedoStack = [];
   let previewUndoLocked = false;
 
-  // Returns the caret position as a plain character offset within \`root\`.
+  // Returns the caret position as a plain character offset within root.
   function getCaretOffset(root) {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return null;
     const range = sel.getRangeAt(0);
-    // Clamp the range to inside \`root\`
+    // Clamp the range to inside root
     if (!root.contains(range.startContainer)) return null;
     const pre = document.createRange();
     pre.setStart(root, 0);
@@ -134,7 +134,7 @@ export function getEditorScript(): string {
     return pre.toString().length;
   }
 
-  // Restores the caret to a character offset within \`root\`.
+  // Restores the caret to a character offset within root.
   function setCaretOffset(root, offset) {
     if (offset === null || offset === undefined) return;
     try {
@@ -220,7 +220,7 @@ export function getEditorScript(): string {
                .replace(/<em>/gi, '*').replace(/<\\/em>/gi, '*')
                .replace(/<i>/gi, '*').replace(/<\\/i>/gi, '*')
                .replace(/<(?:del|s|strike)>/gi, '~~').replace(/<\\/(?:del|s|strike)>/gi, '~~')
-               .replace(/<code>/gi, '\`').replace(/<\\/code>/gi, '\`')
+               .replace(/<code>/gi, String.fromCharCode(96)).replace(/<\/code>/gi, String.fromCharCode(96))
                .replace(/<a[^>]*href="([^"]+)"[^>]*>(.*?)<\\/a>/gi, '[$2]($1)')
                .replace(/<li>/gi, '- ').replace(/<\\/li>/gi, '\\n')
                .replace(/<[^>]+>/g, '');
@@ -405,7 +405,7 @@ export function getEditorScript(): string {
       : wrapSelection('~~', '~~', 'strikethrough'),
     code: () => isPreviewActive()
       ? insertCodeInPreview()
-      : wrapSelection('\`', '\`', 'code'),
+      : wrapSelection(String.fromCharCode(96), String.fromCharCode(96), 'code'),
     h1: () => isPreviewActive() ? formatBlockInPreview('h1') : toggleHeading(1),
     h2: () => isPreviewActive() ? formatBlockInPreview('h2') : toggleHeading(2),
     h3: () => isPreviewActive() ? formatBlockInPreview('h3') : toggleHeading(3),
@@ -433,7 +433,7 @@ export function getEditorScript(): string {
       : insertAtCursor('\\n---\\n'),
     codeblock: () => isPreviewActive()
       ? insertHtmlInPreview('<pre><code>code here</code></pre>')
-      : insertAtCursor('\\n\`\`\`\\ncode here\\n\`\`\`\\n', 4),
+      : insertAtCursor('\\n' + String.fromCharCode(96).repeat(3) + '\\ncode here\\n' + String.fromCharCode(96).repeat(3) + '\\n', 4),
     table: () => isPreviewActive()
       ? insertHtmlInPreview('<table><thead><tr><th>Header 1</th><th>Header 2</th></tr></thead><tbody><tr><td>Cell 1</td><td>Cell 2</td></tr></tbody></table>')
       : insertAtCursor('\\n| Header 1 | Header 2 |\\n|----------|----------|\\n| Cell 1   | Cell 2   |\\n'),
