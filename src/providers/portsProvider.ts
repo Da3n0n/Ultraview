@@ -6,7 +6,7 @@ import { getOpenPorts, killProcess, killProcesses } from '../ports/portManager';
 export class PortsProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'ultraview.ports';
     private view?: vscode.WebviewView;
-    private devOnly: boolean = false;
+    private devOnly: boolean = true;
 
     constructor(private context: vscode.ExtensionContext) { }
 
@@ -23,7 +23,7 @@ export class PortsProvider implements vscode.WebviewViewProvider {
             }
         );
         panel.webview.html = buildPortsHtml(ctx.extensionPath, panel.webview);
-        let devOnly = false;
+        let devOnly = true;
 
         panel.webview.onDidReceiveMessage(async msg => {
             switch (msg.type) {
@@ -70,7 +70,7 @@ export class PortsProvider implements vscode.WebviewViewProvider {
 
     resolveWebviewView(webviewView: vscode.WebviewView) {
         this.view = webviewView;
-        this.devOnly = false;
+        this.devOnly = true;
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [vscode.Uri.file(path.join(this.context.extensionPath, 'dist'))]

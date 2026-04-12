@@ -14,13 +14,13 @@ function normalize(value: string | number | undefined): string {
 function App() {
   const [ports, setPorts] = useState<PortProcess[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [devOnly, setDevOnly] = useState(false);
+  const [devOnly, setDevOnly] = useState(true);
   const [search, setSearch] = useState('');
   const [killing, setKilling] = useState<Record<number, boolean>>({});
   const [killingAll, setKillingAll] = useState(false);
 
   useEffect(() => {
-    getVscode()?.postMessage({ type: 'ready', devOnly: false });
+    getVscode()?.postMessage({ type: 'ready', devOnly: true });
 
     const handleMessage = (event: MessageEvent<PortsPanelInboundMessage>) => {
       const message = event.data;
@@ -159,22 +159,23 @@ function App() {
           flex: 1;
           min-height: 0;
           overflow: auto;
-          padding: 12px;
+          padding: 10px;
           display: grid;
-          gap: 14px;
+          gap: 10px;
         }
         .hero {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-          gap: 10px;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
         }
         .stat-card {
           border: 1px solid var(--border);
-          border-radius: 16px;
+          border-radius: 12px;
           background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-          padding: 12px;
+          padding: 10px 12px;
           display: grid;
-          gap: 4px;
+          gap: 2px;
+          min-height: 78px;
         }
         .stat-label {
           font-size: 10px;
@@ -184,17 +185,17 @@ function App() {
           font-weight: 700;
         }
         .stat-value {
-          font-size: 24px;
+          font-size: 20px;
           font-weight: 800;
           color: var(--accent);
         }
         .list-card {
           border: 1px solid var(--border);
-          border-radius: 16px;
+          border-radius: 14px;
           background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-          padding: 12px;
+          padding: 10px;
           display: grid;
-          gap: 10px;
+          gap: 8px;
         }
         .section-header {
           display: flex;
@@ -226,16 +227,16 @@ function App() {
         }
         .port-list {
           display: grid;
-          gap: 8px;
+          gap: 6px;
         }
         .port-card {
           display: grid;
           grid-template-columns: auto minmax(0, 1fr) auto;
-          gap: 10px;
+          gap: 8px;
           align-items: center;
           border: 1px solid var(--border);
-          border-radius: 12px;
-          padding: 9px 10px;
+          border-radius: 10px;
+          padding: 7px 9px;
           background: rgba(255,255,255,.02);
           transition: transform .14s ease, border-color .14s ease, background .14s ease;
         }
@@ -249,11 +250,11 @@ function App() {
           background: linear-gradient(180deg, rgba(74,222,128,.08), rgba(74,222,128,.03));
         }
         .port-badge {
-          min-width: 60px;
+          min-width: 54px;
           text-align: center;
           border-radius: 999px;
-          padding: 5px 8px;
-          font: 700 11px/1 Consolas, 'Courier New', monospace;
+          padding: 4px 7px;
+          font: 700 10px/1 Consolas, 'Courier New', monospace;
           background: rgba(125,211,252,.14);
           color: var(--accent);
           border: 1px solid rgba(125,211,252,.28);
@@ -275,7 +276,7 @@ function App() {
           min-width: 0;
         }
         .port-name {
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 700;
           min-width: 0;
           white-space: nowrap;
@@ -293,17 +294,17 @@ function App() {
           border: 1px solid var(--dev-border);
         }
         .port-meta {
-          font-size: 10px;
+          font-size: 9px;
           color: var(--muted);
         }
         .danger-button {
           border: 1px solid var(--danger-border);
-          border-radius: 10px;
-          padding: 6px 10px;
+          border-radius: 8px;
+          padding: 5px 8px;
           background: var(--danger-bg);
           color: var(--danger);
           font: inherit;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
           cursor: pointer;
         }
@@ -312,7 +313,7 @@ function App() {
           cursor: default;
         }
         .empty {
-          padding: 22px 12px;
+          padding: 16px 10px;
           color: var(--muted);
           text-align: center;
           border: 1px dashed var(--border);
@@ -327,11 +328,16 @@ function App() {
           border-top: 1px solid var(--border);
           background: rgba(0,0,0,.08);
         }
+        @media (max-width: 720px) {
+          .hero {
+            grid-template-columns: 1fr;
+          }
+        }
       `}</style>
 
       <div className="toolbar">
         <button className="toolbar-button" onClick={() => refresh()}>Refresh</button>
-        <button className={`toolbar-button${devOnly ? ' active' : ''}`} onClick={toggleDevOnly}>Dev Only</button>
+        <button className={`toolbar-button${devOnly ? ' active' : ''}`} onClick={toggleDevOnly}>{devOnly ? 'Dev Focus' : 'Show All'}</button>
         <input className="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter ports, PIDs, or process names..." />
         <button className="toolbar-button" onClick={() => getVscode()?.postMessage({ type: 'openPanel' })}>Open</button>
       </div>
@@ -354,7 +360,7 @@ function App() {
 
         <section className="list-card">
           <div className="section-header">
-            <div className="section-title">Ports And Processes</div>
+            <div className="section-title">{devOnly ? 'Relevant Dev Ports' : 'Ports And Processes'}</div>
             <button className="section-action" onClick={killAllDev} disabled={killingAll || devPorts.length === 0}>
               {killingAll ? 'Killing Dev...' : `Kill All Dev (${devPorts.length})`}
             </button>
@@ -363,7 +369,7 @@ function App() {
           {!loaded && <div className="empty">Scanning ports...</div>}
           {loaded && visiblePorts.length === 0 && (
             <div className="empty">
-              {ports.length === 0 ? 'No open listening ports found.' : 'No ports match the current filter.'}
+              {ports.length === 0 ? 'No relevant listening ports found.' : 'No ports match the current filter.'}
             </div>
           )}
           {visiblePorts.length > 0 && (
@@ -377,7 +383,7 @@ function App() {
       <div className="statusbar">
         <span>{visiblePorts.length} shown</span>
         <span>{ports.length} total</span>
-        <span>{devOnly ? 'Dev filter on' : 'All listening ports'}</span>
+        <span>{devOnly ? 'Focused on common dev ports/processes' : 'Showing all non-system listening ports'}</span>
       </div>
     </div>
   );

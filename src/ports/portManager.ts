@@ -10,6 +10,33 @@ export interface PortProcess {
     isDev?: boolean;
 }
 
+const COMMON_DEV_PORTS = new Set([
+    3000, 3001, 3002, 3003, 3004, 3005,
+    4173, 4174, 4175,
+    4200, 4201, 4202,
+    5000, 5001, 5002,
+    5173, 5174, 5175, 5176, 5177, 5178, 5179, 5180,
+    5500,
+    8000, 8001, 8002, 8003,
+    8080, 8081, 8082, 8088,
+    8888,
+    9000, 9001,
+]);
+
+const NOISE_PROCESS_PATTERNS = [
+    'svchost',
+    'system',
+    'idle',
+    'services',
+    'registry',
+    'lsass',
+    'wininit',
+    'csrss',
+    'smss',
+    'fontdrvhost',
+    'dwm',
+];
+
 const DEV_SERVER_PATTERNS = [
     'node', 'npm', 'yarn', 'pnpm', 'bun',
     'python', 'python2', 'python3', 'pip',
@@ -74,11 +101,24 @@ function isDevServerProcess(name: string): boolean {
     return false;
 }
 
+function isNoiseProcess(name: string): boolean {
+    const lower = name.toLowerCase().replace(/\.exe$/i, '');
+    return NOISE_PROCESS_PATTERNS.some((pattern) => lower === pattern || lower.startsWith(pattern));
+}
+
 function isDevPort(port: number): boolean {
+    if (COMMON_DEV_PORTS.has(port)) return true;
     for (const [start, end] of DEV_PORT_RANGES) {
         if (port >= start && port <= end) return true;
     }
     return false;
+}
+
+function isRelevantPortProcess(portProcess: PortProcess): boolean {
+    if (isNoiseProcess(portProcess.name)) {
+        return false;
+    }
+    return isDevServerProcess(portProcess.name) || isDevPort(portProcess.port);
 }
 
 export async function getOpenPorts(devOnly: boolean = false): Promise<PortProcess[]> {
@@ -95,8 +135,9 @@ export async function getOpenPorts(devOnly: boolean = false): Promise<PortProces
         for (const p of ports) {
             p.isDev = isDevServerProcess(p.name) || isDevPort(p.port);
         }
+        ports = ports.filter((p) => !isNoiseProcess(p.name));
         if (devOnly) {
-            return ports.filter(p => p.isDev);
+            return ports.filter((p) => isRelevantPortProcess(p));
         }
         return ports;
     } catch (err) {
@@ -106,7 +147,7 @@ export async function getOpenPorts(devOnly: boolean = false): Promise<PortProces
 }
 
 async function getPortsWin32(): Promise<PortProcess[]> {
-    const { stdout } = await execAsync('netstat -ano');
+    const { stdout } = await execAsync('netstat -ano -p tcp');
     const lines = stdout.split('\n');
     const results: PortProcess[] = [];
     for (const line of lines) {
@@ -127,18 +168,36 @@ async function getPortsWin32(): Promise<PortProcess[]> {
     }
 
     const deduped = dedupe(results);
+    const pidNameMap = await getWindowsPidNameMap();
     for (const res of deduped) {
-        try {
-            const { stdout: taskListOut } = await execAsync(`tasklist /fi "PID eq ${res.pid}" /fo csv /nh`);
-            if (taskListOut && taskListOut.includes('","')) {
-                const name = taskListOut.split('","')[0].replace('"', '');
-                if (name) {
-                    res.name = name;
-                }
-            }
-        } catch (e) { }
+        const resolvedName = pidNameMap.get(res.pid);
+        if (resolvedName) {
+            res.name = resolvedName;
+        }
     }
     return deduped;
+}
+
+async function getWindowsPidNameMap(): Promise<Map<number, string>> {
+    try {
+        const { stdout } = await execAsync('tasklist /fo csv /nh');
+        const lines = stdout.split(/\r?\n/).filter(Boolean);
+        const map = new Map<number, string>();
+
+        for (const line of lines) {
+            const match = line.match(/^"([^"]+)","(\d+)"/);
+            if (!match) continue;
+            const [, name, pidText] = match;
+            const pid = parseInt(pidText, 10);
+            if (!Number.isNaN(pid) && name) {
+                map.set(pid, name);
+            }
+        }
+
+        return map;
+    } catch {
+        return new Map<number, string>();
+    }
 }
 
 async function getPortsDarwin(): Promise<PortProcess[]> {
