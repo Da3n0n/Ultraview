@@ -1,5 +1,5 @@
 export function getEditorScript(): string {
-  const script = `
+    const script = `
 (function() {
   'use strict';
   const vscode = acquireVsCodeApi();
@@ -110,10 +110,8 @@ export function getEditorScript(): string {
 
     document.body.dataset.style = settings.style === 'github' ? 'github' : 'obsidian';
     viewMode.value = currentMode;
-    wrap.className = 'editor-wrap ' + currentMode;
-    wrap.classList.toggle('preview-only', currentMode === 'preview');
-    wrap.classList.toggle('edit-only', currentMode === 'edit');
-    wrap.classList.toggle('split', currentMode === 'split');
+    wrap.classList.remove('preview-only', 'edit-only', 'split');
+    wrap.classList.add(currentMode);
   }
 
   // --- Undo / redo stack for the preview (contenteditable) pane ---
@@ -649,5 +647,5 @@ export function getEditorScript(): string {
   vscode.postMessage({ type: 'ready' });
 })();`;
 
-  return script;
+    return script;
 }
