@@ -11,62 +11,138 @@ export interface PortProcess {
 }
 
 const COMMON_DEV_PORTS = new Set([
-    3000, 3001, 3002, 3003, 3004, 3005,
-    4173, 4174, 4175,
-    4200, 4201, 4202,
-    5000, 5001, 5002,
-    5173, 5174, 5175, 5176, 5177, 5178, 5179, 5180,
-    5500,
-    8000, 8001, 8002, 8003,
-    8080, 8081, 8082, 8088,
-    8888,
-    9000, 9001,
+    3000, 3001, 3002, 3003, 3004, 3005, 4173, 4174, 4175, 4200, 4201, 4202, 5000, 5001, 5002, 5173,
+    5174, 5175, 5176, 5177, 5178, 5179, 5180, 5500, 8000, 8001, 8002, 8003, 8080, 8081, 8082, 8088,
+    8888, 9000, 9001,
 ]);
 
 const NOISE_PROCESS_PATTERNS = [
-    'svchost',
-    'system',
-    'idle',
-    'services',
-    'registry',
-    'lsass',
-    'wininit',
-    'csrss',
-    'smss',
-    'fontdrvhost',
-    'dwm',
+    'svchost.exe',
+    'System',
+    'Idle',
+    'Registry',
+    'lsass.exe',
+    'wininit.exe',
+    'csrss.exe',
+    'smss.exe',
+    'fontdrvhost.exe',
+    'dwm.exe',
+    'sihost.exe',
+    'ctfmon.exe',
+    'spoolsv.exe',
+    '.SearchHost.exe',
+    'RuntimeBroker.exe',
+    'ShellExperienceHost.exe',
+    'StartMenuExperienceHost.exe',
+    'TextInputHost.exe',
+    'SecurityHealthService.exe',
+    'MsMpEng.exe',
+    'NisSrv.exe',
 ];
 
 const DEV_SERVER_PATTERNS = [
-    'node', 'npm', 'yarn', 'pnpm', 'bun',
-    'python', 'python2', 'python3', 'pip',
-    'ruby', 'rails', 'rake',
-    'java', 'javac', 'gradle', 'maven',
-    'go', 'godoc', 'go-run',
-    'php', 'artisan', 'composer',
-    'rustc', 'cargo', 'cargo-run',
-    'vite', 'webpack', 'rollup', 'esbuild',
-    'next', 'nuxt', 'remix', 'gatsby',
-    'django', 'flask', 'fastapi', 'uvicorn',
-    'spring-boot', 'tomcat', 'jetty',
-    'hugo', 'jekyll', 'middleman',
-    'deno', 'deno-run',
-    'podman', 'docker', 'containerd',
-    'postgres', 'mysql', 'mongod', 'redis',
-    'elasticsearch', 'kibana', 'logstash',
-    'rabbitmq', 'activemq', 'kafka',
-    'jenkins', 'travis', 'circleci',
-    'live-server', 'http-server', 'serve',
-    'parcel', 'snowpack', 'wmr',
-    'astro', 'svelte-kit', 'svelte-dev',
-    'mint', 'elixir', 'mix', 'phoenix',
-    'dotnet', 'fsharp', 'mono',
-    'lua', 'luajit', 'torch', 'th',
-    'julia', 'jupyter',
+    'node',
+    'npm',
+    'yarn',
+    'pnpm',
+    'bun',
+    'python',
+    'python2',
+    'python3',
+    'pip',
+    'pip3',
+    'uv',
+    'ruby',
+    'rails',
+    'rake',
+    'java',
+    'javac',
+    'gradle',
+    'maven',
+    'go',
+    'godoc',
+    'go-run',
+    'php',
+    'artisan',
+    'composer',
+    'rustc',
+    'cargo',
+    'cargo-run',
+    'vite',
+    'webpack',
+    'rollup',
+    'esbuild',
+    'next',
+    'nuxt',
+    'remix',
+    'gatsby',
+    'django',
+    'flask',
+    'fastapi',
+    'uvicorn',
+    'spring-boot',
+    'tomcat',
+    'jetty',
+    'hugo',
+    'jekyll',
+    'middleman',
+    'deno',
+    'deno-run',
+    'podman',
+    'docker',
+    'containerd',
+    'postgres',
+    'mysql',
+    'mongod',
+    'redis',
+    'elasticsearch',
+    'kibana',
+    'logstash',
+    'rabbitmq',
+    'activemq',
+    'kafka',
+    'jenkins',
+    'travis',
+    'circleci',
+    'live-server',
+    'http-server',
+    'serve',
+    'parcel',
+    'snowpack',
+    'wmr',
+    'astro',
+    'svelte-kit',
+    'svelte-dev',
+    'mint',
+    'elixir',
+    'mix',
+    'phoenix',
+    'dotnet',
+    'fsharp',
+    'mono',
+    'lua',
+    'luajit',
+    'torch',
+    'th',
+    'julia',
+    'jupyter',
+    'winget',
+    'choco',
+    'ionic',
+    'cordova',
+    'capacitor',
+    'flutter',
+    'dart',
+    'kotlin',
+    'swift',
+    'claude',
+    'ollama',
+    'lmstudio',
 ];
 
 const DEV_PORT_RANGES: [number, number][] = [
     [3000, 3999],
+    [4000, 4999],
     [5000, 5999],
     [5173, 5180],
     [5174, 5180],
@@ -78,25 +154,50 @@ const DEV_PORT_RANGES: [number, number][] = [
     [5180, 5180],
     [5170, 5200],
     [5171, 5200],
+    [5172, 5200],
+    [6000, 6999],
+    [7000, 7999],
     [8000, 8999],
     [8888, 8899],
-    [30001, 30100],
-    [4000, 4999],
-    [7000, 7999],
     [9000, 9999],
     [10000, 10999],
     [4200, 4299],
+    [4300, 4399],
+    [4400, 4499],
     [8080, 8999],
+    [9229, 9230],
+    [9333, 9340],
+    [30001, 30100],
+    [50000, 51000],
 ];
 
 function isDevServerProcess(name: string): boolean {
     const lower = name.toLowerCase();
-    if (lower.includes('code') || lower.includes('vscode')) return false;
+    if (lower === 'code.exe' || lower === 'code' || lower === 'visual studio code') return false;
     if (lower.includes('electron') || lower.includes('shell')) return false;
     for (const pattern of DEV_SERVER_PATTERNS) {
-        if (lower === pattern || lower.startsWith(pattern + ' ') || lower.includes('-' + pattern) || lower.includes('_' + pattern)) {
+        if (
+            lower === pattern ||
+            lower.startsWith(pattern + ' ') ||
+            lower.includes('-' + pattern) ||
+            lower.includes('_' + pattern)
+        ) {
             return true;
         }
+    }
+    if (
+        lower.startsWith('node') ||
+        lower.startsWith('bun') ||
+        lower.startsWith('python') ||
+        lower.startsWith('npm') ||
+        lower.startsWith('yarn') ||
+        lower.startsWith('pnpm') ||
+        lower.startsWith('vite') ||
+        lower.startsWith('webpack') ||
+        lower.startsWith('next') ||
+        lower.startsWith('deno')
+    ) {
+        return true;
     }
     return false;
 }
@@ -298,7 +399,7 @@ async function getPortsLinux(): Promise<PortProcess[]> {
                     }
                 }
             }
-        } catch (e) { }
+        } catch (e) {}
     }
 
     if (outputs.length === 0) {
@@ -319,7 +420,7 @@ async function getPortsLinux(): Promise<PortProcess[]> {
                     }
                 }
             }
-        } catch (e) { }
+        } catch (e) {}
     }
 
     const deduped = dedupe(outputs);
@@ -331,7 +432,7 @@ async function getPortsLinux(): Promise<PortProcess[]> {
                 if (args) {
                     res.name = args;
                 }
-            } catch (e) { }
+            } catch (e) {}
         }
     }
     return deduped;
