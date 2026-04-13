@@ -3,7 +3,7 @@
   "icon": "images/icon.png",
   "displayName": "Ultraview “ All in One VS Code Extension",
   "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
-  "version": "0.2.253",
+  "version": "0.2.262",
   "publisher": "Da3n0n",
   "engines": {
     "vscode": "^1.85.0"
@@ -26,6 +26,8 @@
   ],
   "activationEvents": [
     "onStartupFinished",
+    "onCommand:ultraview.enableTransparent",
+    "onCommand:ultraview.disableTransparent",
     "onCustomEditor:ultraview.markdown",
     "onCustomEditor:ultraview.svg"
   ],
@@ -324,6 +326,13 @@
         }
       ]
     },
+    "themes": [
+      {
+        "label": "Ultraview Transparent",
+        "uiTheme": "vs-dark",
+        "path": "./themes/ultraview-transparent-color-theme.json"
+      }
+    ],
     "commands": [
       {
         "command": "ultraview.openCodeGraph",
@@ -375,6 +384,14 @@
       {
         "command": "ultraview.refreshCustomComments",
         "title": "Ultraview: Refresh Custom Comments CSS"
+      },
+      {
+        "command": "ultraview.enableTransparent",
+        "title": "Ultraview: Enable Transparent"
+      },
+      {
+        "command": "ultraview.disableTransparent",
+        "title": "Ultraview: Disable Transparent"
       },
       {
         "command": "ultraview.setSyncFolder",

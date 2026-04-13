@@ -18,6 +18,7 @@ import {
 import { CustomComments } from './customComments/index';
 import { SharedStore } from './sync/sharedStore';
 import { Model3dProvider } from './model3dViewer';
+import { registerThemeCommands } from './theme';
 import { forceDelete } from './utils/forceDelete';
 import { openUrlInVsCodeBrowser } from './utils/browser';
 
@@ -27,6 +28,7 @@ let sharedStore: SharedStore;
 
 export async function activate(context: vscode.ExtensionContext) {
   customComments = new CustomComments(context);
+  registerThemeCommands(context);
 
   // ── Shared cross-IDE store ─────────────────────────────────────────────
   sharedStore = new SharedStore(context);
