@@ -198,7 +198,7 @@ function App() {
           --muted: var(--vscode-descriptionForeground);
           --accent: var(--vscode-textLink-foreground, #6ee7b7);
         }
-        .git-panel-app { display:flex; flex-direction:column; height:100vh; background:linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, black), var(--bg)); color:var(--text); }
+        .git-panel-app { display:flex; flex-direction:column; height:100vh; background:var(--vscode-editor-background, #1e1e1e); color:var(--text); }
         .git-toolbar { display:flex; gap:8px; padding:10px; border-bottom:1px solid var(--border); background:rgba(0,0,0,.08); backdrop-filter: blur(8px); }
         .toolbar-group { display:flex; gap:6px; flex-wrap:wrap; }
         .content { flex:1; min-height:0; overflow:auto; padding:12px; display:grid; gap:14px; }

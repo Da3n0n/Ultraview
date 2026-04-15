@@ -96,9 +96,7 @@ function App() {
           display: flex;
           flex-direction: column;
           height: 100vh;
-          background:
-            radial-gradient(circle at top right, rgba(74,222,128,.08), transparent 28%),
-            linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, black), var(--bg));
+          background: var(--vscode-editor-background, #1e1e1e);
           color: var(--text);
         }
         .toolbar {

@@ -201,7 +201,7 @@ function App() {
           display: flex;
           flex-direction: column;
           height: 100vh;
-          background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, black), var(--bg));
+          background: var(--vscode-editor-background, #1e1e1e);
           color: var(--text);
         }
         .toolbar {
@@ -209,8 +209,7 @@ function App() {
           gap: 8px;
           padding: 10px;
           border-bottom: 1px solid var(--border);
-          background: rgba(0,0,0,.08);
-          backdrop-filter: blur(8px);
+          background: var(--vscode-editor-background, #1e1e1e);
         }
         .toolbar-button, .search {
           border: 1px solid var(--border);
@@ -341,7 +340,7 @@ function App() {
           font-size: 10px;
           color: var(--muted);
           border-top: 1px solid var(--border);
-          background: rgba(0,0,0,.08);
+          background: var(--vscode-editor-background, #1e1e1e);
         }
         .empty {
           padding: 22px 12px;
