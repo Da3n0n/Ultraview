@@ -481,6 +481,13 @@ export class GitProvider implements vscode.WebviewViewProvider {
         this.accounts = new GitAccounts(context, store);
     }
 
+    async addRepo(): Promise<void> {
+        if (!this.view) return;
+        await GitProvider._handleAddRepo(this.view.webview, this.manager, this.accounts, () =>
+            this.postState()
+        );
+    }
+
     resolveWebviewView(webviewView: vscode.WebviewView) {
         this.view = webviewView;
         webviewView.webview.options = {

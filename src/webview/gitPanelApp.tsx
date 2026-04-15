@@ -379,7 +379,7 @@ function App() {
                                     })
                                 }
                             >
-                                Local
+                                Add Local
                             </button>
                             <button
                                 className="button"

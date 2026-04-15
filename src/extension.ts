@@ -113,7 +113,7 @@ export async function activate(context: vscode.ExtensionContext) {
             CodeGraphProvider.openAsPanel(context);
         }),
         vscode.commands.registerCommand('ultraview.openGitProjects', () => {
-            GitProvider.openAsPanel(context, sharedStore);
+            vscode.commands.executeCommand('workbench.view.extension.ultraview-git');
         }),
         vscode.commands.registerCommand('ultraview.quickOpenProject', async () => {
             const manager = new GitProjects(context, sharedStore);
@@ -123,29 +123,70 @@ export async function activate(context: vscode.ExtensionContext) {
                 .sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
             const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
 
-            if (projects.length === 0) {
-                vscode.window.showInformationMessage(
-                    'No projects in Project Manager. Add one first.'
-                );
-                return;
+            interface ProjectPickItem extends vscode.QuickPickItem {
+                projectPath?: string;
+                action?: 'addLocal' | 'addRepo';
             }
 
-            const items: vscode.QuickPickItem[] = projects.map((p) => ({
+            const projectItems: ProjectPickItem[] = projects.map((p) => ({
                 label:
                     p.path === activeRepo
                         ? `$(git-branch) ${p.name} (active)`
                         : `$(git-branch) ${p.name}`,
                 description: p.path,
                 alwaysShow: p.path === activeRepo,
+                projectPath: p.path,
             }));
 
+            const separator: ProjectPickItem = {
+                label: '',
+                kind: vscode.QuickPickItemKind.Separator,
+                alwaysShow: true,
+            };
+
+            const addLocalItem: ProjectPickItem = {
+                label: '$(add) Add Local...',
+                description: 'Add a local folder as a project',
+                alwaysShow: true,
+                action: 'addLocal',
+            };
+
+            const addRepoItem: ProjectPickItem = {
+                label: '$(repo) Add Repository...',
+                description: 'Clone or add a git repository',
+                alwaysShow: true,
+                action: 'addRepo',
+            };
+
+            const items: ProjectPickItem[] = [
+                ...projectItems,
+                ...(projects.length > 0
+                    ? [separator, addLocalItem, addRepoItem]
+                    : [addLocalItem, addRepoItem]),
+            ];
+
             const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: 'Select a project to open',
+                placeHolder:
+                    projects.length > 0
+                        ? 'Select a project to open, or add a new one'
+                        : 'Add a project to get started',
                 matchOnDescription: true,
             });
 
-            if (!selected?.description) return;
-            const project = projects.find((p) => p.path === selected.description);
+            if (!selected) return;
+
+            if (selected.action === 'addLocal') {
+                vscode.commands.executeCommand('workbench.view.extension.ultraview-git');
+                return;
+            }
+
+            if (selected.action === 'addRepo') {
+                await gitProvider.addRepo();
+                return;
+            }
+
+            if (!selected.projectPath) return;
+            const project = projects.find((p) => p.path === selected.projectPath);
             if (!project) return;
 
             if (project.accountId) {
@@ -216,20 +257,15 @@ export async function activate(context: vscode.ExtensionContext) {
             const selected = await vscode.window.showQuickPick(items, {
                 placeHolder:
                     accountList.length > 0
-                        ? 'Select a git account to switch to, or add a new one'
+                        ? 'Select a git account, or add a new one'
                         : 'Add a git account to get started',
                 matchOnDescription: true,
             });
 
             if (!selected) return;
 
-            if (selected.action === 'add') {
-                GitProvider.openAsPanel(context, sharedStore);
-                return;
-            }
-
-            if (selected.action === 'manage') {
-                GitProvider.openAsPanel(context, sharedStore);
+            if (selected.action === 'add' || selected.action === 'manage') {
+                vscode.commands.executeCommand('workbench.view.extension.ultraview-git');
                 return;
             }
 
