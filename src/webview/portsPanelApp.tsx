@@ -16,20 +16,17 @@ function normalize(value: string | number | undefined): string {
 function App() {
     const [ports, setPorts] = useState<PortProcess[]>([]);
     const [loaded, setLoaded] = useState(false);
-    const [devOnly, setDevOnly] = useState(true);
-    const [search, setSearch] = useState('');
     const [killing, setKilling] = useState<Record<number, boolean>>({});
     const [killingAll, setKillingAll] = useState(false);
 
     useEffect(() => {
-        getVscode()?.postMessage({ type: 'ready', devOnly: true });
+        getVscode()?.postMessage({ type: 'ready', devOnly: false });
 
         const handleMessage = (event: MessageEvent<PortsPanelInboundMessage>) => {
             const message = event.data;
             if (!message || message.type !== 'state') return;
             setLoaded(true);
             setPorts(message.ports ?? []);
-            setDevOnly(Boolean(message.devOnly));
             setKilling({});
             setKillingAll(false);
         };
@@ -38,37 +35,10 @@ function App() {
         return () => window.removeEventListener('message', handleMessage as EventListener);
     }, []);
 
-    const visiblePorts = useMemo(() => {
-        const query = search.trim().toLowerCase();
-        const list = devOnly ? ports.filter((port) => port.isDev) : ports;
-
-        if (!query) {
-            return list;
-        }
-
-        return list.filter(
-            (port) =>
-                normalize(port.port).includes(query) ||
-                normalize(port.pid).includes(query) ||
-                normalize(port.name).includes(query) ||
-                (port.isDev && 'dev'.includes(query))
-        );
-    }, [ports, search, devOnly]);
-
     const devPorts = useMemo(() => ports.filter((port) => port.isDev), [ports]);
-    const processSummary = useMemo(
-        () => new Set(visiblePorts.map((port) => port.pid)).size,
-        [visiblePorts]
-    );
 
-    const refresh = (nextDevOnly = devOnly) => {
-        getVscode()?.postMessage({ type: 'refresh', devOnly: nextDevOnly });
-    };
-
-    const toggleDevOnly = () => {
-        const nextValue = !devOnly;
-        setDevOnly(nextValue);
-        refresh(nextValue);
+    const refresh = () => {
+        getVscode()?.postMessage({ type: 'refresh', devOnly: false });
     };
 
     const killOne = (pid: number) => {
@@ -175,67 +145,13 @@ function App() {
           display: grid;
           gap: 10px;
         }
-        .hero {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 6px;
-        }
-        .stat-card {
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-          padding: 6px 10px;
-          display: grid;
-          gap: 1px;
-          min-height: 48px;
-        }
-        .stat-label {
-          font-size: 9px;
-          text-transform: uppercase;
-          letter-spacing: .06em;
-          color: var(--muted);
-          font-weight: 700;
-        }
-        .stat-value {
-          font-size: 16px;
-          font-weight: 800;
-          color: var(--accent);
-        }
         .list-card {
           border: 1px solid var(--border);
           border-radius: 14px;
           background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-          padding: 10px;
+          padding: 6px;
           display: grid;
           gap: 8px;
-        }
-        .section-header {
-          display: flex;
-          justify-content: space-between;
-          gap: 10px;
-          align-items: center;
-        }
-        .section-title {
-          font-size: 11px;
-          letter-spacing: .08em;
-          text-transform: uppercase;
-          color: var(--muted);
-          font-weight: 700;
-        }
-        .section-action {
-          border: 1px solid var(--danger-border);
-          border-radius: 999px;
-          padding: 5px 10px;
-          background: var(--danger-bg);
-          color: var(--danger);
-          font: inherit;
-          font-size: 10px;
-          font-weight: 700;
-          cursor: pointer;
-        }
-        .section-action:disabled {
-          opacity: .45;
-          cursor: default;
         }
         .port-list {
           display: grid;
@@ -351,18 +267,19 @@ function App() {
                 <button className="toolbar-button" onClick={() => refresh()}>
                     ↻
                 </button>
-                <button
-                    className={`toolbar-button${devOnly ? ' active' : ''}`}
-                    onClick={toggleDevOnly}
-                >
-                    {devOnly ? 'Dev Focus' : 'Show All'}
-                </button>
-                <input
-                    className="search"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Filter ports, PIDs, or process names..."
-                />
+                <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center', margin: '0 4px', overflow: 'hidden' }}>
+                    <span style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {ports.length} PORTS ({devPorts.length} DEV)
+                    </span>
+                    <button
+                        className="danger-button"
+                        style={{ padding: '3px 8px', fontSize: '9px', marginLeft: 'auto', whiteSpace: 'nowrap' }}
+                        onClick={killAllDev}
+                        disabled={killingAll || devPorts.length === 0}
+                    >
+                        {killingAll ? 'Killing...' : `Kill Dev (${devPorts.length})`}
+                    </button>
+                </div>
                 <button
                     className="toolbar-button"
                     id="btn-panel"
@@ -374,57 +291,22 @@ function App() {
             </div>
 
             <div className="content">
-                <div className="hero">
-                    <div className="stat-card">
-                        <div className="stat-label">Visible Ports</div>
-                        <div className="stat-value">{visiblePorts.length}</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-label">Visible Processes</div>
-                        <div className="stat-value">{processSummary}</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-label">Dev Ports</div>
-                        <div className="stat-value">{devPorts.length}</div>
-                    </div>
-                </div>
-
                 <section className="list-card">
-                    <div className="section-header">
-                        <div className="section-title">
-                            {devOnly ? 'Relevant Dev Ports' : 'Ports And Processes'}
-                        </div>
-                        <button
-                            className="section-action"
-                            onClick={killAllDev}
-                            disabled={killingAll || devPorts.length === 0}
-                        >
-                            {killingAll ? 'Killing Dev...' : `Kill All Dev (${devPorts.length})`}
-                        </button>
-                    </div>
-
                     {!loaded && <div className="empty">Scanning ports...</div>}
-                    {loaded && visiblePorts.length === 0 && (
+                    {loaded && ports.length === 0 && (
                         <div className="empty">
-                            {ports.length === 0
-                                ? 'No relevant listening ports found.'
-                                : 'No ports match the current filter.'}
+                            No listening ports found.
                         </div>
                     )}
-                    {visiblePorts.length > 0 && (
-                        <div className="port-list">{visiblePorts.map(renderPortCard)}</div>
+                    {ports.length > 0 && (
+                        <div className="port-list">{ports.map(renderPortCard)}</div>
                     )}
                 </section>
             </div>
 
             <div className="statusbar">
-                <span>{visiblePorts.length} shown</span>
-                <span>{ports.length} total</span>
-                <span>
-                    {devOnly
-                        ? 'Focused on common dev ports/processes'
-                        : 'Showing all non-system listening ports'}
-                </span>
+                <span>{ports.length} shown</span>
+                <span>Filtered system noise</span>
             </div>
         </div>
     );

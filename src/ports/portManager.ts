@@ -38,7 +38,10 @@ const NOISE_PROCESS_PATTERNS = [
     'SecurityHealthService.exe',
     'MsMpEng.exe',
     'NisSrv.exe',
-];
+    'Discord.exe',
+    'Discord',
+    'conhost.exe',
+].map(p => p.toLowerCase().replace(/\.exe$/i, ''));
 
 const DEV_SERVER_PATTERNS = [
     'node',

@@ -34,6 +34,7 @@ interface ProjectCodeGraphState {
   graphMode: 'normal' | 'codeflow';
   filterText: string;
   edgeDirection: 'straight' | 'curved' | 'arrow' | 'curved-arrow';
+  edgeThickness: number;
   repulsion: number;
   springLength: number;
   damping: number;
@@ -49,6 +50,7 @@ const defaultProjectCodeGraphState: ProjectCodeGraphState = {
   graphMode: 'normal',
   filterText: '',
   edgeDirection: 'straight',
+  edgeThickness: 1.0,
   repulsion: 9000,
   springLength: 130,
   damping: 0.65,
@@ -425,6 +427,10 @@ function buildHtml(wsPath: string, initialState: ProjectCodeGraphState): string 
           <option value="curved-arrow">Curved + Arrow</option>
         </select>
       </div>
+      <div class="setting-row">
+        <label><span>Edge Thickness</span> <span id="val-edge-thickness">1.0</span></label>
+        <input type="range" id="edge-thickness" min="0.1" max="5.0" step="0.1" value="1.0" />
+      </div>
     </div>
     <div class="settings-section">
       <div class="settings-header">Legend</div>
@@ -519,6 +525,7 @@ const REPEL_CUTOFF= 350;
 let ALPHA_DECAY = 0.994;  // may be tightened for large graphs
 const MIN_ALPHA   = 0.001;
 let EDGE_DIRECTION = 'straight';
+let EDGE_THICKNESS = 1.0;
 
 // ── State ────────────────────────────────────────────────────────────────────
 let nodes = [];   // { id, label, type, filePath, x, y, vx, vy, r, col, parentId?, pinned? }
@@ -611,6 +618,10 @@ function setupIndependentPanelToggles() {
 function updateSettingControls() {
   const edgeDirection = document.getElementById('edge-direction');
   if (edgeDirection) edgeDirection.value = EDGE_DIRECTION;
+  const edgeThickness = document.getElementById('edge-thickness');
+  if (edgeThickness) edgeThickness.value = EDGE_THICKNESS;
+  const valThickness = document.getElementById('val-edge-thickness');
+  if (valThickness) valThickness.textContent = Number(EDGE_THICKNESS).toFixed(1);
 }
 
 function applyInitialState(state) {
@@ -633,6 +644,7 @@ function applyInitialState(state) {
   if (typeof state.hideGraphSettings === 'boolean') document.body.classList.toggle('settings-hidden', state.hideGraphSettings);
   if (typeof state.hideLegend === 'boolean') document.body.classList.toggle('legend-hidden', state.hideLegend);
   if (typeof state.edgeDirection === 'string') EDGE_DIRECTION = state.edgeDirection;
+  if (typeof state.edgeThickness === 'number') EDGE_THICKNESS = state.edgeThickness;
   if (typeof state.repulsion === 'number') REPULSION = state.repulsion;
   if (typeof state.springLength === 'number') {
     const val = state.springLength;
@@ -1014,21 +1026,38 @@ function render() {
     ctx.strokeStyle = isSel
       ? (e.kind === 'import' ? 'rgba(78,201,176,0.75)' : e.kind === 'call' ? 'rgba(220,180,120,0.80)' : 'rgba(197,134,192,0.75)')
       : (COLORS['edge_' + e.kind] || 'rgba(150,150,150,0.18)');
-    ctx.lineWidth = isSel ? 1.5 / z : 0.8 / z;
+    const baseThick = isSel ? 1.5 : 0.8;
+    ctx.lineWidth = (baseThick * EDGE_THICKNESS) / z;
     ctx.stroke();
 
     if (EDGE_DIRECTION === 'arrow' || EDGE_DIRECTION === 'curved-arrow') {
       const dx = B.x - A.x, dy = B.y - A.y;
       const len = Math.sqrt(dx * dx + dy * dy) || 1;
       const nx = dx / len, ny = dy / len;
-      const arrowX = B.x - nx * (B.r + 4);
-      const arrowY = B.y - ny * (B.r + 4);
-      const arrowSize = 8 / z;
-      const angle = Math.atan2(ny, nx);
+      
+      let arrowX, arrowY, customAngle;
+      
+      if (EDGE_DIRECTION === 'curved-arrow') {
+        const t = 0.5;
+        const cx = (A.x + B.x) / 2;
+        const cy = (A.y + B.y) / 2 - 30;
+        arrowX = (1 - t) * (1 - t) * A.x + 2 * (1 - t) * t * cx + t * t * B.x;
+        arrowY = (1 - t) * (1 - t) * A.y + 2 * (1 - t) * t * cy + t * t * B.y;
+        
+        const tx = 2 * (1 - t) * (cx - A.x) + 2 * t * (B.x - cx);
+        const ty = 2 * (1 - t) * (cy - A.y) + 2 * t * (B.y - cy);
+        customAngle = Math.atan2(ty, tx);
+      } else {
+        arrowX = A.x + dx * 0.5;
+        arrowY = A.y + dy * 0.5;
+        customAngle = Math.atan2(ny, nx);
+      }
+
+      const arrowSize = (8 * EDGE_THICKNESS) / z;
       ctx.beginPath();
       ctx.moveTo(arrowX, arrowY);
-      ctx.lineTo(arrowX - arrowSize * Math.cos(angle - Math.PI / 6), arrowY - arrowSize * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(arrowX - arrowSize * Math.cos(angle + Math.PI / 6), arrowY - arrowSize * Math.sin(angle + Math.PI / 6));
+      ctx.lineTo(arrowX - arrowSize * Math.cos(customAngle - Math.PI / 6), arrowY - arrowSize * Math.sin(customAngle - Math.PI / 6));
+      ctx.lineTo(arrowX - arrowSize * Math.cos(customAngle + Math.PI / 6), arrowY - arrowSize * Math.sin(customAngle + Math.PI / 6));
       ctx.closePath();
       ctx.fillStyle = isSel
         ? (e.kind === 'import' ? 'rgba(78,201,176,0.75)' : e.kind === 'call' ? 'rgba(220,180,120,0.80)' : 'rgba(197,134,192,0.75)')
@@ -1393,6 +1422,17 @@ if (edgeDirectionControl) {
     EDGE_DIRECTION = this.value;
     render();
     saveProjectState({ edgeDirection: EDGE_DIRECTION });
+  });
+}
+
+const edgeThicknessControl = document.getElementById('edge-thickness');
+if (edgeThicknessControl) {
+  edgeThicknessControl.addEventListener('input', function() {
+    EDGE_THICKNESS = parseFloat(this.value);
+    const valThickness = document.getElementById('val-edge-thickness');
+    if (valThickness) valThickness.textContent = Number(EDGE_THICKNESS).toFixed(1);
+    render();
+    saveProjectState({ edgeThickness: EDGE_THICKNESS });
   });
 }
 

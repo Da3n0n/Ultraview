@@ -73,12 +73,7 @@ function groupCommands(commands: ProjectCommand[]): GroupedCommands[] {
     });
   }
 
-  return Array.from(grouped.values()).map((group) => ({
-    ...group,
-    commands: group.commands
-      .slice()
-      .sort((left, right) => getMainCommandRank(left) - getMainCommandRank(right) || left.priority - right.priority || left.name.localeCompare(right.name)),
-  }));
+  return Array.from(grouped.values());
 }
 
 function App() {
@@ -87,6 +82,7 @@ function App() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     getVscode()?.postMessage({ type: 'ready' });
@@ -133,6 +129,10 @@ function App() {
   const runCommand = (command: ProjectCommand) => {
     setRunningId(command.id);
     getVscode()?.postMessage({ type: 'run', command });
+  };
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const renderCompactCommand = (command: ProjectCommand, prominent = false) => (
@@ -407,29 +407,47 @@ function App() {
         )}
 
         {groups.map((group) => {
-          const mainCommands = group.commands.slice(0, 4);
-          const remainingCommands = group.commands.slice(4);
+          const isExpanded = expandedGroups[group.key];
+          const mainCommands = group.commands.slice(0, 3);
+          const remainingCommands = group.commands.slice(3);
 
           return (
             <section key={group.key} className="project-card">
-              <div className="project-header">
+              <div className="project-header" onClick={() => toggleGroup(group.key)} style={{ cursor: 'pointer' }}>
                 <div className="project-title-wrap">
                   <div className="project-title">{group.title}</div>
                   <div className="project-path">{group.subtitle}</div>
                 </div>
-                <div className="project-count">{group.commands.length} commands</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div className="project-count">{group.commands.length} commands</div>
+                  {remainingCommands.length > 0 && (
+                    <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
+                      {isExpanded ? '▲' : '▼'}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="main-strip">
-                <div className="section-label">Main Commands</div>
+                <div className="section-label">Most Recent</div>
                 {mainCommands.map((command) => renderCompactCommand(command, true))}
               </div>
 
-              {remainingCommands.length > 0 && (
+              {isExpanded && remainingCommands.length > 0 && (
                 <div className="command-list">
-                  <div className="section-label">More</div>
+                  <div className="section-label">All Commands</div>
                   {remainingCommands.map((command) => renderCompactCommand(command))}
                 </div>
+              )}
+              
+              {!isExpanded && remainingCommands.length > 0 && (
+                <button 
+                  className="toolbar-button" 
+                  style={{ width: '100%', marginTop: '4px', fontSize: '10px', padding: '6px' }}
+                  onClick={(e) => { e.stopPropagation(); toggleGroup(group.key); }}
+                >
+                  Show {remainingCommands.length} more
+                </button>
               )}
             </section>
           );
