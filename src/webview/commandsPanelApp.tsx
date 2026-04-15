@@ -240,18 +240,26 @@ function App() {
           flex: 1;
           min-height: 0;
           overflow: auto;
-          padding: 12px;
+          padding: 8px;
           display: grid;
-          gap: 14px;
+          gap: 6px;
+          align-content: start;
         }
         .project-card {
-          display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:14px; border:1px solid var(--border);
+          display:flex; flex-direction:column; gap:4px; padding:8px 10px; border-radius:12px; border:1px solid var(--border);
           background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
           box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
           transition: transform .16s ease, border-color .16s ease, background .16s ease;
         }
+        .project-card:not(.expanded) .command-meta {
+          display: none;
+        }
+        .project-card:not(.expanded) .command-row {
+          padding: 4px 10px;
+        }
         .project-header {
           display:flex; justify-content:space-between; gap:10px; align-items:center;
+          padding-bottom: 2px;
         }
         .project-title-wrap { min-width:0; display:grid; gap:2px; }
         .project-title { font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -390,7 +398,7 @@ function App() {
                     const remainingCommands = group.commands.slice(3);
 
                     return (
-                        <section key={group.key} className="project-card">
+                        <section key={group.key} className={`project-card${isExpanded ? ' expanded' : ''}`}>
                             <div
                                 className="project-header"
                                 onClick={() => toggleGroup(group.key)}
@@ -404,11 +412,9 @@ function App() {
                                     <div className="project-count">
                                         {group.commands.length} commands
                                     </div>
-                                    {remainingCommands.length > 0 && (
-                                        <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
-                                            {isExpanded ? '▲' : '▼'}
-                                        </div>
-                                    )}
+                                    <div style={{ fontSize: '10px', color: 'var(--muted)', width: '12px', textAlign: 'center' }}>
+                                        {isExpanded ? '▲' : '▼'}
+                                    </div>
                                 </div>
                             </div>
 
