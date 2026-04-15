@@ -154,14 +154,15 @@ function App() {
         }
         .port-card {
           display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center;
-          padding:7px 10px; border-radius:12px; border:1px solid var(--border);
-          background:rgba(255,255,255,.02);
-          transition: transform .14s ease, border-color .14s ease, background .14s ease;
+          padding:12px; border-radius:14px; border:1px solid var(--border);
+          background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+          transition: transform .16s ease, border-color .16s ease, background .16s ease;
         }
         .port-card:hover {
           transform: translateY(-1px);
-          border-color: color-mix(in srgb, var(--border) 52%, var(--accent));
-          background: rgba(125,211,252,.06);
+          border-color: color-mix(in srgb, var(--border) 50%, var(--accent));
+          background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
         }
         .port-card.dev {
           border-color: rgba(74,222,128,.2);
