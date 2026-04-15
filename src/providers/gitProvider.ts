@@ -5,7 +5,7 @@ import { buildGitHtml } from '../git/gitUi';
 import { GitProjects } from '../git/gitProjects';
 import { GitAccounts } from '../git/gitAccounts';
 import { GitProfile, GitProvider as GitProviderType, AuthMethod } from '../git/types';
-import { applyLocalAccount, clearLocalAccount } from '../git/gitCredentials';
+import { applyLocalAccount, clearLocalAccount, getRemoteUrl } from '../git/gitCredentials';
 import { SharedStore } from '../sync/sharedStore';
 
 const execAsync = util.promisify(childProcess.exec);
@@ -485,7 +485,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
         this.view = webviewView;
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [vscode.Uri.file(require('path').join(this.context.extensionPath, 'dist'))]
+            localResourceRoots: [
+                vscode.Uri.file(require('path').join(this.context.extensionPath, 'dist')),
+            ],
         };
         webviewView.webview.html = buildGitHtml(this.context.extensionPath, webviewView.webview);
 
@@ -523,9 +525,38 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             value: nameFromPath(folder),
                         });
                         if (name !== undefined) {
+                            const projectName = name || nameFromPath(folder);
+                            const run = (cmd: string) =>
+                                execAsync(cmd, { cwd: folder, env: process.env, timeout: 8000 });
+                            let accountId: string | undefined;
+                            let repoUrl: string | undefined;
+                            try {
+                                await run('git rev-parse --is-inside-work-tree');
+                                repoUrl = await getRemoteUrl(folder);
+                                if (repoUrl) {
+                                    const urlLower = repoUrl.toLowerCase();
+                                    let targetProvider: GitProviderType | undefined;
+                                    if (urlLower.includes('github.com')) targetProvider = 'github';
+                                    else if (urlLower.includes('gitlab.com'))
+                                        targetProvider = 'gitlab';
+                                    else if (urlLower.includes('dev.azure.com'))
+                                        targetProvider = 'azure';
+                                    if (targetProvider) {
+                                        const accountsList = this.accounts.listAccounts();
+                                        const matched = accountsList.find(
+                                            (a) => a.provider === targetProvider
+                                        );
+                                        if (matched) accountId = matched.id;
+                                    }
+                                }
+                            } catch {
+                                // Not a git repo, add as plain project
+                            }
                             this.manager.addProject({
-                                name: name || nameFromPath(folder),
+                                name: projectName,
                                 path: folder,
+                                accountId,
+                                repoUrl,
                             });
                             this.postState();
                         }
@@ -1183,9 +1214,38 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             value: nameFromPath(folder),
                         });
                         if (name !== undefined) {
+                            const projectName = name || nameFromPath(folder);
+                            const run = (cmd: string) =>
+                                execAsync(cmd, { cwd: folder, env: process.env, timeout: 8000 });
+                            let accountId: string | undefined;
+                            let repoUrl: string | undefined;
+                            try {
+                                await run('git rev-parse --is-inside-work-tree');
+                                repoUrl = await getRemoteUrl(folder);
+                                if (repoUrl) {
+                                    const urlLower = repoUrl.toLowerCase();
+                                    let targetProvider: GitProviderType | undefined;
+                                    if (urlLower.includes('github.com')) targetProvider = 'github';
+                                    else if (urlLower.includes('gitlab.com'))
+                                        targetProvider = 'gitlab';
+                                    else if (urlLower.includes('dev.azure.com'))
+                                        targetProvider = 'azure';
+                                    if (targetProvider) {
+                                        const accountsList = accounts.listAccounts();
+                                        const matched = accountsList.find(
+                                            (a) => a.provider === targetProvider
+                                        );
+                                        if (matched) accountId = matched.id;
+                                    }
+                                }
+                            } catch {
+                                // Not a git repo, add as plain project
+                            }
                             manager.addProject({
-                                name: name || nameFromPath(folder),
+                                name: projectName,
                                 path: folder,
+                                accountId,
+                                repoUrl,
                             });
                             postPanelState();
                         }

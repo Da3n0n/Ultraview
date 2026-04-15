@@ -1,660 +1,670 @@
 {
-  "name": "ultraview",
-  "icon": "images/icon.png",
-  "displayName": "Ultraview “ All in One VS Code Extension",
-  "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
-  "version": "0.2.263",
-  "publisher": "Da3n0n",
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Other",
-    "Visualization"
-  ],
-  "keywords": [
-    "sqlite",
-    "database",
-    "duckdb",
-    "access",
-    "sql",
-    "markdown",
-    "viewer",
-    "preview",
-    "nodes",
-    "visualization"
-  ],
-  "activationEvents": [
-    "onStartupFinished",
-    "onCommand:ultraview.enableTransparent",
-    "onCommand:ultraview.disableTransparent",
-    "onCustomEditor:ultraview.markdown",
-    "onCustomEditor:ultraview.svg"
-  ],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "configuration": {
-      "title": "Ultraview",
-      "properties": {
-        "ultraview.markdown.defaultView": {
-          "type": "string",
-          "default": "split",
-          "enum": [
-            "rich",
-            "split",
-            "raw"
-          ],
-          "enumDescriptions": [
-            "Rich editor only",
-            "Split view with raw and rich",
-            "Raw markdown only"
-          ],
-          "description": "Default view mode for markdown files"
-        },
-        "ultraview.svg.defaultView": {
-          "type": "string",
-          "default": "preview",
-          "enum": [
-            "text",
-            "split",
-            "preview"
-          ],
-          "enumDescriptions": [
-            "Text editor only",
-            "Side-by-side text and live SVG preview",
-            "Pure SVG preview only"
-          ],
-          "description": "Default view mode for SVG files"
-        },
-        "ultraview.markdown.style": {
-          "type": "string",
-          "default": "obsidian",
-          "enum": [
-            "obsidian",
-            "github"
-          ],
-          "enumDescriptions": [
-            "Obsidian-style markdown",
-            "GitHub-style markdown"
-          ],
-          "description": "Markdown preview style"
-        },
-        "ultraview.markdown.autoSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Auto-save markdown files while editing"
-        },
-        "ultraview.markdown.autoSaveDelay": {
-          "type": "number",
-          "default": 1000,
-          "description": "Delay in milliseconds before auto-saving"
-        },
-        "ultraview.markdown.fontSize": {
-          "type": "number",
-          "default": 14,
-          "description": "Font size for the markdown editor"
-        },
-        "ultraview.markdown.showStatusBar": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show the status bar with line/word/char counts"
-        },
-        "ultraview.markdown.wordWrap": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable word wrap in the editor"
-        },
-        "ultraview.codeGraph.nodeSize": {
-          "type": "number",
-          "default": 20,
-          "description": "Size of nodes in the code graph"
-        },
-        "ultraview.codeGraph.fontSize": {
-          "type": "number",
-          "default": 12,
-          "description": "Font size for node labels"
-        },
-        "ultraview.codeGraph.showLabels": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show labels on graph nodes"
-        },
-        "ultraview.codeGraph.hideUI": {
-          "type": "boolean",
-          "default": false,
-          "description": "Hide parts of the UI (e.g. legend) in the code graph"
-        },
-        "ultraview.codeGraph.layoutDirection": {
-          "type": "string",
-          "default": "horizontal",
-          "enum": [
-            "horizontal",
-            "vertical",
-            "radial"
-          ],
-          "description": "Direction of the graph layout"
-        },
-        "ultraview.codeGraph.clusterBy": {
-          "type": "string",
-          "default": "folder",
-          "enum": [
-            "file",
-            "folder",
-            "none"
-          ],
-          "description": "How to cluster nodes in the graph"
-        },
-        "ultraview.codeGraph.showImports": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show import relationships"
-        },
-        "ultraview.codeGraph.showExports": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show export relationships"
-        },
-        "ultraview.codeGraph.nodeColors": {
-          "type": "object",
-          "default": {
-            "ts": "#4EC9B0",
-            "other": "#9CDCFE",
-            "md": "#C586C0",
-            "fn": "#DCDCAA"
-          },
-          "description": "Custom colors for code graph nodes"
-        },
-        "ultraview.database.pageSize": {
-          "type": "number",
-          "default": 200,
-          "description": "Number of rows per page in database viewer"
-        },
-        "ultraview.database.showRowNumbers": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show row numbers in database tables"
-        },
-        "ultraview.database.maxColumnWidth": {
-          "type": "number",
-          "default": 320,
-          "description": "Maximum width of columns in pixels"
-        },
-        "ultraview.database.nullDisplay": {
-          "type": "string",
-          "default": "NULL",
-          "description": "Text to display for NULL values"
-        },
-        "ultraview.database.dateFormat": {
-          "type": "string",
-          "default": "locale",
-          "description": "Date format for displaying dates"
-        },
-        "ultraview.database.showSqlToolbar": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show the SQL query toolbar"
-        },
-        "ultraview.database.autoQueryLimit": {
-          "type": "number",
-          "default": 1000,
-          "description": "Maximum rows returned by auto-queries"
-        },
-        "ultraview.customComments.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable custom font styling for comments"
-        },
-        "ultraview.customComments.fontFamily": {
-          "type": "string",
-          "default": "Fira Code",
-          "description": "Font family for comments (must be installed on your system)"
-        },
-        "ultraview.customComments.fontSize": {
-          "type": "string",
-          "default": "",
-          "description": "Font size for comments (e.g., '14px', '1.1em'). Leave empty to use default."
-        },
-        "ultraview.customComments.fontStyle": {
-          "type": "string",
-          "default": "italic",
-          "enum": [
-            "normal",
-            "italic",
-            "oblique"
-          ],
-          "description": "Font style for comments"
-        },
-        "ultraview.customComments.fontWeight": {
-          "type": "string",
-          "default": "",
-          "enum": [
-            "",
-            "normal",
-            "bold",
-            "100",
-            "200",
-            "300",
-            "400",
-            "500",
-            "600",
-            "700",
-            "800",
-            "900"
-          ],
-          "description": "Font weight for comments. Leave empty to use default."
-        },
-        "ultraview.customComments.color": {
-          "type": "string",
-          "default": "",
-          "description": "Text color for comments (e.g., '#6A9955', 'green'). Leave empty to use theme color."
-        },
-        "ultraview.dokploy.url": {
-          "type": "string",
-          "default": "",
-          "description": "Base URL for your Dokploy instance, used by the Dokploy sidebar and browser commands."
-        }
-      }
+    "name": "ultraview",
+    "icon": "images/icon.png",
+    "displayName": "Ultraview “ All in One VS Code Extension",
+    "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
+    "version": "0.2.265",
+    "publisher": "Da3n0n",
+    "engines": {
+        "vscode": "^1.85.0"
     },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "ultraview-graph",
-          "title": "Code Graph",
-          "icon": "$(type-hierarchy)"
-        },
-        {
-          "id": "ultraview-git",
-          "title": "Project Manager",
-          "icon": "images/git.svg"
-        },
-        {
-          "id": "ultraview-ports",
-          "title": "Ports & Processes",
-          "icon": "images/ports.svg"
-        },
-        {
-          "id": "ultraview-commands",
-          "title": "Commands",
-          "icon": "images/commands.svg"
-        },
-        {
-          "id": "ultraview-dokploy",
-          "title": "Dokploy",
-          "icon": "images/dokploy.svg"
-        }
-      ]
-    },
-    "views": {
-      "ultraview-graph": [
-        {
-          "type": "webview",
-          "id": "ultraview.codeGraph",
-          "name": "Code Graph",
-          "icon": "$(type-hierarchy)"
-        }
-      ],
-      "ultraview-git": [
-        {
-          "type": "webview",
-          "id": "ultraview.git",
-          "name": "Project Manager",
-          "icon": "images/git.svg"
-        }
-      ],
-      "ultraview-ports": [
-        {
-          "type": "webview",
-          "id": "ultraview.ports",
-          "name": "Ports & Processes",
-          "icon": "images/ports.svg"
-        }
-      ],
-      "ultraview-commands": [
-        {
-          "type": "webview",
-          "id": "ultraview.commands",
-          "name": "Commands",
-          "icon": "images/commands.svg"
-        }
-      ],
-      "ultraview-dokploy": [
-        {
-          "type": "webview",
-          "id": "ultraview.dokploy",
-          "name": "Dokploy",
-          "icon": "images/dokploy.svg"
-        }
-      ]
-    },
-    "themes": [
-      {
-        "label": "Ultraview Transparent",
-        "uiTheme": "vs-dark",
-        "path": "./themes/ultraview-transparent-color-theme.json"
-      }
+    "categories": [
+        "Other",
+        "Visualization"
     ],
-    "commands": [
-      {
-        "command": "ultraview.openCodeGraph",
-        "title": "Ultraview: Open Code Graph as Editor",
-        "icon": "$(type-hierarchy)"
-      },
-      {
-        "command": "ultraview.openGitProjects",
-        "title": "Ultraview: Open Project Manager",
-        "icon": "$(git-branch)"
-      },
-      {
-        "command": "ultraview.openPorts",
-        "title": "Ultraview: Open Ports & Processes",
-        "icon": "$(server)"
-      },
-      {
-        "command": "ultraview.openCommands",
-        "title": "Ultraview: Open Commands",
-        "icon": "$(terminal)"
-      },
-      {
-        "command": "ultraview.openDokploy",
-        "title": "Ultraview: Open Dokploy in Editor",
-        "icon": "$(browser)"
-      },
-      {
-        "command": "ultraview.configureDokployUrl",
-        "title": "Ultraview: Configure Dokploy URL",
-        "icon": "$(gear)"
-      },
-      {
-        "command": "ultraview.openUrl",
-        "title": "Ultraview: Open URL",
-        "icon": "$(browser)"
-      },
-      {
-        "command": "ultraview.enableCustomComments",
-        "title": "Ultraview: Enable Custom Comments Font"
-      },
-      {
-        "command": "ultraview.disableCustomComments",
-        "title": "Ultraview: Disable Custom Comments Font"
-      },
-      {
-        "command": "ultraview.toggleCustomComments",
-        "title": "Ultraview: Toggle Custom Comments Font"
-      },
-      {
-        "command": "ultraview.refreshCustomComments",
-        "title": "Ultraview: Refresh Custom Comments CSS"
-      },
-      {
-        "command": "ultraview.enableTransparent",
-        "title": "Ultraview: Enable Transparent"
-      },
-      {
-        "command": "ultraview.disableTransparent",
-        "title": "Ultraview: Disable Transparent"
-      },
-      {
-        "command": "ultraview.setSyncFolder",
-        "title": "Ultraview: Set Cross-IDE Sync Folder",
-        "icon": "$(folder-opened)"
-      },
-      {
-        "command": "ultraview.showSyncFolder",
-        "title": "Ultraview: Show Sync Folder in Explorer",
-        "icon": "$(folder)"
-      },
-      {
-        "command": "ultraview.forceDelete",
-        "title": "Force Delete",
-        "icon": "$(trash)"
-      }
+    "keywords": [
+        "sqlite",
+        "database",
+        "duckdb",
+        "access",
+        "sql",
+        "markdown",
+        "viewer",
+        "preview",
+        "nodes",
+        "visualization"
     ],
-    "menus": {
-      "explorer/context": [
-        {
-          "command": "ultraview.forceDelete",
-          "group": "7_modification",
-          "when": "resourceScheme == 'file'"
-        }
-      ]
+    "activationEvents": [
+        "onStartupFinished",
+        "onCommand:ultraview.enableTransparent",
+        "onCommand:ultraview.disableTransparent",
+        "onCustomEditor:ultraview.markdown",
+        "onCustomEditor:ultraview.svg"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "configuration": {
+            "title": "Ultraview",
+            "properties": {
+                "ultraview.markdown.defaultView": {
+                    "type": "string",
+                    "default": "split",
+                    "enum": [
+                        "rich",
+                        "split",
+                        "raw"
+                    ],
+                    "enumDescriptions": [
+                        "Rich editor only",
+                        "Split view with raw and rich",
+                        "Raw markdown only"
+                    ],
+                    "description": "Default view mode for markdown files"
+                },
+                "ultraview.svg.defaultView": {
+                    "type": "string",
+                    "default": "preview",
+                    "enum": [
+                        "text",
+                        "split",
+                        "preview"
+                    ],
+                    "enumDescriptions": [
+                        "Text editor only",
+                        "Side-by-side text and live SVG preview",
+                        "Pure SVG preview only"
+                    ],
+                    "description": "Default view mode for SVG files"
+                },
+                "ultraview.markdown.style": {
+                    "type": "string",
+                    "default": "obsidian",
+                    "enum": [
+                        "obsidian",
+                        "github"
+                    ],
+                    "enumDescriptions": [
+                        "Obsidian-style markdown",
+                        "GitHub-style markdown"
+                    ],
+                    "description": "Markdown preview style"
+                },
+                "ultraview.markdown.autoSave": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Auto-save markdown files while editing"
+                },
+                "ultraview.markdown.autoSaveDelay": {
+                    "type": "number",
+                    "default": 1000,
+                    "description": "Delay in milliseconds before auto-saving"
+                },
+                "ultraview.markdown.fontSize": {
+                    "type": "number",
+                    "default": 14,
+                    "description": "Font size for the markdown editor"
+                },
+                "ultraview.markdown.showStatusBar": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show the status bar with line/word/char counts"
+                },
+                "ultraview.markdown.wordWrap": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable word wrap in the editor"
+                },
+                "ultraview.codeGraph.nodeSize": {
+                    "type": "number",
+                    "default": 20,
+                    "description": "Size of nodes in the code graph"
+                },
+                "ultraview.codeGraph.fontSize": {
+                    "type": "number",
+                    "default": 12,
+                    "description": "Font size for node labels"
+                },
+                "ultraview.codeGraph.showLabels": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show labels on graph nodes"
+                },
+                "ultraview.codeGraph.hideUI": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Hide parts of the UI (e.g. legend) in the code graph"
+                },
+                "ultraview.codeGraph.layoutDirection": {
+                    "type": "string",
+                    "default": "horizontal",
+                    "enum": [
+                        "horizontal",
+                        "vertical",
+                        "radial"
+                    ],
+                    "description": "Direction of the graph layout"
+                },
+                "ultraview.codeGraph.clusterBy": {
+                    "type": "string",
+                    "default": "folder",
+                    "enum": [
+                        "file",
+                        "folder",
+                        "none"
+                    ],
+                    "description": "How to cluster nodes in the graph"
+                },
+                "ultraview.codeGraph.showImports": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show import relationships"
+                },
+                "ultraview.codeGraph.showExports": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show export relationships"
+                },
+                "ultraview.codeGraph.nodeColors": {
+                    "type": "object",
+                    "default": {
+                        "ts": "#4EC9B0",
+                        "other": "#9CDCFE",
+                        "md": "#C586C0",
+                        "fn": "#DCDCAA"
+                    },
+                    "description": "Custom colors for code graph nodes"
+                },
+                "ultraview.database.pageSize": {
+                    "type": "number",
+                    "default": 200,
+                    "description": "Number of rows per page in database viewer"
+                },
+                "ultraview.database.showRowNumbers": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show row numbers in database tables"
+                },
+                "ultraview.database.maxColumnWidth": {
+                    "type": "number",
+                    "default": 320,
+                    "description": "Maximum width of columns in pixels"
+                },
+                "ultraview.database.nullDisplay": {
+                    "type": "string",
+                    "default": "NULL",
+                    "description": "Text to display for NULL values"
+                },
+                "ultraview.database.dateFormat": {
+                    "type": "string",
+                    "default": "locale",
+                    "description": "Date format for displaying dates"
+                },
+                "ultraview.database.showSqlToolbar": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show the SQL query toolbar"
+                },
+                "ultraview.database.autoQueryLimit": {
+                    "type": "number",
+                    "default": 1000,
+                    "description": "Maximum rows returned by auto-queries"
+                },
+                "ultraview.customComments.enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable custom font styling for comments"
+                },
+                "ultraview.customComments.fontFamily": {
+                    "type": "string",
+                    "default": "Fira Code",
+                    "description": "Font family for comments (must be installed on your system)"
+                },
+                "ultraview.customComments.fontSize": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Font size for comments (e.g., '14px', '1.1em'). Leave empty to use default."
+                },
+                "ultraview.customComments.fontStyle": {
+                    "type": "string",
+                    "default": "italic",
+                    "enum": [
+                        "normal",
+                        "italic",
+                        "oblique"
+                    ],
+                    "description": "Font style for comments"
+                },
+                "ultraview.customComments.fontWeight": {
+                    "type": "string",
+                    "default": "",
+                    "enum": [
+                        "",
+                        "normal",
+                        "bold",
+                        "100",
+                        "200",
+                        "300",
+                        "400",
+                        "500",
+                        "600",
+                        "700",
+                        "800",
+                        "900"
+                    ],
+                    "description": "Font weight for comments. Leave empty to use default."
+                },
+                "ultraview.customComments.color": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Text color for comments (e.g., '#6A9955', 'green'). Leave empty to use theme color."
+                },
+                "ultraview.dokploy.url": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Base URL for your Dokploy instance, used by the Dokploy sidebar and browser commands."
+                }
+            }
+        },
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "ultraview-graph",
+                    "title": "Code Graph",
+                    "icon": "$(type-hierarchy)"
+                },
+                {
+                    "id": "ultraview-git",
+                    "title": "Project Manager",
+                    "icon": "images/git.svg"
+                },
+                {
+                    "id": "ultraview-ports",
+                    "title": "Ports & Processes",
+                    "icon": "images/ports.svg"
+                },
+                {
+                    "id": "ultraview-commands",
+                    "title": "Commands",
+                    "icon": "images/commands.svg"
+                },
+                {
+                    "id": "ultraview-dokploy",
+                    "title": "Dokploy",
+                    "icon": "images/dokploy.svg"
+                }
+            ]
+        },
+        "views": {
+            "ultraview-graph": [
+                {
+                    "type": "webview",
+                    "id": "ultraview.codeGraph",
+                    "name": "Code Graph",
+                    "icon": "$(type-hierarchy)"
+                }
+            ],
+            "ultraview-git": [
+                {
+                    "type": "webview",
+                    "id": "ultraview.git",
+                    "name": "Project Manager",
+                    "icon": "images/git.svg"
+                }
+            ],
+            "ultraview-ports": [
+                {
+                    "type": "webview",
+                    "id": "ultraview.ports",
+                    "name": "Ports & Processes",
+                    "icon": "images/ports.svg"
+                }
+            ],
+            "ultraview-commands": [
+                {
+                    "type": "webview",
+                    "id": "ultraview.commands",
+                    "name": "Commands",
+                    "icon": "images/commands.svg"
+                }
+            ],
+            "ultraview-dokploy": [
+                {
+                    "type": "webview",
+                    "id": "ultraview.dokploy",
+                    "name": "Dokploy",
+                    "icon": "images/dokploy.svg"
+                }
+            ]
+        },
+        "themes": [
+            {
+                "label": "Ultraview Transparent",
+                "uiTheme": "vs-dark",
+                "path": "./themes/ultraview-transparent-color-theme.json"
+            }
+        ],
+        "commands": [
+            {
+                "command": "ultraview.openCodeGraph",
+                "title": "Ultraview: Open Code Graph as Editor",
+                "icon": "$(type-hierarchy)"
+            },
+            {
+                "command": "ultraview.quickOpenProject",
+                "title": "Ultraview: Quick Open Project",
+                "icon": "$(git-branch)"
+            },
+            {
+                "command": "ultraview.quickSwitchGitAccount",
+                "title": "Ultraview: Quick Switch Git Account",
+                "icon": "$(account)"
+            },
+            {
+                "command": "ultraview.openGitProjects",
+                "title": "Ultraview: Open Project Manager",
+                "icon": "$(git-branch)"
+            },
+            {
+                "command": "ultraview.openPorts",
+                "title": "Ultraview: Open Ports & Processes",
+                "icon": "$(server)"
+            },
+            {
+                "command": "ultraview.openCommands",
+                "title": "Ultraview: Open Commands",
+                "icon": "$(terminal)"
+            },
+            {
+                "command": "ultraview.openDokploy",
+                "title": "Ultraview: Open Dokploy in Editor",
+                "icon": "$(browser)"
+            },
+            {
+                "command": "ultraview.configureDokployUrl",
+                "title": "Ultraview: Configure Dokploy URL",
+                "icon": "$(gear)"
+            },
+            {
+                "command": "ultraview.openUrl",
+                "title": "Ultraview: Open URL",
+                "icon": "$(browser)"
+            },
+            {
+                "command": "ultraview.enableCustomComments",
+                "title": "Ultraview: Enable Custom Comments Font"
+            },
+            {
+                "command": "ultraview.disableCustomComments",
+                "title": "Ultraview: Disable Custom Comments Font"
+            },
+            {
+                "command": "ultraview.toggleCustomComments",
+                "title": "Ultraview: Toggle Custom Comments Font"
+            },
+            {
+                "command": "ultraview.refreshCustomComments",
+                "title": "Ultraview: Refresh Custom Comments CSS"
+            },
+            {
+                "command": "ultraview.enableTransparent",
+                "title": "Ultraview: Enable Transparent"
+            },
+            {
+                "command": "ultraview.disableTransparent",
+                "title": "Ultraview: Disable Transparent"
+            },
+            {
+                "command": "ultraview.setSyncFolder",
+                "title": "Ultraview: Set Cross-IDE Sync Folder",
+                "icon": "$(folder-opened)"
+            },
+            {
+                "command": "ultraview.showSyncFolder",
+                "title": "Ultraview: Show Sync Folder in Explorer",
+                "icon": "$(folder)"
+            },
+            {
+                "command": "ultraview.forceDelete",
+                "title": "Force Delete",
+                "icon": "$(trash)"
+            }
+        ],
+        "menus": {
+            "explorer/context": [
+                {
+                    "command": "ultraview.forceDelete",
+                    "group": "7_modification",
+                    "when": "resourceScheme == 'file'"
+                }
+            ]
+        },
+        "customEditors": [
+            {
+                "viewType": "ultraview.sqlite",
+                "displayName": "SQLite Viewer",
+                "selector": [
+                    {
+                        "filenamePattern": "*.db"
+                    },
+                    {
+                        "filenamePattern": "*.sqlite"
+                    },
+                    {
+                        "filenamePattern": "*.sqlite3"
+                    },
+                    {
+                        "filenamePattern": "*.db3"
+                    }
+                ],
+                "priority": "default"
+            },
+            {
+                "viewType": "ultraview.duckdb",
+                "displayName": "DuckDB Viewer",
+                "selector": [
+                    {
+                        "filenamePattern": "*.duckdb"
+                    },
+                    {
+                        "filenamePattern": "*.ddb"
+                    }
+                ],
+                "priority": "default"
+            },
+            {
+                "viewType": "ultraview.access",
+                "displayName": "Access DB Viewer",
+                "selector": [
+                    {
+                        "filenamePattern": "*.mdb"
+                    },
+                    {
+                        "filenamePattern": "*.accdb"
+                    }
+                ],
+                "priority": "default"
+            },
+            {
+                "viewType": "ultraview.sqldump",
+                "displayName": "Ultraview: SQL Dump Viewer",
+                "selector": [
+                    {
+                        "filenamePattern": "*.sql"
+                    },
+                    {
+                        "filenamePattern": "*.sqlite.sql"
+                    },
+                    {
+                        "filenamePattern": "*.mysql.sql"
+                    },
+                    {
+                        "filenamePattern": "*.pg.sql"
+                    },
+                    {
+                        "filenamePattern": "*.pgsql"
+                    },
+                    {
+                        "filenamePattern": "*.dump"
+                    },
+                    {
+                        "filenamePattern": "*.bak"
+                    }
+                ],
+                "priority": "default"
+            },
+            {
+                "viewType": "ultraview.markdown",
+                "displayName": "Markdown Editor",
+                "selector": [
+                    {
+                        "filenamePattern": "*.md"
+                    },
+                    {
+                        "filenamePattern": "*.mdx"
+                    },
+                    {
+                        "filenamePattern": "*.markdown"
+                    }
+                ],
+                "priority": "default"
+            },
+            {
+                "viewType": "ultraview.svg",
+                "displayName": "SVG Viewer",
+                "selector": [
+                    {
+                        "filenamePattern": "*.svg"
+                    },
+                    {
+                        "filenamePattern": "*.svgz"
+                    }
+                ],
+                "priority": "default"
+            },
+            {
+                "viewType": "ultraview.index",
+                "displayName": "Index File Viewer",
+                "selector": [
+                    {
+                        "filenamePattern": "*.idx"
+                    },
+                    {
+                        "filenamePattern": "*.index"
+                    },
+                    {
+                        "filenamePattern": "*.ndx"
+                    }
+                ],
+                "priority": "default"
+            },
+            {
+                "viewType": "ultraview.model3d",
+                "displayName": "3D Model Viewer",
+                "selector": [
+                    {
+                        "filenamePattern": "*.glb"
+                    },
+                    {
+                        "filenamePattern": "*.gltf"
+                    },
+                    {
+                        "filenamePattern": "*.fbx"
+                    },
+                    {
+                        "filenamePattern": "*.obj"
+                    },
+                    {
+                        "filenamePattern": "*.stl"
+                    },
+                    {
+                        "filenamePattern": "*.ply"
+                    },
+                    {
+                        "filenamePattern": "*.3dm"
+                    },
+                    {
+                        "filenamePattern": "*.usdz"
+                    },
+                    {
+                        "filenamePattern": "*.3ds"
+                    },
+                    {
+                        "filenamePattern": "*.3mf"
+                    },
+                    {
+                        "filenamePattern": "*.dae"
+                    },
+                    {
+                        "filenamePattern": "*.amf"
+                    },
+                    {
+                        "filenamePattern": "*.bvh"
+                    },
+                    {
+                        "filenamePattern": "*.vox"
+                    },
+                    {
+                        "filenamePattern": "*.pcd"
+                    },
+                    {
+                        "filenamePattern": "*.vtk"
+                    },
+                    {
+                        "filenamePattern": "*.xyz"
+                    },
+                    {
+                        "filenamePattern": "*.wrl"
+                    },
+                    {
+                        "filenamePattern": "*.blend"
+                    },
+                    {
+                        "filenamePattern": "*.blend1"
+                    }
+                ],
+                "priority": "default"
+            }
+        ]
     },
-    "customEditors": [
-      {
-        "viewType": "ultraview.sqlite",
-        "displayName": "SQLite Viewer",
-        "selector": [
-          {
-            "filenamePattern": "*.db"
-          },
-          {
-            "filenamePattern": "*.sqlite"
-          },
-          {
-            "filenamePattern": "*.sqlite3"
-          },
-          {
-            "filenamePattern": "*.db3"
-          }
-        ],
-        "priority": "default"
-      },
-      {
-        "viewType": "ultraview.duckdb",
-        "displayName": "DuckDB Viewer",
-        "selector": [
-          {
-            "filenamePattern": "*.duckdb"
-          },
-          {
-            "filenamePattern": "*.ddb"
-          }
-        ],
-        "priority": "default"
-      },
-      {
-        "viewType": "ultraview.access",
-        "displayName": "Access DB Viewer",
-        "selector": [
-          {
-            "filenamePattern": "*.mdb"
-          },
-          {
-            "filenamePattern": "*.accdb"
-          }
-        ],
-        "priority": "default"
-      },
-      {
-        "viewType": "ultraview.sqldump",
-        "displayName": "Ultraview: SQL Dump Viewer",
-        "selector": [
-          {
-            "filenamePattern": "*.sql"
-          },
-          {
-            "filenamePattern": "*.sqlite.sql"
-          },
-          {
-            "filenamePattern": "*.mysql.sql"
-          },
-          {
-            "filenamePattern": "*.pg.sql"
-          },
-          {
-            "filenamePattern": "*.pgsql"
-          },
-          {
-            "filenamePattern": "*.dump"
-          },
-          {
-            "filenamePattern": "*.bak"
-          }
-        ],
-        "priority": "default"
-      },
-      {
-        "viewType": "ultraview.markdown",
-        "displayName": "Markdown Editor",
-        "selector": [
-          {
-            "filenamePattern": "*.md"
-          },
-          {
-            "filenamePattern": "*.mdx"
-          },
-          {
-            "filenamePattern": "*.markdown"
-          }
-        ],
-        "priority": "default"
-      },
-      {
-        "viewType": "ultraview.svg",
-        "displayName": "SVG Viewer",
-        "selector": [
-          {
-            "filenamePattern": "*.svg"
-          },
-          {
-            "filenamePattern": "*.svgz"
-          }
-        ],
-        "priority": "default"
-      },
-      {
-        "viewType": "ultraview.index",
-        "displayName": "Index File Viewer",
-        "selector": [
-          {
-            "filenamePattern": "*.idx"
-          },
-          {
-            "filenamePattern": "*.index"
-          },
-          {
-            "filenamePattern": "*.ndx"
-          }
-        ],
-        "priority": "default"
-      },
-      {
-        "viewType": "ultraview.model3d",
-        "displayName": "3D Model Viewer",
-        "selector": [
-          {
-            "filenamePattern": "*.glb"
-          },
-          {
-            "filenamePattern": "*.gltf"
-          },
-          {
-            "filenamePattern": "*.fbx"
-          },
-          {
-            "filenamePattern": "*.obj"
-          },
-          {
-            "filenamePattern": "*.stl"
-          },
-          {
-            "filenamePattern": "*.ply"
-          },
-          {
-            "filenamePattern": "*.3dm"
-          },
-          {
-            "filenamePattern": "*.usdz"
-          },
-          {
-            "filenamePattern": "*.3ds"
-          },
-          {
-            "filenamePattern": "*.3mf"
-          },
-          {
-            "filenamePattern": "*.dae"
-          },
-          {
-            "filenamePattern": "*.amf"
-          },
-          {
-            "filenamePattern": "*.bvh"
-          },
-          {
-            "filenamePattern": "*.vox"
-          },
-          {
-            "filenamePattern": "*.pcd"
-          },
-          {
-            "filenamePattern": "*.vtk"
-          },
-          {
-            "filenamePattern": "*.xyz"
-          },
-          {
-            "filenamePattern": "*.wrl"
-          },
-          {
-            "filenamePattern": "*.blend"
-          },
-          {
-            "filenamePattern": "*.blend1"
-          }
-        ],
-        "priority": "default"
-      }
-    ]
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Da3n0n/UltraView.git"
-  },
-  "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "webpack",
-    "watch": "webpack --watch",
-    "package": "npm run bump-and-package",
-    "bump-patch": "npm version patch --no-git-tag-version",
-    "bump-minor": "npm version minor --no-git-tag-version",
-    "bump-and-package": "npm run bump-patch && npm run vsix",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
-    "format": "prettier --write \"src/**/*.ts\" \"src/**/*.js\"",
-    "test": "echo \"no tests\"",
-    "vsix": "vsce package --no-dependencies",
-    "release": "git add -A && git diff --staged --quiet || git commit -m \"chore: pre-release\" && npm version minor && git push && git push --tags",
-    "release:patch": "git add -A && git diff --staged --quiet || git commit -m \"chore: pre-release\" && npm version patch && git push && git push --tags",
-    "release:major": "git add -A && git diff --staged --quiet || git commit -m \"chore: pre-release\" && npm version major && git push && git push --tags"
-  },
-  "devDependencies": {
-    "@types/node": "^20.11.0",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "@types/sql.js": "^1.4.9",
-    "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
-    "@vscode/vsce": "^2.24.0",
-    "copy-webpack-plugin": "^14.0.0",
-    "css-loader": "^7.1.4",
-    "eslint": "^9.39.4",
-    "eslint-plugin-import": "^2.32.0",
-    "prettier": "^3.8.1",
-    "style-loader": "^4.0.0",
-    "ts-loader": "^9.5.1",
-    "typescript": "^5.3.3",
-    "webpack": "^5.90.0",
-    "webpack-cli": "^5.1.4"
-  },
-  "dependencies": {
-    "@xyflow/react": "^12.0.0",
-    "marked": "^11.2.0",
-    "mdb-reader": "^1.2.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "sql.js": "^1.11.0",
-    "turndown": "^7.2.2",
-    "vsce": "^2.15.0"
-  }
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Da3n0n/UltraView.git"
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "webpack",
+        "watch": "webpack --watch",
+        "package": "npm run bump-and-package",
+        "bump-patch": "npm version patch --no-git-tag-version",
+        "bump-minor": "npm version minor --no-git-tag-version",
+        "bump-and-package": "npm run bump-patch && npm run vsix",
+        "lint": "eslint src --ext .ts",
+        "lint:fix": "eslint src --ext .ts --fix",
+        "format": "prettier --write \"src/**/*.ts\" \"src/**/*.js\"",
+        "test": "echo \"no tests\"",
+        "vsix": "vsce package --no-dependencies",
+        "release": "git add -A && git diff --staged --quiet || git commit -m \"chore: pre-release\" && npm version minor && git push && git push --tags",
+        "release:patch": "git add -A && git diff --staged --quiet || git commit -m \"chore: pre-release\" && npm version patch && git push && git push --tags",
+        "release:major": "git add -A && git diff --staged --quiet || git commit -m \"chore: pre-release\" && npm version major && git push && git push --tags"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "@types/react": "^18.2.0",
+        "@types/react-dom": "^18.2.0",
+        "@types/sql.js": "^1.4.9",
+        "@types/vscode": "^1.85.0",
+        "@typescript-eslint/eslint-plugin": "^8.57.2",
+        "@typescript-eslint/parser": "^8.57.2",
+        "@vscode/vsce": "^2.24.0",
+        "copy-webpack-plugin": "^14.0.0",
+        "css-loader": "^7.1.4",
+        "eslint": "^9.39.4",
+        "eslint-plugin-import": "^2.32.0",
+        "prettier": "^3.8.1",
+        "style-loader": "^4.0.0",
+        "ts-loader": "^9.5.1",
+        "typescript": "^5.3.3",
+        "webpack": "^5.90.0",
+        "webpack-cli": "^5.1.4"
+    },
+    "dependencies": {
+        "@xyflow/react": "^12.0.0",
+        "marked": "^11.2.0",
+        "mdb-reader": "^1.2.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "sql.js": "^1.11.0",
+        "turndown": "^7.2.2",
+        "vsce": "^2.15.0"
+    }
 }

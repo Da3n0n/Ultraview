@@ -4,97 +4,109 @@ import type { PortProcess } from '../ports/portManager';
 import type { PortsPanelInboundMessage, PortsPanelOutboundMessage } from './portsPanelTypes';
 
 function getVscode() {
-  return window.__vscodeApi as { postMessage: (message: PortsPanelOutboundMessage) => void } | undefined;
+    return window.__vscodeApi as
+        | { postMessage: (message: PortsPanelOutboundMessage) => void }
+        | undefined;
 }
 
 function normalize(value: string | number | undefined): string {
-  return String(value ?? '').toLowerCase();
+    return String(value ?? '').toLowerCase();
 }
 
 function App() {
-  const [ports, setPorts] = useState<PortProcess[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [devOnly, setDevOnly] = useState(true);
-  const [search, setSearch] = useState('');
-  const [killing, setKilling] = useState<Record<number, boolean>>({});
-  const [killingAll, setKillingAll] = useState(false);
+    const [ports, setPorts] = useState<PortProcess[]>([]);
+    const [loaded, setLoaded] = useState(false);
+    const [devOnly, setDevOnly] = useState(true);
+    const [search, setSearch] = useState('');
+    const [killing, setKilling] = useState<Record<number, boolean>>({});
+    const [killingAll, setKillingAll] = useState(false);
 
-  useEffect(() => {
-    getVscode()?.postMessage({ type: 'ready', devOnly: true });
+    useEffect(() => {
+        getVscode()?.postMessage({ type: 'ready', devOnly: true });
 
-    const handleMessage = (event: MessageEvent<PortsPanelInboundMessage>) => {
-      const message = event.data;
-      if (!message || message.type !== 'state') return;
-      setLoaded(true);
-      setPorts(message.ports ?? []);
-      setDevOnly(Boolean(message.devOnly));
-      setKilling({});
-      setKillingAll(false);
+        const handleMessage = (event: MessageEvent<PortsPanelInboundMessage>) => {
+            const message = event.data;
+            if (!message || message.type !== 'state') return;
+            setLoaded(true);
+            setPorts(message.ports ?? []);
+            setDevOnly(Boolean(message.devOnly));
+            setKilling({});
+            setKillingAll(false);
+        };
+
+        window.addEventListener('message', handleMessage as EventListener);
+        return () => window.removeEventListener('message', handleMessage as EventListener);
+    }, []);
+
+    const visiblePorts = useMemo(() => {
+        const query = search.trim().toLowerCase();
+        const list = devOnly ? ports.filter((port) => port.isDev) : ports;
+
+        if (!query) {
+            return list;
+        }
+
+        return list.filter(
+            (port) =>
+                normalize(port.port).includes(query) ||
+                normalize(port.pid).includes(query) ||
+                normalize(port.name).includes(query) ||
+                (port.isDev && 'dev'.includes(query))
+        );
+    }, [ports, search, devOnly]);
+
+    const devPorts = useMemo(() => ports.filter((port) => port.isDev), [ports]);
+    const processSummary = useMemo(
+        () => new Set(visiblePorts.map((port) => port.pid)).size,
+        [visiblePorts]
+    );
+
+    const refresh = (nextDevOnly = devOnly) => {
+        getVscode()?.postMessage({ type: 'refresh', devOnly: nextDevOnly });
     };
 
-    window.addEventListener('message', handleMessage as EventListener);
-    return () => window.removeEventListener('message', handleMessage as EventListener);
-  }, []);
+    const toggleDevOnly = () => {
+        const nextValue = !devOnly;
+        setDevOnly(nextValue);
+        refresh(nextValue);
+    };
 
-  const visiblePorts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const list = devOnly ? ports.filter((port) => port.isDev) : ports;
+    const killOne = (pid: number) => {
+        setKilling((current) => ({ ...current, [pid]: true }));
+        getVscode()?.postMessage({ type: 'kill', pid });
+    };
 
-    if (!query) {
-      return list;
-    }
+    const killAllDev = () => {
+        if (devPorts.length === 0) return;
+        setKillingAll(true);
+        getVscode()?.postMessage({ type: 'killAll', ports: devPorts.map((port) => port.pid) });
+    };
 
-    return list.filter((port) =>
-      normalize(port.port).includes(query)
-      || normalize(port.pid).includes(query)
-      || normalize(port.name).includes(query)
-      || (port.isDev && 'dev'.includes(query))
-    );
-  }, [ports, search, devOnly]);
-
-  const devPorts = useMemo(() => ports.filter((port) => port.isDev), [ports]);
-  const processSummary = useMemo(() => new Set(visiblePorts.map((port) => port.pid)).size, [visiblePorts]);
-
-  const refresh = (nextDevOnly = devOnly) => {
-    getVscode()?.postMessage({ type: 'refresh', devOnly: nextDevOnly });
-  };
-
-  const toggleDevOnly = () => {
-    const nextValue = !devOnly;
-    setDevOnly(nextValue);
-    refresh(nextValue);
-  };
-
-  const killOne = (pid: number) => {
-    setKilling((current) => ({ ...current, [pid]: true }));
-    getVscode()?.postMessage({ type: 'kill', pid });
-  };
-
-  const killAllDev = () => {
-    if (devPorts.length === 0) return;
-    setKillingAll(true);
-    getVscode()?.postMessage({ type: 'killAll', ports: devPorts.map((port) => port.pid) });
-  };
-
-  const renderPortCard = (port: PortProcess) => (
-    <div key={`${port.port}-${port.pid}`} className={`port-card${port.isDev ? ' dev' : ''}`}>
-      <div className={`port-badge${port.isDev ? ' dev' : ''}`}>:{port.port}</div>
-      <div className="port-info">
-        <div className="port-name-row">
-          <div className="port-name" title={port.name}>{port.name}</div>
-          {port.isDev && <span className="port-chip">Dev</span>}
+    const renderPortCard = (port: PortProcess) => (
+        <div key={`${port.port}-${port.pid}`} className={`port-card${port.isDev ? ' dev' : ''}`}>
+            <div className={`port-badge${port.isDev ? ' dev' : ''}`}>:{port.port}</div>
+            <div className="port-info">
+                <div className="port-name-row">
+                    <div className="port-name" title={port.name}>
+                        {port.name}
+                    </div>
+                    {port.isDev && <span className="port-chip">Dev</span>}
+                </div>
+                <div className="port-meta">PID {port.pid}</div>
+            </div>
+            <button
+                className="danger-button"
+                onClick={() => killOne(port.pid)}
+                disabled={Boolean(killing[port.pid])}
+            >
+                {killing[port.pid] ? 'Killing...' : 'Kill'}
+            </button>
         </div>
-        <div className="port-meta">PID {port.pid}</div>
-      </div>
-      <button className="danger-button" onClick={() => killOne(port.pid)} disabled={Boolean(killing[port.pid])}>
-        {killing[port.pid] ? 'Killing...' : 'Kill'}
-      </button>
-    </div>
-  );
+    );
 
-  return (
-    <div className="ports-app">
-      <style>{`
+    return (
+        <div className="ports-app">
+            <style>{`
         :root {
           --bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
           --surface: var(--vscode-editor-background, rgba(30,30,30,.55));
@@ -135,7 +147,7 @@ function App() {
           font: inherit;
         }
         .toolbar-button {
-          padding: 6px 10px;
+          padding: 5px 8px;
           cursor: pointer;
           transition: transform .14s ease, border-color .14s ease, background .14s ease;
         }
@@ -166,26 +178,26 @@ function App() {
         .hero {
           display: grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 8px;
+          gap: 6px;
         }
         .stat-card {
           border: 1px solid var(--border);
-          border-radius: 12px;
+          border-radius: 10px;
           background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-          padding: 10px 12px;
+          padding: 6px 10px;
           display: grid;
-          gap: 2px;
-          min-height: 78px;
+          gap: 1px;
+          min-height: 48px;
         }
         .stat-label {
-          font-size: 10px;
+          font-size: 9px;
           text-transform: uppercase;
-          letter-spacing: .08em;
+          letter-spacing: .06em;
           color: var(--muted);
           font-weight: 700;
         }
         .stat-value {
-          font-size: 20px;
+          font-size: 16px;
           font-weight: 800;
           color: var(--accent);
         }
@@ -335,58 +347,87 @@ function App() {
         }
       `}</style>
 
-      <div className="toolbar">
-        <button className="toolbar-button" onClick={() => refresh()}>Refresh</button>
-        <button className={`toolbar-button${devOnly ? ' active' : ''}`} onClick={toggleDevOnly}>{devOnly ? 'Dev Focus' : 'Show All'}</button>
-        <input className="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter ports, PIDs, or process names..." />
-        <button className="toolbar-button" onClick={() => getVscode()?.postMessage({ type: 'openPanel' })}>Open</button>
-      </div>
+            <div className="toolbar">
+                <button className="toolbar-button" onClick={() => refresh()}>
+                    ↻
+                </button>
+                <button
+                    className={`toolbar-button${devOnly ? ' active' : ''}`}
+                    onClick={toggleDevOnly}
+                >
+                    {devOnly ? 'Dev Focus' : 'Show All'}
+                </button>
+                <input
+                    className="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Filter ports, PIDs, or process names..."
+                />
+                <button
+                    className="toolbar-button"
+                    id="btn-panel"
+                    onClick={() => getVscode()?.postMessage({ type: 'openPanel' })}
+                    title="Open as full panel"
+                >
+                    ⬡
+                </button>
+            </div>
 
-      <div className="content">
-        <div className="hero">
-          <div className="stat-card">
-            <div className="stat-label">Visible Ports</div>
-            <div className="stat-value">{visiblePorts.length}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Visible Processes</div>
-            <div className="stat-value">{processSummary}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Dev Ports</div>
-            <div className="stat-value">{devPorts.length}</div>
-          </div>
+            <div className="content">
+                <div className="hero">
+                    <div className="stat-card">
+                        <div className="stat-label">Visible Ports</div>
+                        <div className="stat-value">{visiblePorts.length}</div>
+                    </div>
+                    <div className="stat-card">
+                        <div className="stat-label">Visible Processes</div>
+                        <div className="stat-value">{processSummary}</div>
+                    </div>
+                    <div className="stat-card">
+                        <div className="stat-label">Dev Ports</div>
+                        <div className="stat-value">{devPorts.length}</div>
+                    </div>
+                </div>
+
+                <section className="list-card">
+                    <div className="section-header">
+                        <div className="section-title">
+                            {devOnly ? 'Relevant Dev Ports' : 'Ports And Processes'}
+                        </div>
+                        <button
+                            className="section-action"
+                            onClick={killAllDev}
+                            disabled={killingAll || devPorts.length === 0}
+                        >
+                            {killingAll ? 'Killing Dev...' : `Kill All Dev (${devPorts.length})`}
+                        </button>
+                    </div>
+
+                    {!loaded && <div className="empty">Scanning ports...</div>}
+                    {loaded && visiblePorts.length === 0 && (
+                        <div className="empty">
+                            {ports.length === 0
+                                ? 'No relevant listening ports found.'
+                                : 'No ports match the current filter.'}
+                        </div>
+                    )}
+                    {visiblePorts.length > 0 && (
+                        <div className="port-list">{visiblePorts.map(renderPortCard)}</div>
+                    )}
+                </section>
+            </div>
+
+            <div className="statusbar">
+                <span>{visiblePorts.length} shown</span>
+                <span>{ports.length} total</span>
+                <span>
+                    {devOnly
+                        ? 'Focused on common dev ports/processes'
+                        : 'Showing all non-system listening ports'}
+                </span>
+            </div>
         </div>
-
-        <section className="list-card">
-          <div className="section-header">
-            <div className="section-title">{devOnly ? 'Relevant Dev Ports' : 'Ports And Processes'}</div>
-            <button className="section-action" onClick={killAllDev} disabled={killingAll || devPorts.length === 0}>
-              {killingAll ? 'Killing Dev...' : `Kill All Dev (${devPorts.length})`}
-            </button>
-          </div>
-
-          {!loaded && <div className="empty">Scanning ports...</div>}
-          {loaded && visiblePorts.length === 0 && (
-            <div className="empty">
-              {ports.length === 0 ? 'No relevant listening ports found.' : 'No ports match the current filter.'}
-            </div>
-          )}
-          {visiblePorts.length > 0 && (
-            <div className="port-list">
-              {visiblePorts.map(renderPortCard)}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <div className="statusbar">
-        <span>{visiblePorts.length} shown</span>
-        <span>{ports.length} total</span>
-        <span>{devOnly ? 'Focused on common dev ports/processes' : 'Showing all non-system listening ports'}</span>
-      </div>
-    </div>
-  );
+    );
 }
 
 const loadingEl = document.getElementById('loading');

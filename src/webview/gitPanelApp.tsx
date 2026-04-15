@@ -1,143 +1,194 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import type { GitAccountState, GitPanelInboundMessage, GitPanelOutboundMessage, GitPanelStateMessage, GitStatusState } from './gitPanelTypes';
+import type {
+    GitAccountState,
+    GitPanelInboundMessage,
+    GitPanelOutboundMessage,
+    GitPanelStateMessage,
+    GitStatusState,
+} from './gitPanelTypes';
 import type { GitProject } from '../git/types';
 
 function getVscode() {
-  return window.__vscodeApi as { postMessage: (message: Record<string, unknown>) => void } | undefined;
+    return window.__vscodeApi as
+        | { postMessage: (message: Record<string, unknown>) => void }
+        | undefined;
 }
 
 type PanelState = Omit<GitPanelStateMessage, 'type'>;
 
 const emptyState: PanelState = {
-  projects: [],
-  activeRepo: '',
-  activeRepoName: '',
-  accounts: [],
-  activeAccountId: null,
-  activeProjectId: null,
-  gitStatuses: {},
+    projects: [],
+    activeRepo: '',
+    activeRepoName: '',
+    accounts: [],
+    activeAccountId: null,
+    activeProjectId: null,
+    gitStatuses: {},
 };
 
 function authTone(status?: string): string {
-  if (status === 'expired') return '#ff6b6b';
-  if (status === 'warning') return '#ffd166';
-  return '#6ee7b7';
+    if (status === 'expired') return '#ff6b6b';
+    if (status === 'warning') return '#ffd166';
+    return '#6ee7b7';
 }
 
 function App() {
-  const [state, setState] = useState<PanelState>(emptyState);
-  const [pendingProjects, setPendingProjects] = useState<Record<string, boolean>>({});
-  const [loaded, setLoaded] = useState(false);
+    const [state, setState] = useState<PanelState>(emptyState);
+    const [pendingProjects, setPendingProjects] = useState<Record<string, boolean>>({});
+    const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    const vscode = getVscode();
-    vscode?.postMessage({ type: 'ready' satisfies GitPanelOutboundMessage['type'] });
+    useEffect(() => {
+        const vscode = getVscode();
+        vscode?.postMessage({ type: 'ready' satisfies GitPanelOutboundMessage['type'] });
 
-    const handleMessage = (event: MessageEvent<GitPanelInboundMessage>) => {
-      const msg = event.data;
-      if (!msg) return;
+        const handleMessage = (event: MessageEvent<GitPanelInboundMessage>) => {
+            const msg = event.data;
+            if (!msg) return;
 
-      if (msg.type === 'state') {
-        setLoaded(true);
-        setState((current) => {
-          if (!msg.onlyProjectId) {
-            return {
-              projects: msg.projects,
-              activeRepo: msg.activeRepo,
-              activeRepoName: msg.activeRepoName,
-              accounts: msg.accounts,
-              activeAccountId: msg.activeAccountId,
-              activeProjectId: msg.activeProjectId,
-              gitStatuses: msg.gitStatuses,
-            };
-          }
+            if (msg.type === 'state') {
+                setLoaded(true);
+                setState((current) => {
+                    if (!msg.onlyProjectId) {
+                        return {
+                            projects: msg.projects,
+                            activeRepo: msg.activeRepo,
+                            activeRepoName: msg.activeRepoName,
+                            accounts: msg.accounts,
+                            activeAccountId: msg.activeAccountId,
+                            activeProjectId: msg.activeProjectId,
+                            gitStatuses: msg.gitStatuses,
+                        };
+                    }
 
-          return {
-            projects: msg.projects,
-            activeRepo: msg.activeRepo,
-            activeRepoName: msg.activeRepoName,
-            accounts: msg.accounts,
-            activeAccountId: msg.activeAccountId,
-            activeProjectId: msg.activeProjectId,
-            gitStatuses: { ...current.gitStatuses, ...msg.gitStatuses },
-          };
-        });
+                    return {
+                        projects: msg.projects,
+                        activeRepo: msg.activeRepo,
+                        activeRepoName: msg.activeRepoName,
+                        accounts: msg.accounts,
+                        activeAccountId: msg.activeAccountId,
+                        activeProjectId: msg.activeProjectId,
+                        gitStatuses: { ...current.gitStatuses, ...msg.gitStatuses },
+                    };
+                });
 
-        if (msg.onlyProjectId) {
-          setPendingProjects((current) => {
-            const next = { ...current };
-            delete next[msg.onlyProjectId!];
-            return next;
-          });
-        } else {
-          setPendingProjects({});
-        }
-        return;
-      }
+                if (msg.onlyProjectId) {
+                    setPendingProjects((current) => {
+                        const next = { ...current };
+                        delete next[msg.onlyProjectId!];
+                        return next;
+                    });
+                } else {
+                    setPendingProjects({});
+                }
+                return;
+            }
 
-      getVscode()?.postMessage({ type: 'refresh' satisfies GitPanelOutboundMessage['type'] });
+            getVscode()?.postMessage({ type: 'refresh' satisfies GitPanelOutboundMessage['type'] });
+        };
+
+        window.addEventListener('message', handleMessage as EventListener);
+        return () => window.removeEventListener('message', handleMessage as EventListener);
+    }, []);
+
+    useEffect(() => {
+        const activeProjectId = state.activeProjectId;
+        if (!activeProjectId) return;
+        const interval = window.setInterval(() => {
+            getVscode()?.postMessage({
+                type: 'refreshProjects' satisfies GitPanelOutboundMessage['type'],
+            });
+        }, 30000);
+        return () => window.clearInterval(interval);
+    }, [state.activeProjectId]);
+
+    const activeAccount = useMemo(
+        () => state.accounts.find((account) => account.id === state.activeAccountId) ?? null,
+        [state.accounts, state.activeAccountId]
+    );
+
+    const canAddCurrent =
+        Boolean(state.activeRepo) &&
+        !state.projects.some((project) => project.path === state.activeRepo);
+
+    const runProjectCommand = (type: 'gitPull' | 'gitPush' | 'gitSync', id: string) => {
+        setPendingProjects((current) => ({ ...current, [id]: true }));
+        getVscode()?.postMessage({ type, id } satisfies GitPanelOutboundMessage);
     };
 
-    window.addEventListener('message', handleMessage as EventListener);
-    return () => window.removeEventListener('message', handleMessage as EventListener);
-  }, []);
+    const renderGitStatus = (project: GitProject, gitStatus?: GitStatusState) => {
+        if (!gitStatus?.isGitRepo) return null;
+        if (pendingProjects[project.id]) {
+            return <div className="git-inline">Working...</div>;
+        }
 
-  useEffect(() => {
-    const activeProjectId = state.activeProjectId;
-    if (!activeProjectId) return;
-    const interval = window.setInterval(() => {
-      getVscode()?.postMessage({ type: 'refreshProjects' satisfies GitPanelOutboundMessage['type'] });
-    }, 30000);
-    return () => window.clearInterval(interval);
-  }, [state.activeProjectId]);
+        const chips: React.ReactNode[] = [];
+        if (gitStatus.branch)
+            chips.push(
+                <span key="branch" className="git-chip branch">
+                    ⎇ {gitStatus.branch}
+                </span>
+            );
+        if (gitStatus.localChanges > 0)
+            chips.push(
+                <span key="local" className="git-chip local">
+                    ● {gitStatus.localChanges} local
+                </span>
+            );
+        if (gitStatus.ahead > 0)
+            chips.push(
+                <span key="ahead" className="git-chip ahead">
+                    ↑ {gitStatus.ahead} ahead
+                </span>
+            );
+        if (gitStatus.behind > 0)
+            chips.push(
+                <span key="behind" className="git-chip behind">
+                    ↓ {gitStatus.behind} behind
+                </span>
+            );
+        if (gitStatus.localChanges === 0 && gitStatus.ahead === 0 && gitStatus.behind === 0) {
+            chips.push(
+                <span key="synced" className="git-chip synced">
+                    ✓ synced
+                </span>
+            );
+        }
 
-  const activeAccount = useMemo(
-    () => state.accounts.find((account) => account.id === state.activeAccountId) ?? null,
-    [state.accounts, state.activeAccountId]
-  );
-
-  const canAddCurrent = Boolean(state.activeRepo) && !state.projects.some((project) => project.path === state.activeRepo);
-
-  const runProjectCommand = (type: 'gitPull' | 'gitPush' | 'gitSync', id: string) => {
-    setPendingProjects((current) => ({ ...current, [id]: true }));
-    getVscode()?.postMessage({ type, id } satisfies GitPanelOutboundMessage);
-  };
-
-  const renderGitStatus = (project: GitProject, gitStatus?: GitStatusState) => {
-    if (!gitStatus?.isGitRepo) return null;
-    if (pendingProjects[project.id]) {
-      return <div className="git-inline">Working...</div>;
-    }
-
-    const chips: React.ReactNode[] = [];
-    if (gitStatus.branch) chips.push(<span key="branch" className="git-chip branch">⎇ {gitStatus.branch}</span>);
-    if (gitStatus.localChanges > 0) chips.push(<span key="local" className="git-chip local">● {gitStatus.localChanges} local</span>);
-    if (gitStatus.ahead > 0) chips.push(<span key="ahead" className="git-chip ahead">↑ {gitStatus.ahead} ahead</span>);
-    if (gitStatus.behind > 0) chips.push(<span key="behind" className="git-chip behind">↓ {gitStatus.behind} behind</span>);
-    if (gitStatus.localChanges === 0 && gitStatus.ahead === 0 && gitStatus.behind === 0) {
-      chips.push(<span key="synced" className="git-chip synced">✓ synced</span>);
-    }
+        return (
+            <>
+                <div className="git-inline">{chips}</div>
+                <div className="project-actions-row">
+                    {(gitStatus.localChanges > 0 || gitStatus.ahead > 0) && (
+                        <button
+                            className="mini-button push"
+                            onClick={() => runProjectCommand('gitPush', project.id)}
+                        >
+                            Push
+                        </button>
+                    )}
+                    {gitStatus.behind > 0 && (
+                        <button
+                            className="mini-button pull"
+                            onClick={() => runProjectCommand('gitPull', project.id)}
+                        >
+                            Pull
+                        </button>
+                    )}
+                    <button
+                        className="mini-button sync"
+                        onClick={() => runProjectCommand('gitSync', project.id)}
+                    >
+                        Sync
+                    </button>
+                </div>
+            </>
+        );
+    };
 
     return (
-      <>
-        <div className="git-inline">{chips}</div>
-        <div className="project-actions-row">
-          {(gitStatus.localChanges > 0 || gitStatus.ahead > 0) && (
-            <button className="mini-button push" onClick={() => runProjectCommand('gitPush', project.id)}>Push</button>
-          )}
-          {gitStatus.behind > 0 && (
-            <button className="mini-button pull" onClick={() => runProjectCommand('gitPull', project.id)}>Pull</button>
-          )}
-          <button className="mini-button sync" onClick={() => runProjectCommand('gitSync', project.id)}>Sync</button>
-        </div>
-      </>
-    );
-  };
-
-  return (
-    <div className="git-panel-app">
-      <style>{`
+        <div className="git-panel-app">
+            <style>{`
         :root {
           --bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
           --surface: var(--vscode-editor-background, rgba(30,30,30,.5));
@@ -194,93 +245,225 @@ function App() {
         .empty { padding:18px 10px; color:var(--muted); text-align:center; border:1px dashed var(--border); border-radius:12px; }
       `}</style>
 
-      {!loaded && <div className="empty" style={{ margin: 12 }}>Loading project manager...</div>}
+            {!loaded && (
+                <div className="empty" style={{ margin: 12 }}>
+                    Loading project manager...
+                </div>
+            )}
 
-      <div className="git-toolbar">
-        <div className="toolbar-group">
-          <button className="button" onClick={() => getVscode()?.postMessage({ type: 'refreshProjects' satisfies GitPanelOutboundMessage['type'] })}>Refresh</button>
-          <button className="button" onClick={() => getVscode()?.postMessage({ type: 'addRepo' satisfies GitPanelOutboundMessage['type'] })}>Add Repo</button>
-          <button className="button" onClick={() => getVscode()?.postMessage({ type: 'addProject' satisfies GitPanelOutboundMessage['type'] })}>Browse</button>
-          <button className="button" disabled={!canAddCurrent} onClick={() => getVscode()?.postMessage({ type: 'addCurrentProject' satisfies GitPanelOutboundMessage['type'] })}>
-            {canAddCurrent ? `Add ${state.activeRepoName || 'Current'}` : 'Current Added'}
-          </button>
+            <div className="content">
+                <section className="section">
+                    <div className="section-header">
+                        <div className="section-title">Accounts</div>
+                        <button
+                            className="button"
+                            onClick={() =>
+                                getVscode()?.postMessage({
+                                    type: 'addAccount' satisfies GitPanelOutboundMessage['type'],
+                                })
+                            }
+                        >
+                            + Account
+                        </button>
+                    </div>
+                    <div className="accounts-grid">
+                        {state.accounts.length === 0 ? (
+                            <div className="empty">No accounts yet.</div>
+                        ) : (
+                            state.accounts.map((account: GitAccountState) => {
+                                const isActive = account.id === state.activeAccountId;
+                                return (
+                                    <div
+                                        key={account.id}
+                                        className={`card${isActive ? ' active' : ''}`}
+                                        onClick={(event) => {
+                                            if ((event.target as HTMLElement).closest('button'))
+                                                return;
+                                            getVscode()?.postMessage({
+                                                type: 'switchAccount',
+                                                accountId: account.id,
+                                            } satisfies GitPanelOutboundMessage);
+                                        }}
+                                    >
+                                        <div className="account-row-top">
+                                            <span
+                                                className="status-dot"
+                                                style={{ background: authTone(account.authStatus) }}
+                                            />
+                                            <div className="account-meta">
+                                                <div className="account-name">
+                                                    {account.username}
+                                                </div>
+                                                <div className="account-sub">
+                                                    {account.provider} ·{' '}
+                                                    {account.authMethod || 'unknown'} ·{' '}
+                                                    {account.authStatus || 'valid'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="account-actions">
+                                            {account.authMethod === 'oauth' &&
+                                                account.authStatus &&
+                                                account.authStatus !== 'valid' && (
+                                                    <button
+                                                        className="mini-button"
+                                                        onClick={() =>
+                                                            getVscode()?.postMessage({
+                                                                type: 'reAuthAccount',
+                                                                accountId: account.id,
+                                                            } satisfies GitPanelOutboundMessage)
+                                                        }
+                                                    >
+                                                        Re-auth
+                                                    </button>
+                                                )}
+                                            <button
+                                                className="mini-button"
+                                                onClick={() =>
+                                                    getVscode()?.postMessage({
+                                                        type: 'authOptions',
+                                                        accountId: account.id,
+                                                    } satisfies GitPanelOutboundMessage)
+                                                }
+                                            >
+                                                Auth
+                                            </button>
+                                            <button
+                                                className="mini-button"
+                                                onClick={() =>
+                                                    getVscode()?.postMessage({
+                                                        type: 'removeAccount',
+                                                        accountId: account.id,
+                                                    } satisfies GitPanelOutboundMessage)
+                                                }
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </section>
+
+                <section className="section">
+                    <div className="section-header">
+                        <div className="section-title">Projects</div>
+                        <div className="toolbar-group">
+                            <button
+                                className="button"
+                                onClick={() =>
+                                    getVscode()?.postMessage({
+                                        type: 'refreshProjects' satisfies GitPanelOutboundMessage['type'],
+                                    })
+                                }
+                            >
+                                Refresh
+                            </button>
+                            <button
+                                className="button"
+                                onClick={() =>
+                                    getVscode()?.postMessage({
+                                        type: 'addRepo' satisfies GitPanelOutboundMessage['type'],
+                                    })
+                                }
+                            >
+                                Add Repo
+                            </button>
+                            <button
+                                className="button"
+                                onClick={() =>
+                                    getVscode()?.postMessage({
+                                        type: 'addProject' satisfies GitPanelOutboundMessage['type'],
+                                    })
+                                }
+                            >
+                                Local
+                            </button>
+                            <button
+                                className="button"
+                                disabled={!canAddCurrent}
+                                onClick={() =>
+                                    getVscode()?.postMessage({
+                                        type: 'addCurrentProject' satisfies GitPanelOutboundMessage['type'],
+                                    })
+                                }
+                            >
+                                {canAddCurrent
+                                    ? `Add ${state.activeRepoName || 'Current'}`
+                                    : 'Current Added'}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="projects-grid">
+                        {state.projects.length === 0 ? (
+                            <div className="empty">No projects yet.</div>
+                        ) : (
+                            state.projects.map((project) => {
+                                const gitStatus = state.gitStatuses[project.id];
+                                const boundAccount = state.accounts.find(
+                                    (account) => account.id === project.accountId
+                                );
+                                const isActive = project.path === state.activeRepo;
+                                return (
+                                    <div
+                                        key={project.id}
+                                        className={`card${isActive ? ' active' : ''}`}
+                                    >
+                                        <div className="project-main">
+                                            <div className="project-meta">
+                                                <div className="project-name">{project.name}</div>
+                                                <div className="project-path">{project.path}</div>
+                                                {boundAccount && (
+                                                    <div className="project-bind">
+                                                        ⚡ {boundAccount.username} (
+                                                        {boundAccount.provider})
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="project-actions">
+                                                <button
+                                                    className="mini-button"
+                                                    onClick={() =>
+                                                        getVscode()?.postMessage({
+                                                            type: 'open',
+                                                            id: project.id,
+                                                        } satisfies GitPanelOutboundMessage)
+                                                    }
+                                                >
+                                                    Open
+                                                </button>
+                                                <button
+                                                    className="mini-button"
+                                                    onClick={() =>
+                                                        getVscode()?.postMessage({
+                                                            type: 'delete',
+                                                            id: project.id,
+                                                        } satisfies GitPanelOutboundMessage)
+                                                    }
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {renderGitStatus(project, gitStatus)}
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </section>
+            </div>
+
+            <div className="statusbar">
+                <span>{activeAccount ? `Account: ${activeAccount.username}` : 'No account'}</span>
+                <span>
+                    {state.projects.length} project{state.projects.length === 1 ? '' : 's'}
+                </span>
+            </div>
         </div>
-      </div>
-
-      <div className="content">
-        <section className="section">
-          <div className="section-header">
-            <div className="section-title">Accounts</div>
-            <button className="button" onClick={() => getVscode()?.postMessage({ type: 'addAccount' satisfies GitPanelOutboundMessage['type'] })}>+ Account</button>
-          </div>
-          <div className="accounts-grid">
-            {state.accounts.length === 0 ? (
-              <div className="empty">No accounts yet.</div>
-            ) : state.accounts.map((account: GitAccountState) => {
-              const isActive = account.id === state.activeAccountId;
-              return (
-                <div key={account.id} className={`card${isActive ? ' active' : ''}`} onClick={(event) => {
-                  if ((event.target as HTMLElement).closest('button')) return;
-                  getVscode()?.postMessage({ type: 'switchAccount', accountId: account.id } satisfies GitPanelOutboundMessage);
-                }}>
-                  <div className="account-row-top">
-                    <span className="status-dot" style={{ background: authTone(account.authStatus) }} />
-                    <div className="account-meta">
-                      <div className="account-name">{account.username}</div>
-                      <div className="account-sub">{account.provider} · {account.authMethod || 'unknown'} · {account.authStatus || 'valid'}</div>
-                    </div>
-                  </div>
-                  <div className="account-actions">
-                    {account.authMethod === 'oauth' && account.authStatus && account.authStatus !== 'valid' && (
-                      <button className="mini-button" onClick={() => getVscode()?.postMessage({ type: 'reAuthAccount', accountId: account.id } satisfies GitPanelOutboundMessage)}>Re-auth</button>
-                    )}
-                    <button className="mini-button" onClick={() => getVscode()?.postMessage({ type: 'authOptions', accountId: account.id } satisfies GitPanelOutboundMessage)}>Auth</button>
-                    <button className="mini-button" onClick={() => getVscode()?.postMessage({ type: 'removeAccount', accountId: account.id } satisfies GitPanelOutboundMessage)}>Remove</button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="section">
-          <div className="section-header">
-            <div className="section-title">Projects</div>
-          </div>
-          <div className="projects-grid">
-            {state.projects.length === 0 ? (
-              <div className="empty">No projects yet.</div>
-            ) : state.projects.map((project) => {
-              const gitStatus = state.gitStatuses[project.id];
-              const boundAccount = state.accounts.find((account) => account.id === project.accountId);
-              const isActive = project.path === state.activeRepo;
-              return (
-                <div key={project.id} className={`card${isActive ? ' active' : ''}`}>
-                  <div className="project-main">
-                    <div className="project-meta">
-                      <div className="project-name">{project.name}</div>
-                      <div className="project-path">{project.path}</div>
-                      {boundAccount && <div className="project-bind">⚡ {boundAccount.username} ({boundAccount.provider})</div>}
-                    </div>
-                    <div className="project-actions">
-                      <button className="mini-button" onClick={() => getVscode()?.postMessage({ type: 'open', id: project.id } satisfies GitPanelOutboundMessage)}>Open</button>
-                      <button className="mini-button" onClick={() => getVscode()?.postMessage({ type: 'delete', id: project.id } satisfies GitPanelOutboundMessage)}>Remove</button>
-                    </div>
-                  </div>
-                  {renderGitStatus(project, gitStatus)}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-
-      <div className="statusbar">
-        <span>{activeAccount ? `Account: ${activeAccount.username}` : 'No account'}</span>
-        <span>{state.projects.length} project{state.projects.length === 1 ? '' : 's'}</span>
-      </div>
-    </div>
-  );
+    );
 }
 
 const loadingEl = document.getElementById('loading');

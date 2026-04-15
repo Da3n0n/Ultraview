@@ -1,6 +1,5 @@
-
 export function getSvgEditorStyles(): string {
-    return /* css */`
+    return /* css */ `
 :root {
   --bg:          var(--vscode-editor-background);
   --surface:     var(--vscode-sideBar-background, var(--vscode-editor-background));
@@ -36,7 +35,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 /* Toolbar */
 .toolbar {
   flex-shrink: 0; display: flex; align-items: center; gap: 3px;
-  padding: 5px 10px; background: var(--toolbar-bg);
+  padding: 4px 8px; background: var(--toolbar-bg);
   border-bottom: 1px solid var(--border); user-select: none; z-index: 10;
 }
 .tb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 5px; flex-shrink: 0; }
@@ -48,8 +47,8 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 }
 .tb-select:hover { border-color: var(--accent); }
 .tb-btn {
-  display: flex; align-items: center; gap: 4px;
-  height: 26px; padding: 0 8px; background: transparent;
+  display: flex; align-items: center; gap: 3px;
+  height: 24px; padding: 0 6px; background: transparent;
   border: none; border-radius: var(--radius); cursor: pointer;
   color: var(--text); font-size: 11px; white-space: nowrap; flex-shrink: 0;
   transition: background 0.12s;
@@ -58,7 +57,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 .tb-btn:active { background: var(--border); }
 .tb-btn.active { background: var(--accent-bg); color: var(--accent); }
 .tb-zoom-label {
-  min-width: 42px; text-align: center; font-size: 11px;
+  min-width: 36px; text-align: center; font-size: 10px;
   color: var(--muted); flex-shrink: 0;
 }
 
@@ -231,7 +230,7 @@ html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(-
 }
 
 export function getSvgEditorHtml(): string {
-    return /* html */`
+    return /* html */ `
 <div id="app">
 
   <!-- Toolbar -->
