@@ -1,5 +1,5 @@
 export function getMarkdownAppStyles(): string {
-  return `
+    return `
     :root {
       --bg: var(--vscode-editor-background);
       --surface: var(--vscode-sideBar-background, var(--vscode-editor-background));
@@ -32,7 +32,7 @@ export function getMarkdownAppStyles(): string {
       align-items: center;
       gap: 8px;
       padding: 8px 10px;
-      background: var(--surface);
+      background: var(--bg);
       border-bottom: 1px solid var(--border);
       flex-wrap: wrap;
     }
@@ -143,7 +143,7 @@ export function getMarkdownAppStyles(): string {
       min-height: 0;
       overflow: auto;
       padding: 24px 32px 80px;
-      background: var(--surface);
+      background: var(--bg);
     }
 
     .markdown-preview {
@@ -223,7 +223,7 @@ export function getMarkdownAppStyles(): string {
       gap: 14px;
       padding: 5px 12px;
       border-top: 1px solid var(--border);
-      background: var(--surface);
+      background: var(--bg);
       color: var(--muted);
       font-size: 11px;
     }
