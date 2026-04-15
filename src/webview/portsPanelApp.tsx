@@ -96,7 +96,9 @@ function App() {
           display: flex;
           flex-direction: column;
           height: 100vh;
-          background: var(--bg);
+          background:
+            radial-gradient(circle at top right, rgba(74,222,128,.08), transparent 28%),
+            linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, black), var(--bg));
           color: var(--text);
         }
         .toolbar {
@@ -104,22 +106,23 @@ function App() {
           gap: 8px;
           padding: 10px;
           border-bottom: 1px solid var(--border);
-          background: var(--bg);
+          background: rgba(0,0,0,.08);
+          backdrop-filter: blur(8px);
         }
         .toolbar-button {
           border: 1px solid var(--border);
-          border-radius: 8px;
+          border-radius: 10px;
           background: var(--surface2);
           color: var(--text);
           font: inherit;
-          font-size: 11px;
-          padding: 5px 10px;
+          padding: 5px 8px;
           cursor: pointer;
-          transition: border-color .14s ease, background .14s ease;
+          transition: transform .14s ease, border-color .14s ease, background .14s ease;
         }
         .toolbar-button:hover {
-          border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
-          background: color-mix(in srgb, var(--surface2) 70%, white 4%);
+          transform: translateY(-1px);
+          border-color: color-mix(in srgb, var(--border) 55%, var(--accent));
+          background: color-mix(in srgb, var(--surface2) 72%, white 5%);
         }
         .toolbar-button.active {
           background: rgba(74,222,128,.16);
@@ -152,21 +155,22 @@ function App() {
         }
         .port-card {
           display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center;
-          padding:10px 12px; border-radius:10px; border:1px solid var(--border);
-          background:var(--surface2);
-          transition: border-color .14s ease, background .14s ease;
+          padding:7px 9px; border-radius:10px; border:1px solid var(--border);
+          background:rgba(255,255,255,.02);
+          transition: transform .14s ease, border-color .14s ease, background .14s ease;
         }
         .port-card:hover {
-          border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
-          background: color-mix(in srgb, var(--surface2) 70%, white 4%);
+          transform: translateY(-1px);
+          border-color: color-mix(in srgb, var(--border) 52%, var(--accent));
+          background: rgba(125,211,252,.06);
         }
         .port-card.dev {
-          border-color: rgba(74,222,128,.35);
-          background: color-mix(in srgb, var(--bg) 92%, rgba(74,222,128,.12));
+          border-color: rgba(74,222,128,.2);
+          background: linear-gradient(180deg, rgba(74,222,128,.08), rgba(74,222,128,.03));
         }
         .port-card.dev:hover {
-          border-color: rgba(74,222,128,.6);
-          background: color-mix(in srgb, var(--bg) 88%, rgba(74,222,128,.18));
+          border-color: rgba(74,222,128,.4);
+          background: linear-gradient(180deg, rgba(74,222,128,.1), rgba(74,222,128,.05));
         }
         .port-badge {
           min-width: 52px;
@@ -240,7 +244,7 @@ function App() {
           font-size: 10px;
           color: var(--muted);
           border-top: 1px solid var(--border);
-          background: var(--bg);
+          background: rgba(0,0,0,.08);
         }
         @media (max-width: 720px) {
           .hero {

@@ -201,7 +201,7 @@ function App() {
           display: flex;
           flex-direction: column;
           height: 100vh;
-          background: var(--bg);
+          background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, black), var(--bg));
           color: var(--text);
         }
         .toolbar {
@@ -209,24 +209,26 @@ function App() {
           gap: 8px;
           padding: 10px;
           border-bottom: 1px solid var(--border);
-          background: var(--bg);
+          background: rgba(0,0,0,.08);
+          backdrop-filter: blur(8px);
         }
         .toolbar-button, .search {
           border: 1px solid var(--border);
-          border-radius: 8px;
-          background: var(--bg);
+          border-radius: 10px;
+          background: var(--surface2);
           color: var(--text);
           font: inherit;
           font-size: 11px;
         }
         .toolbar-button {
-          padding: 5px 10px;
+          padding: 6px 10px;
           cursor: pointer;
-          transition: border-color .14s ease, background .14s ease;
+          transition: transform .14s ease, border-color .14s ease, background .14s ease;
         }
         .toolbar-button:hover {
-          border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
-          background: color-mix(in srgb, var(--bg) 92%, white 2%);
+          transform: translateY(-1px);
+          border-color: color-mix(in srgb, var(--border) 55%, var(--accent));
+          background: color-mix(in srgb, var(--surface2) 72%, white 5%);
         }
         .search {
           flex: 1;
@@ -244,8 +246,10 @@ function App() {
           gap: 14px;
         }
         .project-card {
-          display:grid; gap:10px; padding:12px; border-radius:12px; border:1px solid var(--border);
-          background:var(--bg);
+          display:grid; gap:10px; padding:12px; border-radius:14px; border:1px solid var(--border);
+          background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+          transition: transform .16s ease, border-color .16s ease, background .16s ease;
         }
         .project-header {
           display:flex; justify-content:space-between; gap:10px; align-items:center;
@@ -253,18 +257,19 @@ function App() {
         .project-title-wrap { min-width:0; display:grid; gap:2px; }
         .project-title { font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .project-path { font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .project-count { font-size:10px; color:var(--muted); padding:2px 8px; border:1px solid var(--border); border-radius:999px; background:var(--bg); flex-shrink:0; }
+        .project-count { font-size:10px; color:var(--muted); padding:2px 8px; border:1px solid var(--border); border-radius:999px; background:rgba(255,255,255,.04); flex-shrink:0; }
         .main-strip, .command-list { display:grid; gap:6px; }
         .section-label { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:700; margin-bottom:2px; }
         .command-row {
           display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center;
-          width:100%; text-align:left; border:1px solid var(--border); border-radius:8px;
-          padding:8px 10px; background:var(--bg); color:var(--text); cursor:pointer;
-          transition: border-color .14s ease, background .14s ease;
+          width:100%; text-align:left; border:1px solid var(--border); border-radius:12px;
+          padding:7px 10px; background:rgba(255,255,255,.02); color:var(--text); cursor:pointer;
+          transition: transform .14s ease, border-color .14s ease, background .14s ease;
         }
         .command-row:hover {
-          border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
-          background: color-mix(in srgb, var(--bg) 92%, white 2%);
+          transform: translateY(-1px);
+          border-color: color-mix(in srgb, var(--border) 52%, var(--accent));
+          background: rgba(125,211,252,.06);
         }
         .command-row.prominent { background:var(--bg); border-color:rgba(125,211,252,.3); }
         .command-row.prominent:hover { background:color-mix(in srgb, var(--bg) 90%, white 2%); }
@@ -336,7 +341,7 @@ function App() {
           font-size: 10px;
           color: var(--muted);
           border-top: 1px solid var(--border);
-          background: var(--bg);
+          background: rgba(0,0,0,.08);
         }
         .empty {
           padding: 22px 12px;
