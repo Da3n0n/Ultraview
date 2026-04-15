@@ -106,8 +106,7 @@ function App() {
           gap: 8px;
           padding: 10px;
           border-bottom: 1px solid var(--border);
-          background: rgba(0,0,0,.08);
-          backdrop-filter: blur(8px);
+          background: var(--bg);
         }
         .toolbar-button {
           border: 1px solid var(--border);
@@ -155,7 +154,7 @@ function App() {
         }
         .port-card {
           display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center;
-          padding:7px 9px; border-radius:10px; border:1px solid var(--border);
+          padding:7px 10px; border-radius:12px; border:1px solid var(--border);
           background:rgba(255,255,255,.02);
           transition: transform .14s ease, border-color .14s ease, background .14s ease;
         }
@@ -244,7 +243,7 @@ function App() {
           font-size: 10px;
           color: var(--muted);
           border-top: 1px solid var(--border);
-          background: rgba(0,0,0,.08);
+          background: var(--bg);
         }
         @media (max-width: 720px) {
           .hero {
