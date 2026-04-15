@@ -96,9 +96,7 @@ function App() {
           display: flex;
           flex-direction: column;
           height: 100vh;
-          background:
-            radial-gradient(circle at top right, rgba(74,222,128,.08), transparent 28%),
-            linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, black), var(--bg));
+          background: var(--bg);
           color: var(--text);
         }
         .toolbar {
@@ -106,25 +104,22 @@ function App() {
           gap: 8px;
           padding: 10px;
           border-bottom: 1px solid var(--border);
-          background: rgba(0,0,0,.08);
-          backdrop-filter: blur(8px);
+          background: var(--bg);
         }
-        .toolbar-button, .search {
+        .toolbar-button {
           border: 1px solid var(--border);
-          border-radius: 10px;
+          border-radius: 8px;
           background: var(--surface2);
           color: var(--text);
           font: inherit;
-        }
-        .toolbar-button {
-          padding: 5px 8px;
+          font-size: 11px;
+          padding: 5px 10px;
           cursor: pointer;
-          transition: transform .14s ease, border-color .14s ease, background .14s ease;
+          transition: border-color .14s ease, background .14s ease;
         }
         .toolbar-button:hover {
-          transform: translateY(-1px);
-          border-color: color-mix(in srgb, var(--border) 55%, var(--accent));
-          background: color-mix(in srgb, var(--surface2) 72%, white 5%);
+          border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
+          background: color-mix(in srgb, var(--surface2) 70%, white 4%);
         }
         .toolbar-button.active {
           background: rgba(74,222,128,.16);
@@ -136,6 +131,10 @@ function App() {
           min-width: 0;
           padding: 6px 10px;
           background: var(--vscode-input-background, var(--surface));
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          color: var(--text);
+          font: inherit;
         }
         .content {
           flex: 1;
@@ -146,51 +145,43 @@ function App() {
           gap: 10px;
         }
         .list-card {
-          border: 1px solid var(--border);
-          border-radius: 14px;
-          background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-          padding: 6px;
-          display: grid;
-          gap: 8px;
+          display:grid; gap:8px;
         }
         .port-list {
-          display: grid;
-          gap: 6px;
+          display:grid; gap:6px;
         }
         .port-card {
-          display: grid;
-          grid-template-columns: auto minmax(0, 1fr) auto;
-          gap: 8px;
-          align-items: center;
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          padding: 7px 9px;
-          background: rgba(255,255,255,.02);
-          transition: transform .14s ease, border-color .14s ease, background .14s ease;
+          display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center;
+          padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+          background:var(--surface2);
+          transition: border-color .14s ease, background .14s ease;
         }
         .port-card:hover {
-          transform: translateY(-1px);
-          border-color: color-mix(in srgb, var(--border) 52%, var(--accent));
-          background: rgba(125,211,252,.06);
+          border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
+          background: color-mix(in srgb, var(--surface2) 70%, white 4%);
         }
         .port-card.dev {
-          border-color: rgba(74,222,128,.2);
-          background: linear-gradient(180deg, rgba(74,222,128,.08), rgba(74,222,128,.03));
+          border-color: rgba(74,222,128,.35);
+          background: color-mix(in srgb, var(--bg) 92%, rgba(74,222,128,.12));
+        }
+        .port-card.dev:hover {
+          border-color: rgba(74,222,128,.6);
+          background: color-mix(in srgb, var(--bg) 88%, rgba(74,222,128,.18));
         }
         .port-badge {
-          min-width: 54px;
+          min-width: 52px;
           text-align: center;
           border-radius: 999px;
-          padding: 4px 7px;
+          padding: 3px 8px;
           font: 700 10px/1 Consolas, 'Courier New', monospace;
-          background: rgba(125,211,252,.14);
+          background: color-mix(in srgb, var(--bg) 85%, rgba(125,211,252,.15));
           color: var(--accent);
-          border: 1px solid rgba(125,211,252,.28);
+          border: 1px solid rgba(125,211,252,.3);
         }
         .port-badge.dev {
-          background: var(--dev-bg);
+          background: color-mix(in srgb, var(--bg) 85%, rgba(74,222,128,.15));
           color: var(--dev-text);
-          border-color: var(--dev-border);
+          border-color: rgba(74,222,128,.35);
         }
         .port-info {
           min-width: 0;
@@ -217,35 +208,30 @@ function App() {
           padding: 2px 7px;
           font-size: 10px;
           font-weight: 700;
-          background: var(--dev-bg);
+          background: color-mix(in srgb, var(--bg) 85%, rgba(74,222,128,.15));
           color: var(--dev-text);
-          border: 1px solid var(--dev-border);
+          border: 1px solid rgba(74,222,128,.35);
         }
         .port-meta {
           font-size: 9px;
           color: var(--muted);
         }
         .danger-button {
-          border: 1px solid var(--danger-border);
-          border-radius: 8px;
-          padding: 5px 8px;
-          background: var(--danger-bg);
-          color: var(--danger);
-          font: inherit;
-          font-size: 10px;
-          font-weight: 700;
-          cursor: pointer;
+          border:1px solid var(--danger-border); background:var(--surface2); color:var(--danger);
+          border-radius:8px; padding:4px 10px; font:inherit; font-size:10px; font-weight:700;
+          cursor:pointer; transition: border-color .14s ease, background .14s ease;
         }
-        .danger-button:disabled {
-          opacity: .45;
-          cursor: default;
+        .danger-button:hover {
+          border-color: var(--danger);
+          background: color-mix(in srgb, var(--surface2) 60%, rgba(248,113,113,.15));
         }
+        .danger-button:disabled { opacity:.45; cursor:default; }
         .empty {
-          padding: 16px 10px;
+          padding: 20px 12px;
           color: var(--muted);
           text-align: center;
           border: 1px dashed var(--border);
-          border-radius: 14px;
+          border-radius: 10px;
         }
         .statusbar {
           display: flex;
@@ -254,7 +240,7 @@ function App() {
           font-size: 10px;
           color: var(--muted);
           border-top: 1px solid var(--border);
-          background: rgba(0,0,0,.08);
+          background: var(--bg);
         }
         @media (max-width: 720px) {
           .hero {
@@ -267,13 +253,34 @@ function App() {
                 <button className="toolbar-button" onClick={() => refresh()}>
                     ↻
                 </button>
-                <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center', margin: '0 4px', overflow: 'hidden' }}>
-                    <span style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                <div
+                    style={{
+                        display: 'flex',
+                        gap: '8px',
+                        flex: 1,
+                        alignItems: 'center',
+                        margin: '0 4px',
+                        overflow: 'hidden',
+                    }}
+                >
+                    <span
+                        style={{
+                            fontSize: '10px',
+                            color: 'var(--muted)',
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                        }}
+                    >
                         {ports.length} PORTS ({devPorts.length} DEV)
                     </span>
                     <button
                         className="danger-button"
-                        style={{ padding: '3px 8px', fontSize: '9px', marginLeft: 'auto', whiteSpace: 'nowrap' }}
+                        style={{
+                            padding: '3px 8px',
+                            fontSize: '9px',
+                            marginLeft: 'auto',
+                            whiteSpace: 'nowrap',
+                        }}
                         onClick={killAllDev}
                         disabled={killingAll || devPorts.length === 0}
                     >
@@ -294,9 +301,7 @@ function App() {
                 <section className="list-card">
                     {!loaded && <div className="empty">Scanning ports...</div>}
                     {loaded && ports.length === 0 && (
-                        <div className="empty">
-                            No listening ports found.
-                        </div>
+                        <div className="empty">No listening ports found.</div>
                     )}
                     {ports.length > 0 && (
                         <div className="port-list">{ports.map(renderPortCard)}</div>
