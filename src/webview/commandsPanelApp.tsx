@@ -413,7 +413,7 @@ function App() {
                             </div>
 
                             <div className="main-strip">
-                                <div className="section-label">Most Recent</div>
+                                {isExpanded && <div className="section-label">Most Recent</div>}
                                 {mainCommands.map((command) => renderCompactCommand(command, true))}
                             </div>
 
