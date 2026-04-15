@@ -176,7 +176,7 @@ export async function activate(context: vscode.ExtensionContext) {
             if (!selected) return;
 
             if (selected.action === 'addLocal') {
-                vscode.commands.executeCommand('workbench.view.extension.ultraview-git');
+                await gitProvider.addLocalProject();
                 return;
             }
 
