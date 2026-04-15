@@ -245,7 +245,7 @@ function App() {
           gap: 14px;
         }
         .project-card {
-          display:grid; gap:10px; padding:12px; border-radius:14px; border:1px solid var(--border);
+          display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:14px; border:1px solid var(--border);
           background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
           box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
           transition: transform .16s ease, border-color .16s ease, background .16s ease;
