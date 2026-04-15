@@ -412,18 +412,29 @@ function App() {
                                 </div>
                             </div>
 
-                            <div className="main-strip">
-                                {isExpanded && <div className="section-label">Most Recent</div>}
-                                {mainCommands.map((command) => renderCompactCommand(command, true))}
-                            </div>
-
-                            {isExpanded && remainingCommands.length > 0 && (
+                            {!isExpanded ? (
                                 <div className="command-list">
-                                    <div className="section-label">All Commands</div>
-                                    {remainingCommands.map((command) =>
-                                        renderCompactCommand(command)
+                                    {mainCommands.map((command) =>
+                                        renderCompactCommand(command, true)
                                     )}
                                 </div>
+                            ) : (
+                                <>
+                                    <div className="main-strip">
+                                        <div className="section-label">Most Recent</div>
+                                        {mainCommands.map((command) =>
+                                            renderCompactCommand(command, true)
+                                        )}
+                                    </div>
+                                    {remainingCommands.length > 0 && (
+                                        <div className="command-list">
+                                            <div className="section-label">All Commands</div>
+                                            {remainingCommands.map((command) =>
+                                                renderCompactCommand(command)
+                                            )}
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </section>
                     );
