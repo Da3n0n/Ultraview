@@ -1,27 +1,9 @@
-import {
-  Tldraw,
-  createTLStore,
-  defaultShapeUtils,
-  defaultBindingUtils,
-  TLUiComponents,
-  TLUiOverrides,
-  insertMediaIntoCanvas,
-} from 'tldraw';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const tldraw = require('tldraw');
+
 import 'tldraw/tldraw.css';
 import 'tldraw/editor.css';
 import 'tldraw/ui.css';
-
-declare global {
-  interface Window {
-    acquireVsCodeApi: () => { postMessage: (msg: Record<string, unknown>) => void };
-    __vscodeApi?: { postMessage: (msg: Record<string, unknown>) => void };
-    __ultraviewWebviewState?: {
-      drawings: SyncDrawing[];
-      activeWorkspace: string;
-      projects: { id: string; path: string; name: string }[];
-    };
-  }
-}
 
 interface SyncDrawing {
   id: string;
@@ -40,8 +22,16 @@ interface AppState {
   filter: 'all' | 'global' | 'project';
 }
 
-function getVscode(): { postMessage: (msg: Record<string, unknown>) => void } | undefined {
-  return window.__vscodeApi || window.acquireVsCodeApi?.();
+declare const acquireVsCodeApi: () => { postMessage: (msg: Record<string, unknown>) => void };
+declare const __ultraviewWebviewState: {
+  drawings: SyncDrawing[];
+  activeWorkspace: string;
+  projects: { id: string; path: string; name: string }[];
+};
+
+function getVscode(): { postMessage: (msg: Record<string, unknown>) => void } {
+  return (window as unknown as { __vscodeApi?: { postMessage: (msg: Record<string, unknown>) => void } }).__vscodeApi
+    ?? acquireVsCodeApi();
 }
 
 const STORAGE_KEY = 'ultraview.drawings.editorState';
@@ -50,6 +40,8 @@ const SAVE_DEBOUNCE_MS = 1200;
 let currentDrawingId: string | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSavedContent: string | null = null;
+let currentStore: ReturnType<typeof tldraw.createTLStore> | null = null;
+let reactRoot: { render: (el: unknown) => void; destroy: () => void } | null = null;
 
 function getSavedState(): Partial<AppState> {
   try {
@@ -70,8 +62,7 @@ function saveEditorState(state: Partial<AppState>): void {
 function buildSidebarList(
   drawings: SyncDrawing[],
   activeId: string | null,
-  filter: 'all' | 'global' | 'project',
-  activeWorkspace: string
+  filter: 'all' | 'global' | 'project'
 ): string {
   const filtered = drawings.filter(d => {
     if (filter === 'global') return !d.projectId;
@@ -106,74 +97,72 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function createTldrawContainer(): HTMLElement {
-  const el = document.createElement('div');
-  el.id = 'tldraw-container';
-  return el;
-}
-
-let tldrawInstance: Tldraw | null = null;
-
-function createTldrawInstance(
-  container: HTMLElement,
-  initialContent?: string
-): Tldraw {
-  const store = createTLStore({
-    shapes: defaultShapeUtils,
-    bindings: defaultBindingUtils,
-  });
-
-  let parsedContent: Record<string, unknown> | undefined;
-  if (initialContent) {
-    try {
-      parsedContent = JSON.parse(initialContent);
-    } catch { /* ignore */ }
-  }
-
-  const components: TLUiComponents = {
-    // Customize toolbar if needed
-  };
-
-  const instance = new Tldraw({
-    container,
-    store,
-    components,
-    inferDarkMode: () => {
-      const bg = getComputedStyle(document.body).backgroundColor;
-      return isDarkColor(bg);
-    },
-  });
-
-  if (parsedContent) {
-    try {
-      store.loadSnapshot(parsedContent as Parameters<typeof store.loadSnapshot>[0]);
-    } catch { /* ignore */ }
-  }
-
-  return instance;
-}
-
-function isDarkColor(color: string): boolean {
-  if (!color || color === 'transparent') return true;
-  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+function isDarkMode(): boolean {
+  const bg = getComputedStyle(document.body).backgroundColor;
+  if (!bg || bg === 'transparent') return true;
+  const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (!match) return true;
-  const [, r, g, b] = match.map(Number);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const luminance = (0.299 * Number(match[1]) + 0.587 * Number(match[2]) + 0.114 * Number(match[3])) / 255;
   return luminance < 0.5;
 }
 
-function scheduleAutoSave(drawingId: string, store: ReturnType<typeof createTLStore>): void {
+function scheduleAutoSave(drawingId: string): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      const snapshot = store.getSnapshot();
-      const content = JSON.stringify(snapshot);
+      if (!currentStore) return;
+      const content = JSON.stringify(currentStore.getSnapshot());
       if (content !== lastSavedContent) {
         lastSavedContent = content;
-        getVscode()?.postMessage({ type: 'saveDrawing', id: drawingId, content });
+        getVscode().postMessage({ type: 'saveDrawing', id: drawingId, content });
       }
     } catch { /* ignore */ }
   }, SAVE_DEBOUNCE_MS);
+}
+
+function createStore(initialContent?: string): ReturnType<typeof tldraw.createTLStore> {
+  let initialData: Parameters<typeof tldraw.createTLStore>[0]['initialData'] = undefined;
+  if (initialContent) {
+    try {
+      initialData = JSON.parse(initialContent);
+    } catch { /* ignore */ }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (tldraw.createTLStore as any)({
+    initialData,
+    shapes: tldraw.defaultShapeUtils,
+    bindings: tldraw.defaultBindingUtils,
+  });
+}
+
+function mountTldraw(container: HTMLElement, store: ReturnType<typeof tldraw.createTLStore>): void {
+  // Destroy previous root
+  if (reactRoot) {
+    try { reactRoot.destroy(); } catch { /* ignore */ }
+    reactRoot = null;
+  }
+
+  // React 18 createRoot
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ReactDOM = (window as any).ReactDOM as { createRoot?: (el: HTMLElement) => { render: (el: unknown) => void; destroy: () => void } } | undefined;
+  if (ReactDOM?.createRoot) {
+    reactRoot = ReactDOM.createRoot(container);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    reactRoot.render((React as any).createElement(tldraw.Tldraw, {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      store: store as any,
+      inferDarkMode: isDarkMode,
+    }));
+    (window as unknown as { __tldrawRoot?: typeof reactRoot }).__tldrawRoot = reactRoot;
+  } else {
+    // Fallback: use tldraw as a web component-like mount
+    const tdEl = document.createElement('div');
+    tdEl.style.width = '100%';
+    tdEl.style.height = '100%';
+    container.appendChild(tdEl);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new (tldraw.Tldraw as any)({ container: tdEl, store, inferDarkMode: isDarkMode });
+  }
 }
 
 function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): void {
@@ -195,7 +184,7 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
           <button class="filter-btn${state.filter === 'project' ? ' active' : ''}" data-filter="project">Project</button>
         </div>
         <div class="drawing-list" id="drawing-list">
-          ${buildSidebarList(state.drawings, state.activeDrawingId, state.filter, state.activeWorkspace)}
+          ${buildSidebarList(state.drawings, state.activeDrawingId, state.filter)}
         </div>
       </div>
       <div class="drawings-editor" id="editor-area">
@@ -203,7 +192,7 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
           <div class="editor-placeholder">
             <div class="placeholder-inner">
               <div style="font-size:32px;margin-bottom:12px">✏️</div>
-              <div style="font-size:13px;opacity:.7">Select a drawing from the sidebar or create a new one</div>
+              <div style="font-size:13px;opacity:.7">Select a drawing or create a new one</div>
             </div>
           </div>
         `}
@@ -211,7 +200,6 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
     </div>
   `;
 
-  // Style injection
   if (!document.getElementById('drawings-styles')) {
     const style = document.createElement('style');
     style.id = 'drawings-styles';
@@ -233,13 +221,11 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .sidebar-filters { display:flex; gap:2px; padding:6px 8px;
         border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.15)); flex-shrink:0; }
       .filter-btn { flex:1; padding:3px 0; border:none; border-radius:4px; cursor:pointer; font-size:10px;
-        background:transparent; color:var(--vscode-descriptionForeground);
-        border:1px solid transparent; }
+        background:transparent; color:var(--vscode-descriptionForeground); border:1px solid transparent; }
       .filter-btn.active { background:var(--vscode-button-background,rgba(0,120,212,.9)); color:#fff; }
       .filter-btn:hover:not(.active) { background:var(--vscode-list-hoverBackground,rgba(255,255,255,.05)); }
       .drawing-list { flex:1; overflow-y:auto; padding:4px 0; }
-      .drawing-item { display:flex; align-items:center; gap:4px; padding:6px 10px; cursor:pointer;
-        transition:background .1s; }
+      .drawing-item { display:flex; align-items:center; gap:4px; padding:6px 10px; cursor:pointer; transition:background .1s; }
       .drawing-item:hover { background:var(--vscode-list-hoverBackground,rgba(255,255,255,.05)); }
       .drawing-item.active { background:var(--vscode-focusBackground,rgba(0,120,212,.2)); }
       .drawing-info { flex:1; min-width:0; }
@@ -255,50 +241,38 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         background:var(--vscode-editor-background); }
       .editor-placeholder { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
       .placeholder-inner { text-align:center; color:var(--vscode-descriptionForeground); }
-      #tldraw-container { width:100%; height:100%; }
-      .tldraw { width:100%; height:100%; }
     `;
     document.head.appendChild(style);
   }
 
-  // If editor mode, mount tldraw
   if (state.sidebarView === 'editor' && state.activeDrawingId) {
     const editorArea = document.getElementById('editor-area')!;
-    editorArea.innerHTML = '';
-    const container = createTldrawContainer();
-    editorArea.appendChild(container);
+    editorArea.innerHTML = '<div id="tldraw-container"></div>';
+    const container = document.getElementById('tldraw-container')!;
+    container.style.width = '100%';
+    container.style.height = '100%';
 
     const drawing = state.drawings.find(d => d.id === state.activeDrawingId);
-    const initialContent = drawing?.tldrawContent;
+    currentStore = createStore(drawing?.tldrawContent);
+    lastSavedContent = drawing?.tldrawContent ?? null;
 
-    // Dispose old instance
-    if (tldrawInstance) {
-      tldrawInstance.dispose();
-      tldrawInstance = null;
-    }
+    mountTldraw(container, currentStore);
 
-    tldrawInstance = createTldrawInstance(container, initialContent);
-    lastSavedContent = initialContent ?? null;
-
-    // Listen for changes
-    tldrawInstance.store.listen(() => {
-      if (state.activeDrawingId && tldrawInstance) {
-        scheduleAutoSave(state.activeDrawingId, tldrawInstance.store);
-      }
+    currentStore.listen(() => {
+      if (state.activeDrawingId) scheduleAutoSave(state.activeDrawingId);
     });
   }
 
-  // Bind events
   document.getElementById('btn-new')?.addEventListener('click', () => {
     const name = prompt('Drawing name:', 'Untitled');
     if (name) {
       const isProject = state.filter === 'project';
-      getVscode()?.postMessage({ type: 'createDrawing', name, isProject });
+      getVscode().postMessage({ type: 'createDrawing', name, isProject });
     }
   });
 
   document.getElementById('btn-open-panel')?.addEventListener('click', () => {
-    getVscode()?.postMessage({ type: 'openDrawingPanel' });
+    getVscode().postMessage({ type: 'openDrawingPanel' });
   });
 
   document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -314,7 +288,7 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         e.stopPropagation();
         const id = target.getAttribute('data-id');
         if (id && confirm('Delete this drawing?')) {
-          getVscode()?.postMessage({ type: 'deleteDrawing', id });
+          getVscode().postMessage({ type: 'deleteDrawing', id });
         }
         return;
       }
@@ -323,16 +297,18 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         currentDrawingId = id;
         saveEditorState({ activeDrawingId: id, sidebarView: 'editor' });
         setState({ activeDrawingId: id, sidebarView: 'editor' });
-        getVscode()?.postMessage({ type: 'switchDrawing', id });
+        getVscode().postMessage({ type: 'switchDrawing', id });
       }
     });
   });
 }
 
-// ─── Mount ─────────────────────────────────────────────────────────────────────
+// ─── Boot ─────────────────────────────────────────────────────────────────────
 
 const initState = getSavedState();
-const webviewState = window.__ultraviewWebviewState ?? { drawings: [], activeWorkspace: '' };
+const webviewState = typeof __ultraviewWebviewState !== 'undefined'
+  ? __ultraviewWebviewState
+  : { drawings: [] as SyncDrawing[], activeWorkspace: '' };
 
 let appState: AppState = {
   drawings: (webviewState.drawings ?? []) as SyncDrawing[],
@@ -350,10 +326,8 @@ function setState(patch: Partial<AppState>): void {
 const root = document.getElementById('app')!;
 renderApp(appState, setState);
 
-// Request drawings list
-getVscode()?.postMessage({ type: 'listDrawings' });
+getVscode().postMessage({ type: 'listDrawings' });
 
-// Handle messages from extension
 window.addEventListener('message', (event: MessageEvent) => {
   const msg = event.data as Record<string, unknown>;
 
@@ -368,6 +342,7 @@ window.addEventListener('message', (event: MessageEvent) => {
 
   if (msg.type === 'currentDrawing' && msg.drawing) {
     const drawing = msg.drawing as SyncDrawing;
+    currentDrawingId = drawing.id;
     appState = { ...appState, activeDrawingId: drawing.id, sidebarView: 'editor' };
     saveEditorState({ activeDrawingId: drawing.id, sidebarView: 'editor' });
     renderApp(appState, setState);
@@ -379,10 +354,9 @@ window.addEventListener('message', (event: MessageEvent) => {
     appState = { ...appState, activeDrawingId: drawing.id, sidebarView: 'editor' };
     saveEditorState({ activeDrawingId: drawing.id, sidebarView: 'editor' });
     renderApp(appState, setState);
-    getVscode()?.postMessage({ type: 'switchDrawing', id: drawing.id });
+    getVscode().postMessage({ type: 'switchDrawing', id: drawing.id });
   }
 });
 
-// Hide loading
 const loadingEl = document.getElementById('loading');
 if (loadingEl) loadingEl.style.display = 'none';
