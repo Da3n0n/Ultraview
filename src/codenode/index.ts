@@ -32,6 +32,24 @@ function buildExportTargets(nodes: CodeNode[]): Map<string, Map<string, string>>
   return fileExports;
 }
 
+const NON_CODE_EXTENSIONS = new Set([
+  '.vsix', '.exe', '.zip', '.tar', '.gz', '.rar', '.7z',
+  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp', '.svg',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.mp3', '.mp4', '.avi', '.mov', '.mkv', '.webm',
+  '.ttf', '.otf', '.woff', '.woff2', '.eot',
+  '.lock', '.log', '.map', '.sum'
+]);
+
+function shouldSkipFile(fp: string, ext: string, baseName: string): boolean {
+  if (ext && NON_CODE_EXTENSIONS.has(ext.toLowerCase())) return true;
+  const skipBaseNames = new Set([
+    '.gitignore', '.prettierignore', '.prettierrc', '.vscodeignore',
+    'license', 'procfile', 'dockerfile', 'makefile', 'cmakelists.txt'
+  ]);
+  return skipBaseNames.has(baseName.toLowerCase());
+}
+
 export async function buildCodeGraphStreaming(
   onProgress: (progress: StreamProgress) => void
 ): Promise<CodeGraph> {
@@ -62,6 +80,9 @@ export async function buildCodeGraphStreaming(
     const ext = path.extname(fp).toLowerCase();
     let text = '';
 
+    const baseName = path.basename(fp).toLowerCase();
+    if (shouldSkipFile(fp, ext, baseName)) continue;
+
     const readableExts = [
       '.ts', '.tsx', '.js', '.jsx',
       '.md', '.mdx', '.markdown',
@@ -69,8 +90,7 @@ export async function buildCodeGraphStreaming(
       '.go', '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.java', '.rs', '.php', '.cs', '.html', '.htm', '.css', '.xml'
     ];
 
-    const baseName = path.basename(fp).toLowerCase();
-    if (readableExts.includes(ext) || ['dockerfile', 'makefile', 'cmakelists.txt'].includes(baseName)) {
+    if (readableExts.includes(ext)) {
       try { text = fs.readFileSync(fp, 'utf8'); } catch {}
     }
 
@@ -217,6 +237,9 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
     const ext = path.extname(fp).toLowerCase();
     let text = '';
 
+        const baseName = path.basename(fp).toLowerCase();
+    if (shouldSkipFile(fp, ext, baseName)) continue;
+
     const readableExts = [
       '.ts', '.tsx', '.js', '.jsx',
       '.md', '.mdx', '.markdown',
@@ -224,7 +247,6 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
       '.go', '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.java', '.rs', '.php', '.cs', '.html', '.htm', '.css', '.xml'
     ];
 
-    const baseName = path.basename(fp).toLowerCase();
     if (readableExts.includes(ext) || ['dockerfile', 'makefile', 'cmakelists.txt'].includes(baseName)) {
       try { text = fs.readFileSync(fp, 'utf8'); } catch {}
     }
