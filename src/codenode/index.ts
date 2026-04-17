@@ -247,7 +247,7 @@ export async function buildCodeGraph(): Promise<CodeGraph> {
       '.go', '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.java', '.rs', '.php', '.cs', '.html', '.htm', '.css', '.xml'
     ];
 
-    if (readableExts.includes(ext) || ['dockerfile', 'makefile', 'cmakelists.txt'].includes(baseName)) {
+    if (readableExts.includes(ext)) {
       try { text = fs.readFileSync(fp, 'utf8'); } catch {}
     }
 
