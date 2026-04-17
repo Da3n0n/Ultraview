@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { Tldraw } from 'tldraw';
-import { createTLStore } from '@tldraw/editor';
+import * as ReactDOM from 'react-dom/client';
+import { Tldraw, createTLStore } from 'tldraw';
 
 import 'tldraw/tldraw.css';
 
@@ -39,7 +39,7 @@ let currentDrawingId: string | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSavedContent: string | null = null;
 let currentStore: ReturnType<typeof createTLStore> | null = null;
-let reactRoot: { render: (el: unknown) => void; destroy: () => void } | null = null;
+let reactRoot: ReturnType<typeof ReactDOM.createRoot> | null = null;
 
 function getSavedState(): Partial<AppState> {
   try {
@@ -120,44 +120,27 @@ function scheduleAutoSave(drawingId: string): void {
 
 function createStore(initialContent?: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let initialData: any = undefined;
+  let snapshot: any = undefined;
   if (initialContent) {
     try {
-      initialData = JSON.parse(initialContent);
+      snapshot = JSON.parse(initialContent);
     } catch { /* ignore */ }
   }
-  return createTLStore({ initialData });
+  return createTLStore(snapshot ? { snapshot } : {});
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mountTldraw(container: HTMLElement, store: any): void {
-  // Destroy previous root
   if (reactRoot) {
-    try { reactRoot.destroy(); } catch { /* ignore */ }
+    try { reactRoot.unmount(); } catch { /* ignore */ }
     reactRoot = null;
   }
-
-  // React 18 createRoot
+  reactRoot = ReactDOM.createRoot(container);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ReactDOM = (window as any).ReactDOM as { createRoot?: (el: HTMLElement) => { render: (el: unknown) => void; destroy: () => void } } | undefined;
-  if (ReactDOM?.createRoot) {
-    reactRoot = ReactDOM.createRoot(container);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    reactRoot.render(React.createElement(Tldraw, {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      store: store as any,
-      inferDarkMode: isDarkMode(),
-    }));
-    (window as unknown as { __tldrawRoot?: typeof reactRoot }).__tldrawRoot = reactRoot;
-  } else {
-    // Fallback: use tldraw as a web component-like mount
-    const tdEl = document.createElement('div');
-    tdEl.style.width = '100%';
-    tdEl.style.height = '100%';
-    container.appendChild(tdEl);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new (Tldraw as any)({ container: tdEl, store, inferDarkMode: isDarkMode() });
-  }
+  reactRoot.render(React.createElement(Tldraw, {
+    store: store as any,
+    inferDarkMode: isDarkMode(),
+  }));
 }
 
 function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): void {
