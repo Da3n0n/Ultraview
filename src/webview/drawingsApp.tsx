@@ -1,5 +1,6 @@
 import * as React from 'react';
-import tldraw from 'tldraw';
+import { Tldraw } from 'tldraw';
+import { createTLStore } from '@tldraw/editor';
 
 import 'tldraw/tldraw.css';
 
@@ -38,7 +39,7 @@ const SAVE_DEBOUNCE_MS = 1200;
 let currentDrawingId: string | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSavedContent: string | null = null;
-let currentStore: ReturnType<typeof tldraw.createTLStore> | null = null;
+let currentStore: ReturnType<typeof createTLStore> | null = null;
 let reactRoot: { render: (el: unknown) => void; destroy: () => void } | null = null;
 
 function getSavedState(): Partial<AppState> {
@@ -126,12 +127,7 @@ function createStore(initialContent?: string) {
       initialData = JSON.parse(initialContent);
     } catch { /* ignore */ }
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (tldraw.createTLStore as any)({
-    initialData,
-    shapes: tldraw.defaultShapeUtils,
-    bindings: tldraw.defaultBindingUtils,
-  });
+  return createTLStore({ initialData });
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -148,7 +144,7 @@ function mountTldraw(container: HTMLElement, store: any): void {
   if (ReactDOM?.createRoot) {
     reactRoot = ReactDOM.createRoot(container);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    reactRoot.render(React.createElement(tldraw.Tldraw, {
+    reactRoot.render(React.createElement(Tldraw, {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       store: store as any,
       inferDarkMode: isDarkMode(),
@@ -161,7 +157,7 @@ function mountTldraw(container: HTMLElement, store: any): void {
     tdEl.style.height = '100%';
     container.appendChild(tdEl);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new (tldraw.Tldraw as any)({ container: tdEl, store, inferDarkMode: isDarkMode() });
+    new (Tldraw as any)({ container: tdEl, store, inferDarkMode: isDarkMode() });
   }
 }
 
