@@ -167,19 +167,26 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
     <div class="drawings-root">
       <div class="drawings-sidebar">
         <div id="sidebar-header">
-          <div class="sidebar-filters-inline">
-            <button class="filter-btn${state.filter === 'all' ? ' active' : ''}" data-filter="all">All</button>
-            <button class="filter-btn${state.filter === 'global' ? ' active' : ''}" data-filter="global">Global</button>
-            <button class="filter-btn${state.filter === 'project' ? ' active' : ''}" data-filter="project">Project</button>
-          </div>
           <button class="btn primary" id="btn-new" title="New drawing">+ New</button>
+          <div class="filter-group">
+            <button class="filter-btn${state.filter === 'all' ? ' active' : ''}" data-filter="all" title="All">A</button>
+            <button class="filter-btn${state.filter === 'global' ? ' active' : ''}" data-filter="global" title="Global">G</button>
+            <button class="filter-btn${state.filter === 'project' ? ' active' : ''}" data-filter="project" title="Project">P</button>
+          </div>
         </div>
         <div class="drawing-list" id="drawing-list">
           ${buildSidebarList(state.drawings, state.activeDrawingId, state.filter)}
         </div>
       </div>
-      <div class="drawings-editor" id="editor-area">
-        <div id="tldraw-container"></div>
+      <div class="drawings-main" id="main-area">
+        ${state.activeDrawingId ? `
+          <div id="tldraw-container"></div>
+        ` : `
+          <div class="empty-hint">
+            <div style="font-size:24px;margin-bottom:8px">✏️</div>
+            <div>Select a drawing to edit</div>
+          </div>
+        `}
       </div>
     </div>
   `;
@@ -197,57 +204,59 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         --accent: var(--vscode-textLink-foreground, #6ee7b7);
       }
       .drawings-root { display:flex; width:100%; height:100%; overflow:hidden; }
-      .drawings-sidebar { width:200px; min-width:160px; max-width:260px; display:flex; flex-direction:column;
+      .drawings-sidebar { width:140px; display:flex; flex-direction:column;
         border-right:1px solid var(--border); background:var(--bg); overflow:hidden; }
-      #sidebar-header { display:flex; align-items:center; justify-content:space-between;
-        padding:10px 12px; border-bottom:1px solid var(--border); flex-shrink:0; gap:8px; }
-      .sidebar-filters-inline { display:flex; gap:4px; flex:1; }
-      .filter-btn { flex:1; padding:4px 6px; border:1px solid var(--border); border-radius:6px; cursor:pointer; font-size:10px;
-        background:transparent; color:var(--muted); text-align:center; }
-      .filter-btn.active { background:var(--accent); color:#000; border-color:var(--accent); }
-      .filter-btn:hover:not(.active) { background:var(--surface2); }
+      #sidebar-header { display:flex; flex-direction:column; gap:8px;
+        padding:10px 10px; border-bottom:1px solid var(--border); flex-shrink:0; }
       .btn {
-        border:1px solid var(--border); background:var(--surface2); color:var(--text); border-radius:8px; cursor:pointer;
-        transition: all .14s ease; padding:4px 10px; font:inherit; font-size:10px; font-weight:600;
+        border:1px solid var(--border); background:var(--surface2); color:var(--text); border-radius:6px; cursor:pointer;
+        transition: all .14s ease; padding:6px 8px; font:inherit; font-size:10px; font-weight:600; text-align:center;
       }
       .btn:hover { border-color: var(--accent); }
       .btn.primary { background:var(--accent); color:#000; border-color:var(--accent); }
       .btn.primary:hover { background: color-mix(in srgb, var(--accent) 85%, white 15%); }
-      .drawing-list { flex:1; overflow-y:auto; padding:8px; display:grid; gap:6px; }
-      .drawing-item { display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;
-        border-radius:10px; border:1px solid var(--border);
+      .filter-group { display:flex; gap:3px; }
+      .filter-btn { flex:1; padding:4px; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:9px;
+        background:transparent; color:var(--muted); text-align:center; font-weight:600; }
+      .filter-btn.active { background:var(--accent); color:#000; border-color:var(--accent); }
+      .filter-btn:hover:not(.active) { background:var(--surface2); }
+      .drawing-list { flex:1; overflow-y:auto; padding:6px; display:flex; flex-direction:column; gap:4px; }
+      .drawing-item { display:flex; flex-direction:column; gap:3px; padding:8px; cursor:pointer;
+        border-radius:8px; border:1px solid var(--border);
         background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
         transition: all .16s ease; }
       .drawing-item:hover { border-color: var(--accent); background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)); }
       .drawing-item.active { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(110,231,183,.16); }
-      .drawing-info { flex:1; min-width:0; }
-      .drawing-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .drawing-meta { font-size:9px; color:var(--muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .drawing-action { border:none; background:transparent; cursor:pointer; font-size:11px; opacity:0;
-        padding:3px 5px; border-radius:4px; color:var(--muted); }
+      .drawing-name { font-size:11px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .drawing-meta { font-size:9px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .drawing-action { border:none; background:transparent; cursor:pointer; font-size:10px; opacity:0;
+        padding:2px 4px; border-radius:3px; color:var(--muted); align-self:flex-start; }
       .drawing-item:hover .drawing-action { opacity:1; }
       .drawing-action:hover { background:rgba(255,80,80,.15); color:#ff5050; }
-      .empty-hint { padding:16px 10px; font-size:11px; color:var(--muted);
-        text-align:center; border:1px dashed var(--border); border-radius:10px; }
-      .drawings-editor { flex:1; position:relative; overflow:hidden; background:var(--vscode-editor-background); }
+      .empty-hint { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+        color:var(--muted); font-size:12px; }
+      .drawings-main { flex:1; position:relative; overflow:hidden; background:var(--vscode-editor-background); }
       #tldraw-container { width:100%; height:100%; }
     `;
     document.head.appendChild(style);
   }
 
-  const container = document.getElementById('tldraw-container')!;
-  container.style.width = '100%';
-  container.style.height = '100%';
+  if (state.activeDrawingId) {
+    const mainArea = document.getElementById('main-area')!;
+    mainArea.innerHTML = '<div id="tldraw-container"></div>';
+    const container = document.getElementById('tldraw-container')!;
+    container.style.width = '100%';
+    container.style.height = '100%';
 
-  const drawing = state.drawings.find(d => d.id === state.activeDrawingId);
-  currentStore = createStore(drawing?.tldrawContent);
-  lastSavedContent = drawing?.tldrawContent ?? null;
+    const drawing = state.drawings.find(d => d.id === state.activeDrawingId);
+    currentStore = createStore(drawing?.tldrawContent);
+    lastSavedContent = drawing?.tldrawContent ?? null;
+    mountTldraw(container, currentStore);
 
-  mountTldraw(container, currentStore);
-
-  currentStore?.listen(() => {
-    if (state.activeDrawingId) scheduleAutoSave(state.activeDrawingId);
-  });
+    currentStore?.listen(() => {
+      if (state.activeDrawingId) scheduleAutoSave(state.activeDrawingId);
+    });
+  }
 
   document.getElementById('btn-new')?.addEventListener('click', () => {
     getVscode().postMessage({ type: 'requestNewDrawingName', isProject: state.filter === 'project' });
