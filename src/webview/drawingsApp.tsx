@@ -128,6 +128,7 @@ function createStore(initialContent?: string): ReturnType<typeof tldraw.createTL
     } catch { /* ignore */ }
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (tldraw.createTLStore as any)({
     initialData,
     shapes: tldraw.defaultShapeUtils,
