@@ -320,16 +320,16 @@ window.addEventListener('message', (event: MessageEvent) => {
   if (msg.type === 'currentDrawing' && msg.drawing) {
     const drawing = msg.drawing as SyncDrawing;
     currentDrawingId = drawing.id;
-    appState = { ...appState, activeDrawingId: drawing.id, sidebarView: 'editor' };
-    saveEditorState({ activeDrawingId: drawing.id, sidebarView: 'editor' });
+    appState = { ...appState, activeDrawingId: drawing.id };
+    saveEditorState({ activeDrawingId: drawing.id });
     renderApp(appState, setState);
   }
 
   if (msg.type === 'drawingCreated') {
     const drawing = msg.drawing as SyncDrawing;
     currentDrawingId = drawing.id;
-    appState = { ...appState, activeDrawingId: drawing.id, sidebarView: 'editor' };
-    saveEditorState({ activeDrawingId: drawing.id, sidebarView: 'editor' });
+    appState = { ...appState, activeDrawingId: drawing.id };
+    saveEditorState({ activeDrawingId: drawing.id });
     renderApp(appState, setState);
     getVscode().postMessage({ type: 'switchDrawing', id: drawing.id });
   }
