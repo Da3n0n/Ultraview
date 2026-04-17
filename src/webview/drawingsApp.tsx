@@ -17,7 +17,6 @@ interface AppState {
   drawings: SyncDrawing[];
   activeWorkspace: string;
   activeDrawingId: string | null;
-  sidebarView: 'list' | 'editor';
   filter: 'all' | 'global' | 'project';
 }
 
@@ -168,31 +167,19 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
     <div class="drawings-root">
       <div class="drawings-sidebar">
         <div id="sidebar-header">
-          <span style="flex:1">Drawings</span>
-          <div class="sidebar-actions">
-            <button class="btn" id="btn-open-panel" title="Open as panel">⧉</button>
-            <button class="btn primary" id="btn-new" title="New drawing">+ New</button>
+          <div class="sidebar-filters-inline">
+            <button class="filter-btn${state.filter === 'all' ? ' active' : ''}" data-filter="all">All</button>
+            <button class="filter-btn${state.filter === 'global' ? ' active' : ''}" data-filter="global">Global</button>
+            <button class="filter-btn${state.filter === 'project' ? ' active' : ''}" data-filter="project">Project</button>
           </div>
-        </div>
-        <div class="sidebar-filters">
-          <button class="filter-btn${state.filter === 'all' ? ' active' : ''}" data-filter="all">All</button>
-          <button class="filter-btn${state.filter === 'global' ? ' active' : ''}" data-filter="global">Global</button>
-          <button class="filter-btn${state.filter === 'project' ? ' active' : ''}" data-filter="project">Project</button>
+          <button class="btn primary" id="btn-new" title="New drawing">+ New</button>
         </div>
         <div class="drawing-list" id="drawing-list">
           ${buildSidebarList(state.drawings, state.activeDrawingId, state.filter)}
         </div>
       </div>
       <div class="drawings-editor" id="editor-area">
-        ${state.sidebarView === 'editor' && state.activeDrawingId ? '' : `
-          <div class="editor-placeholder">
-            <div class="placeholder-inner">
-              <div style="font-size:32px;margin-bottom:12px">✏️</div>
-              <div style="font-size:13px;opacity:.7">Select a drawing or create a new one</div>
-              <button id="btn-quick-new" style="margin-top:12px;padding:6px 16px;background:var(--vscode-button-background,#0078d4);color:#fff;border:none;border-radius:4px;cursor:pointer;">Create New Drawing</button>
-            </div>
-          </div>
-        `}
+        <div id="tldraw-container"></div>
       </div>
     </div>
   `;
@@ -203,7 +190,6 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
     style.textContent = `
       :root {
         --bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
-        --surface: var(--vscode-editor-background, rgba(30,30,30,.5));
         --surface2: var(--vscode-list-hoverBackground, rgba(255,255,255,.05));
         --border: var(--vscode-panel-border, rgba(128,128,128,.24));
         --text: var(--vscode-editor-foreground);
@@ -211,75 +197,60 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         --accent: var(--vscode-textLink-foreground, #6ee7b7);
       }
       .drawings-root { display:flex; width:100%; height:100%; overflow:hidden; }
-      .drawings-sidebar { width:220px; min-width:180px; max-width:300px; display:flex; flex-direction:column;
-        border-right:1px solid var(--border);
-        background:var(--bg); overflow:hidden; }
+      .drawings-sidebar { width:200px; min-width:160px; max-width:260px; display:flex; flex-direction:column;
+        border-right:1px solid var(--border); background:var(--bg); overflow:hidden; }
       #sidebar-header { display:flex; align-items:center; justify-content:space-between;
-        padding:12px 14px 10px; border-bottom:1px solid var(--border); flex-shrink:0;
-        font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
-      .sidebar-actions { display:flex; gap:6px; }
-      .btn {
-        border:1px solid var(--border); background:var(--surface2); color:var(--text); border-radius:8px; cursor:pointer;
-        transition: transform .14s ease, background .14s ease, border-color .14s ease;
-        padding:4px 10px; font:inherit; font-size:11px;
-      }
-      .btn:hover { transform: translateY(-1px); background: color-mix(in srgb, var(--surface2) 70%, white 6%); border-color: var(--accent); }
-      .btn.primary { background:var(--accent); color:#000; border-color:var(--accent); }
-      .btn.primary:hover { background: color-mix(in srgb, var(--accent) 85%, white 15%); }
-      .sidebar-filters { display:flex; gap:6px; padding:8px 14px;
-        border-bottom:1px solid var(--border); flex-shrink:0; }
-      .filter-btn { flex:1; padding:5px 8px; border:1px solid var(--border); border-radius:6px; cursor:pointer; font-size:10px;
+        padding:10px 12px; border-bottom:1px solid var(--border); flex-shrink:0; gap:8px; }
+      .sidebar-filters-inline { display:flex; gap:4px; flex:1; }
+      .filter-btn { flex:1; padding:4px 6px; border:1px solid var(--border); border-radius:6px; cursor:pointer; font-size:10px;
         background:transparent; color:var(--muted); text-align:center; }
       .filter-btn.active { background:var(--accent); color:#000; border-color:var(--accent); }
       .filter-btn:hover:not(.active) { background:var(--surface2); }
-      .drawing-list { flex:1; overflow-y:auto; padding:8px; display:grid; gap:8px; }
-      .drawing-item { display:flex; align-items:center; gap:8px; padding:10px 12px; cursor:pointer;
-        border-radius:14px; border:1px solid var(--border);
+      .btn {
+        border:1px solid var(--border); background:var(--surface2); color:var(--text); border-radius:8px; cursor:pointer;
+        transition: all .14s ease; padding:4px 10px; font:inherit; font-size:10px; font-weight:600;
+      }
+      .btn:hover { border-color: var(--accent); }
+      .btn.primary { background:var(--accent); color:#000; border-color:var(--accent); }
+      .btn.primary:hover { background: color-mix(in srgb, var(--accent) 85%, white 15%); }
+      .drawing-list { flex:1; overflow-y:auto; padding:8px; display:grid; gap:6px; }
+      .drawing-item { display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer;
+        border-radius:10px; border:1px solid var(--border);
         background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-        transition: transform .16s ease, border-color .16s ease, background .16s ease; }
-      .drawing-item:hover { transform: translateY(-1px); border-color: var(--accent); background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)); }
+        transition: all .16s ease; }
+      .drawing-item:hover { border-color: var(--accent); background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02)); }
       .drawing-item.active { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(110,231,183,.16); }
       .drawing-info { flex:1; min-width:0; }
-      .drawing-name { font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .drawing-meta { font-size:10px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .drawing-action { border:none; background:transparent; cursor:pointer; font-size:12px; opacity:0;
-        padding:4px 6px; border-radius:4px; color:var(--muted); }
+      .drawing-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .drawing-meta { font-size:9px; color:var(--muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .drawing-action { border:none; background:transparent; cursor:pointer; font-size:11px; opacity:0;
+        padding:3px 5px; border-radius:4px; color:var(--muted); }
       .drawing-item:hover .drawing-action { opacity:1; }
       .drawing-action:hover { background:rgba(255,80,80,.15); color:#ff5050; }
-      .empty-hint { padding:20px 14px; font-size:12px; color:var(--muted);
-        text-align:center; border:1px dashed var(--border); border-radius:12px; }
-      .drawings-editor { flex:1; position:relative; overflow:hidden;
-        background:var(--vscode-editor-background); }
-      .editor-placeholder { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
-      .placeholder-inner { text-align:center; color:var(--muted); }
+      .empty-hint { padding:16px 10px; font-size:11px; color:var(--muted);
+        text-align:center; border:1px dashed var(--border); border-radius:10px; }
+      .drawings-editor { flex:1; position:relative; overflow:hidden; background:var(--vscode-editor-background); }
+      #tldraw-container { width:100%; height:100%; }
     `;
     document.head.appendChild(style);
   }
 
-  if (state.sidebarView === 'editor' && state.activeDrawingId) {
-    const editorArea = document.getElementById('editor-area')!;
-    editorArea.innerHTML = '<div id="tldraw-container"></div>';
-    const container = document.getElementById('tldraw-container')!;
-    container.style.width = '100%';
-    container.style.height = '100%';
+  const container = document.getElementById('tldraw-container')!;
+  container.style.width = '100%';
+  container.style.height = '100%';
 
-    const drawing = state.drawings.find(d => d.id === state.activeDrawingId);
-    currentStore = createStore(drawing?.tldrawContent);
-    lastSavedContent = drawing?.tldrawContent ?? null;
+  const drawing = state.drawings.find(d => d.id === state.activeDrawingId);
+  currentStore = createStore(drawing?.tldrawContent);
+  lastSavedContent = drawing?.tldrawContent ?? null;
 
-    mountTldraw(container, currentStore);
+  mountTldraw(container, currentStore);
 
-    currentStore?.listen(() => {
-      if (state.activeDrawingId) scheduleAutoSave(state.activeDrawingId);
-    });
-  }
+  currentStore?.listen(() => {
+    if (state.activeDrawingId) scheduleAutoSave(state.activeDrawingId);
+  });
 
   document.getElementById('btn-new')?.addEventListener('click', () => {
     getVscode().postMessage({ type: 'requestNewDrawingName', isProject: state.filter === 'project' });
-  });
-
-  document.getElementById('btn-open-panel')?.addEventListener('click', () => {
-    getVscode().postMessage({ type: 'openDrawingPanel' });
   });
 
   document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -302,15 +273,11 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       const id = item.getAttribute('data-id');
       if (id) {
         currentDrawingId = id;
-        saveEditorState({ activeDrawingId: id, sidebarView: 'editor' });
-        setState({ activeDrawingId: id, sidebarView: 'editor' });
+        saveEditorState({ activeDrawingId: id });
+        setState({ activeDrawingId: id });
         getVscode().postMessage({ type: 'switchDrawing', id });
       }
     });
-  });
-
-  document.getElementById('btn-quick-new')?.addEventListener('click', () => {
-    getVscode().postMessage({ type: 'requestNewDrawingName', isProject: state.filter === 'project' });
   });
 }
 
@@ -325,7 +292,6 @@ let appState: AppState = {
   drawings: (webviewState.drawings ?? []) as SyncDrawing[],
   activeWorkspace: webviewState.activeWorkspace ?? '',
   activeDrawingId: initState.activeDrawingId ?? null,
-  sidebarView: (initState.sidebarView ?? 'list') as 'list' | 'editor',
   filter: (initState.filter ?? 'all') as 'all' | 'global' | 'project',
 };
 
