@@ -129,6 +129,23 @@ export class DrawingProvider implements vscode.WebviewViewProvider {
       case 'openDrawingPanel':
         DrawingProvider.openDrawingPanel(this.ctx, this.drawingManager);
         break;
+      case 'requestNewDrawingName':
+        void this._handleRequestNewDrawingName(msg, webview);
+        break;
+    }
+  }
+
+  private async _handleRequestNewDrawingName(msg: Record<string, unknown>, webview: vscode.Webview): Promise<void> {
+    const isProject = Boolean(msg.isProject);
+    const name = await vscode.window.showInputBox({
+      prompt: 'Enter a name for the new drawing',
+      value: 'Untitled',
+    });
+    if (name) {
+      const projectId = isProject ? this.drawingManager.getOrCreateProjectId() : undefined;
+      const drawing = this.drawingManager.createDrawing(name, projectId);
+      void this._sendDrawings(webview);
+      void webview.postMessage({ type: 'drawingCreated', drawing });
     }
   }
 

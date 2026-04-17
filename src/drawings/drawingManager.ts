@@ -19,18 +19,20 @@ export class DrawingManager {
 
   /** Returns all global drawings (no projectId) */
   listGlobalDrawings(): SyncDrawing[] {
-    return (this.store.read().drawings as SyncDrawing[]).filter(d => !d.projectId);
+    const drawings = this.store.read().drawings ?? [];
+    return drawings.filter(d => !d.projectId);
   }
 
   /** Returns all drawings for a specific project */
   listProjectDrawings(projectId: string): SyncDrawing[] {
-    return (this.store.read().drawings as SyncDrawing[]).filter(d => d.projectId === projectId);
+    const drawings = this.store.read().drawings ?? [];
+    return drawings.filter(d => d.projectId === projectId);
   }
 
   /** Returns all drawings for the active workspace */
   listActiveWorkspaceDrawings(): SyncDrawing[] {
     const wsPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    const projects = this.store.read().projects;
+    const projects = this.store.read().projects ?? [];
     const projectId = projects.find((p: { path: string }) => p.path === wsPath)?.id;
     if (!projectId) return [];
     return this.listProjectDrawings(projectId);
@@ -39,16 +41,16 @@ export class DrawingManager {
   /** Returns all drawings visible in sidebar (global + active project) */
   listSidebarDrawings(): SyncDrawing[] {
     const wsPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    const projects = this.store.read().projects;
+    const projects = this.store.read().projects ?? [];
     const projectId = projects.find((p: { path: string }) => p.path === wsPath)?.id;
-    const drawings = this.store.read().drawings as SyncDrawing[];
+    const drawings = this.store.read().drawings ?? [];
     return drawings.filter(d => !d.projectId || d.projectId === projectId);
   }
 
   // ── CRUD ───────────────────────────────────────────────────────────────────────
 
   createDrawing(name: string, projectId?: string): SyncDrawing {
-    const drawings = this.store.read().drawings as SyncDrawing[];
+    const drawings = this.store.read().drawings ?? [];
     const drawing: SyncDrawing = {
       id: simpleUuid(),
       name,
@@ -63,11 +65,12 @@ export class DrawingManager {
   }
 
   getDrawing(id: string): SyncDrawing | undefined {
-    return (this.store.read().drawings as SyncDrawing[]).find(d => d.id === id);
+    const drawings = this.store.read().drawings ?? [];
+    return drawings.find(d => d.id === id);
   }
 
   updateDrawing(id: string, patch: Partial<Omit<SyncDrawing, 'id' | 'createdAt'>>): void {
-    const drawings = this.store.read().drawings as SyncDrawing[];
+    const drawings = this.store.read().drawings ?? [];
     const idx = drawings.findIndex(d => d.id === id);
     if (idx >= 0) {
       drawings[idx] = { ...drawings[idx], ...patch, updatedAt: Date.now() };
