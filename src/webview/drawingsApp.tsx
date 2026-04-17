@@ -1,9 +1,7 @@
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const tldraw = require('tldraw');
+import * as React from 'react';
+import tldraw from 'tldraw';
 
 import 'tldraw/tldraw.css';
-import 'tldraw/editor.css';
-import 'tldraw/ui.css';
 
 interface SyncDrawing {
   id: string;
@@ -120,14 +118,14 @@ function scheduleAutoSave(drawingId: string): void {
   }, SAVE_DEBOUNCE_MS);
 }
 
-function createStore(initialContent?: string): ReturnType<typeof tldraw.createTLStore> {
-  let initialData: Parameters<typeof tldraw.createTLStore>[0]['initialData'] = undefined;
+function createStore(initialContent?: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let initialData: any = undefined;
   if (initialContent) {
     try {
       initialData = JSON.parse(initialContent);
     } catch { /* ignore */ }
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (tldraw.createTLStore as any)({
     initialData,
@@ -136,7 +134,8 @@ function createStore(initialContent?: string): ReturnType<typeof tldraw.createTL
   });
 }
 
-function mountTldraw(container: HTMLElement, store: ReturnType<typeof tldraw.createTLStore>): void {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mountTldraw(container: HTMLElement, store: any): void {
   // Destroy previous root
   if (reactRoot) {
     try { reactRoot.destroy(); } catch { /* ignore */ }
@@ -149,10 +148,10 @@ function mountTldraw(container: HTMLElement, store: ReturnType<typeof tldraw.cre
   if (ReactDOM?.createRoot) {
     reactRoot = ReactDOM.createRoot(container);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    reactRoot.render((React as any).createElement(tldraw.Tldraw, {
+    reactRoot.render(React.createElement(tldraw.Tldraw, {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       store: store as any,
-      inferDarkMode: isDarkMode,
+      inferDarkMode: isDarkMode(),
     }));
     (window as unknown as { __tldrawRoot?: typeof reactRoot }).__tldrawRoot = reactRoot;
   } else {
@@ -162,7 +161,7 @@ function mountTldraw(container: HTMLElement, store: ReturnType<typeof tldraw.cre
     tdEl.style.height = '100%';
     container.appendChild(tdEl);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new (tldraw.Tldraw as any)({ container: tdEl, store, inferDarkMode: isDarkMode });
+    new (tldraw.Tldraw as any)({ container: tdEl, store, inferDarkMode: isDarkMode() });
   }
 }
 
@@ -259,7 +258,7 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
 
     mountTldraw(container, currentStore);
 
-    currentStore.listen(() => {
+    currentStore?.listen(() => {
       if (state.activeDrawingId) scheduleAutoSave(state.activeDrawingId);
     });
   }
