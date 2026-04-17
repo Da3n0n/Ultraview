@@ -56,7 +56,8 @@ const webviewConfig = {
     gitPanel: './src/webview/gitPanelApp.tsx',
     db: './src/webview/dbApp.tsx',
     commandsPanel: './src/webview/commandsPanelApp.tsx',
-    portsPanel: './src/webview/portsPanelApp.tsx'
+    portsPanel: './src/webview/portsPanelApp.tsx',
+    drawings: './src/webview/drawingsApp.tsx'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),

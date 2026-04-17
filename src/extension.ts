@@ -24,6 +24,8 @@ import { registerThemeCommands } from './theme';
 import { forceDelete } from './utils/forceDelete';
 import { openUrlInVsCodeBrowser } from './utils/browser';
 import { applyLocalAccount } from './git/gitCredentials';
+import { DrawingProvider } from './drawings/drawingProvider';
+import { DrawingManager } from './drawings/drawingManager';
 
 let customComments: CustomComments;
 let sharedStore: SharedStore;
@@ -38,6 +40,8 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push({ dispose: () => sharedStore.dispose() });
 
     const gitProvider = new GitProvider(context, sharedStore);
+    const drawingManager = new DrawingManager(context, sharedStore);
+    const drawingProvider = new DrawingProvider(context, drawingManager);
 
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(
@@ -107,6 +111,11 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.registerWebviewViewProvider(
             PortsProvider.viewId,
             new PortsProvider(context),
+            { webviewOptions: { retainContextWhenHidden: true } }
+        ),
+        vscode.window.registerWebviewViewProvider(
+            DrawingProvider.viewId,
+            drawingProvider,
             { webviewOptions: { retainContextWhenHidden: true } }
         ),
         vscode.commands.registerCommand('ultraview.openCodeGraph', () => {
@@ -311,6 +320,9 @@ export async function activate(context: vscode.ExtensionContext) {
         ),
         vscode.commands.registerCommand('ultraview.openCommands', () => {
             CommandsProvider.openAsPanel(context);
+        }),
+        vscode.commands.registerCommand('ultraview.openDrawings', () => {
+            DrawingProvider.openDrawingPanel(context, drawingManager);
         }),
         vscode.commands.registerCommand('ultraview.openDokployPanel', () => {
             DokployProvider.openAsPanel(context);

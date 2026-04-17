@@ -4,7 +4,16 @@ import * as path from 'path';
 import * as os from 'os';
 import { EventEmitter } from 'events';
 
-// ─── Schema ──────────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+export interface SyncDrawing {
+  id: string;
+  name: string;
+  projectId?: string; // undefined = global
+  createdAt: number;
+  updatedAt: number;
+  tldrawContent?: string; // JSON snapshot
+}
 
 export interface SyncData {
     version: number;
@@ -13,6 +22,7 @@ export interface SyncData {
     projects: SyncProject[];
     profiles: SyncProfile[];
     localAccounts: { workspaceUri: string; accountId: string }[];
+    drawings: SyncDrawing[];
 }
 
 /** Mirrors GitAccount but tokens are NEVER written to disk — they stay in context.secrets */
@@ -70,6 +80,7 @@ const EMPTY_DATA: SyncData = {
     projects: [],
     profiles: [],
     localAccounts: [],
+    drawings: [],
 };
 
 // ─── SharedStore ──────────────────────────────────────────────────────────────
@@ -284,6 +295,7 @@ export class SharedStore extends EventEmitter {
                 a.localAccounts.map(l => ({ id: l.workspaceUri, ...l })),
                 b.localAccounts.map(l => ({ id: l.workspaceUri, ...l }))
             ).map(({ id: _id, ...rest }) => rest as { workspaceUri: string; accountId: string }),
+            drawings: mergeById(a.drawings, b.drawings),
         };
     }
 
@@ -323,6 +335,7 @@ export class SharedStore extends EventEmitter {
                     projects: oldProjects,
                     profiles: oldProfiles,
                     localAccounts: oldLocalAccounts,
+                    drawings: [],
                 },
                 this.data
             );

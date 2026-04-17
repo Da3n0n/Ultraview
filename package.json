@@ -281,6 +281,11 @@
                     "id": "ultraview-dokploy",
                     "title": "Dokploy",
                     "icon": "images/dokploy.svg"
+                },
+                {
+                    "id": "ultraview-drawings",
+                    "title": "Drawings",
+                    "icon": "$(paintkit)"
                 }
             ]
         },
@@ -323,6 +328,14 @@
                     "id": "ultraview.dokploy",
                     "name": "Dokploy",
                     "icon": "images/dokploy.svg"
+                }
+            ],
+            "ultraview-drawings": [
+                {
+                    "type": "webview",
+                    "id": "ultraview.drawings",
+                    "name": "Drawings",
+                    "icon": "$(paintkit)"
                 }
             ]
         },
@@ -417,6 +430,11 @@
                 "command": "ultraview.forceDelete",
                 "title": "Force Delete",
                 "icon": "$(trash)"
+            },
+            {
+                "command": "ultraview.openDrawings",
+                "title": "Ultraview: Open Drawings",
+                "icon": "$(paintkit)"
             }
         ],
         "menus": {
@@ -664,6 +682,7 @@
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "sql.js": "^1.11.0",
+        "tldraw": "^2.0.0",
         "turndown": "^7.2.2",
         "vsce": "^2.15.0"
     }
