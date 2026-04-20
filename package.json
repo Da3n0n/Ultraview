@@ -363,11 +363,6 @@
                 "icon": "$(account)"
             },
             {
-                "command": "ultraview.openGitProjects",
-                "title": "Ultraview: Open Project Manager",
-                "icon": "$(git-branch)"
-            },
-            {
                 "command": "ultraview.openPorts",
                 "title": "Ultraview: Open Ports & Processes",
                 "icon": "$(server)"
@@ -435,6 +430,31 @@
                 "command": "ultraview.openDrawings",
                 "title": "Ultraview: Open Drawings",
                 "icon": "images/drawings.svg"
+            },
+            {
+                "command": "ultraview.openGitProjects",
+                "title": "Ultraview: Open Project Manager as Editor",
+                "icon": "$(git-branch)"
+            },
+            {
+                "command": "ultraview.openCommands",
+                "title": "Ultraview: Open Commands as Editor",
+                "icon": "$(terminal)"
+            },
+            {
+                "command": "ultraview.openPorts",
+                "title": "Ultraview: Open Ports & Processes as Editor",
+                "icon": "$(server)"
+            },
+            {
+                "command": "ultraview.openCodeGraph",
+                "title": "Ultraview: Open Code Graph as Editor",
+                "icon": "$(type-hierarchy)"
+            },
+            {
+                "command": "ultraview.openDokployPanel",
+                "title": "Ultraview: Open Dokploy as Editor",
+                "icon": "$(browser)"
             }
         ],
         "menus": {

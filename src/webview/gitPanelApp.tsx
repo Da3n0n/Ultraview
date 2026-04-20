@@ -353,6 +353,17 @@ function App() {
                         <div className="toolbar-group">
                             <button
                                 className="button"
+                                title="Open as full panel"
+                                onClick={() =>
+                                    getVscode()?.postMessage({
+                                        type: 'openPanel' satisfies GitPanelOutboundMessage['type'],
+                                    })
+                                }
+                            >
+                                &#x2B21;
+                            </button>
+                            <button
+                                className="button"
                                 onClick={() =>
                                     getVscode()?.postMessage({
                                         type: 'refreshProjects' satisfies GitPanelOutboundMessage['type'],

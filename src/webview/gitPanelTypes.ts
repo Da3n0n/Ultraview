@@ -30,6 +30,6 @@ export type GitPanelInboundMessage =
   | { type: 'projectAdded' | 'projectRemoved' | 'accountAdded' | 'accountRemoved' | 'accountUpdated' | 'sshKeyGenerated' };
 
 export type GitPanelOutboundMessage =
-  | { type: 'ready' | 'refresh' | 'refreshProjects' | 'addProject' | 'addCurrentProject' | 'addRepo' | 'addAccount' }
+  | { type: 'ready' | 'refresh' | 'refreshProjects' | 'addProject' | 'addCurrentProject' | 'addRepo' | 'addAccount' | 'openPanel' }
   | { type: 'open' | 'delete' | 'gitPull' | 'gitPush' | 'gitSync'; id: string }
   | { type: 'switchAccount' | 'authOptions' | 'removeAccount' | 'reAuthAccount'; accountId: string };

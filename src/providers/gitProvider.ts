@@ -607,6 +607,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     this.postState();
                     break;
                 }
+                case 'openPanel': {
+                    vscode.commands.executeCommand('ultraview.openGitProjects');
+                    break;
+                }
                 case 'delete': {
                     const id = msg.id;
                     this.manager.removeProject(id);
@@ -1151,7 +1155,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
     static openAsPanel(context: vscode.ExtensionContext, store: SharedStore) {
         const panel = vscode.window.createWebviewPanel(
             'ultraview.git.panel',
-            'Git Projects',
+            'Project Manager',
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
