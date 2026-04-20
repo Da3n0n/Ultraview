@@ -447,14 +447,36 @@
                 "icon": "$(server)"
             },
             {
-                "command": "ultraview.openCodeGraph",
-                "title": "Ultraview: Open Code Graph as Editor",
-                "icon": "$(type-hierarchy)"
-            },
-            {
                 "command": "ultraview.openDokployPanel",
                 "title": "Ultraview: Open Dokploy as Editor",
                 "icon": "$(browser)"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "ultraview.openCodeGraph",
+                "key": "ctrl+p",
+                "when": "!editorFocus"
+            },
+            {
+                "command": "ultraview.openCommands",
+                "key": "ctrl+shift+p",
+                "when": "!editorFocus"
+            },
+            {
+                "command": "ultraview.openPorts",
+                "key": "ctrl+alt+p",
+                "when": "!editorFocus"
+            },
+            {
+                "command": "ultraview.openGitProjects",
+                "key": "ctrl+shift+g",
+                "when": "!editorFocus"
+            },
+            {
+                "command": "ultraview.openDokployPanel",
+                "key": "ctrl+alt+d",
+                "when": "!editorFocus"
             }
         ],
         "menus": {
