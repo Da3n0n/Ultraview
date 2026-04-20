@@ -317,7 +317,7 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tl-zoom-control { color: var(--text) !important; }
       .tl-zoom-control:hover { background: var(--surface2) !important; }
       /* Shortcuts */
-      .tl-shortcut { color: var(--muted) !important; background: var(--surface2) !important; border: 1px solid var(--border) !important; }
+      .tl-shortcut { color: var(--text) !important; background: var(--bg) !important; border: 1px solid var(--border) !important; }
       /* Spinner */
       .tl-spinner { border-color: var(--border) !important; border-top-color: var(--accent) !important; }
       /* Toast */
@@ -338,14 +338,26 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tl-hyperlink-button:hover { color: var(--accent) !important; }
       /* Error boundary */
       .tl-error-boundary { background: var(--bg) !important; color: var(--text) !important; }
-      /* Note container */
-      .tl-note__container { background: var(--surface) !important; }
-      /* Bookmark */
-      .tl-bookmark__container { background: var(--surface) !important; border-color: var(--border) !important; }
-      /* Frame label */
-      .tl-frame-label { background: var(--surface2) !important; color: var(--text) !important; }
-      /* Shape error boundary */
-      .tl-shape-error-boundary { background: var(--surface) !important; border-color: var(--border) !important; }
+      /* Note container - solid background */
+      .tl-note__container { background: var(--surface2) !important; opacity: 1 !important; }
+      .tl-note__container::before { display: none !important; }
+      /* Sticky note tool option - solid color */
+      .tl-tool[data-testid="tool-StickyNote"], .tl-tool--note { background: var(--surface2) !important; }
+      .tl-tool[data-testid="tool-StickyNote"]:hover, .tl-tool--note:hover { background: var(--accent) !important; }
+      /* Left toolbar / tool panel */
+      .tlui-layout__left { background: var(--bg) !important; }
+      .tlui-button { background: var(--surface2) !important; color: var(--text) !important; border: 1px solid var(--border) !important; }
+      .tlui-button:hover { border-color: var(--accent) !important; }
+      .tlui-button[data-active="true"] { background: var(--accent) !important; color: #000 !important; border-color: var(--accent) !important; }
+      /* Options panel header */
+      .tlui-panel__header { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; color: var(--text) !important; }
+      .tlui-panel__body { background: var(--bg) !important; }
+      /* Tool button icon */
+      .tlui-icon { color: var(--text) !important; }
+      /* Helper text in tooltips */
+      .tl-helper { color: var(--muted) !important; }
+/* Debug */
+      .tl-debug { color: var(--muted) !important; }
       /* Scrollbars */
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
