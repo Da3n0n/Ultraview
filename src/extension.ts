@@ -122,7 +122,7 @@ export async function activate(context: vscode.ExtensionContext) {
             CodeGraphProvider.openAsPanel(context);
         }),
         vscode.commands.registerCommand('ultraview.openGitProjects', () => {
-            vscode.commands.executeCommand('workbench.view.extension.ultraview-git');
+            GitProvider.openAsPanel(context, sharedStore);
         }),
         vscode.commands.registerCommand('ultraview.quickOpenProject', async () => {
             const manager = new GitProjects(context, sharedStore);

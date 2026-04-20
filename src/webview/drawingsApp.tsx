@@ -180,11 +180,13 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
     style.textContent = `
       :root {
         --bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+        --surface: var(--vscode-editor-background, rgba(30,30,30,.55));
         --surface2: var(--vscode-list-hoverBackground, rgba(255,255,255,.05));
         --border: var(--vscode-panel-border, rgba(128,128,128,.24));
         --text: var(--vscode-editor-foreground);
         --muted: var(--vscode-descriptionForeground);
         --accent: var(--vscode-textLink-foreground, #6ee7b7);
+        --scrollbar: var(--vscode-scrollbarSlider-background, rgba(100,100,100,.4));
       }
       .drawings-root { display:flex; width:100%; height:100%; overflow:hidden; }
       .drawings-sidebar { width:140px; display:flex; flex-direction:column;
@@ -220,6 +222,31 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         color:var(--muted); font-size:12px; }
       .drawings-main { flex:1; position:relative; overflow:hidden; background:var(--vscode-editor-background); }
       #tldraw-container { width:100%; height:100%; }
+      /* tldraw UI overrides to match VS Code theme */
+      .tl-background { background: var(--vscode-editor-background) !important; }
+      .tl-toolbar { background: var(--vscode-sideBar-background) !important; border: 1px solid var(--border) !important; }
+      .tl-toolbar__button { color: var(--text) !important; }
+      .tl-toolbar__button:hover { background: var(--surface2) !important; }
+      .tl-toolbar__button[data-active="true"] { background: var(--accent) !important; color: #000 !important; }
+      .tl-panel { background: var(--vscode-sideBar-background) !important; border-color: var(--border) !important; color: var(--text) !important; }
+      .tl-input { background: var(--surface) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
+      .tl-input:focus { border-color: var(--accent) !important; }
+      .tl-button { background: var(--surface2) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
+      .tl-button:hover { border-color: var(--accent) !important; }
+      .tl-button[data-active="true"] { background: var(--accent) !important; color: #000 !important; border-color: var(--accent) !important; }
+      .tl-context-bar { background: var(--bg) !important; }
+      .tl-popover { background: var(--bg) !important; border: 1px solid var(--border) !important; }
+      .tl-menu { background: var(--bg) !important; border: 1px solid var(--border) !important; }
+      .tl-menu-item { color: var(--text) !important; }
+      .tl-menu-item:hover { background: var(--surface2) !important; }
+      .tl-spinner { border-color: var(--border) !important; border-top-color: var(--accent) !important; }
+      .tl-toast { background: var(--bg) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
+      .tl-helper { color: var(--muted) !important; }
+      .tl-label { color: var(--text) !important; }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: var(--vscode-scrollbarSlider-hoverBackground, rgba(120,120,120,.5)); }
     `;
     document.head.appendChild(style);
   }
