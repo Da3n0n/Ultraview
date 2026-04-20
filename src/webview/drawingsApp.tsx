@@ -227,8 +227,10 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tl-container { background: var(--vscode-editor-background) !important; color: var(--text) !important; font-family: 'Inter', var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif) !important; }
       .tl-container * { color: var(--text) !important; font-family: inherit !important; }
       .tl-theme__dark, .tl-theme__light {
+        /* Legacy tldraw variables */
         --tl-color-background: var(--vscode-editor-background) !important;
         --tl-color-panel: var(--vscode-sideBar-background) !important;
+        --tl-color-panel-overlay: var(--vscode-sideBar-background) !important;
         --tl-color-panel-contrast: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
         --tl-color-low: var(--vscode-list-hoverBackground, rgba(255,255,255,.05)) !important;
         --tl-color-low-border: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
@@ -253,6 +255,35 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         --tl-color-overlay: rgba(0,0,0,0.4) !important;
         --tl-color-selection-fill: var(--accent) !important;
         --tl-color-selection-stroke: var(--accent) !important;
+
+        /* Modern tldraw v2.0+ variables */
+        --color-background: var(--vscode-editor-background) !important;
+        --color-panel: var(--vscode-sideBar-background) !important;
+        --color-panel-overlay: var(--vscode-sideBar-background) !important;
+        --color-panel-contrast: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
+        --color-low: var(--vscode-list-hoverBackground, rgba(255,255,255,.05)) !important;
+        --color-low-border: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
+        --color-muted-0: var(--vscode-editor-background) !important;
+        --color-muted-1: var(--surface2) !important;
+        --color-muted-2: var(--surface) !important;
+        --color-divider: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
+        --color-text: var(--vscode-editor-foreground) !important;
+        --color-text-0: var(--vscode-editor-foreground) !important;
+        --color-text-1: var(--vscode-editor-foreground) !important;
+        --color-text-3: var(--vscode-descriptionForeground) !important;
+        --color-selected: var(--accent) !important;
+        --color-focus: var(--accent) !important;
+        --color-primary: var(--accent) !important;
+        --color-success: #6ee7b7 !important;
+        --color-danger: #f87171 !important;
+        --color-warning: #fbbf24 !important;
+        --color-info: #7dd3fc !important;
+        --color-grid: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
+        --color-brush-fill: rgba(255,255,255,0.1) !important;
+        --color-brush-stroke: var(--accent) !important;
+        --color-overlay: rgba(0,0,0,0.4) !important;
+        --color-selection-fill: var(--accent) !important;
+        --color-selection-stroke: var(--accent) !important;
       }
       .tl-theme__dark { background: var(--vscode-editor-background) !important; }
       .tl-theme__light { background: var(--vscode-editor-background) !important; }
