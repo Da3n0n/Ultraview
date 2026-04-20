@@ -243,6 +243,58 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tl-toast { background: var(--bg) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
       .tl-helper { color: var(--muted) !important; }
       .tl-label { color: var(--text) !important; }
+      /* tldraw top bar / nav */
+      .tl-header { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; }
+      .tl-nav { background: var(--bg) !important; }
+      .tl-nav__button { color: var(--text) !important; }
+      .tl-nav__button:hover { background: var(--surface2) !important; }
+      .tl-app-bar { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; }
+      /* tldraw bottom toolbar */
+      .tl-bottombar { background: var(--bg) !important; border-top: 1px solid var(--border) !important; }
+      .tl-tools { background: var(--bg) !important; }
+      .tl-tool { background: transparent !important; color: var(--text) !important; }
+      .tl-tool:hover { background: var(--surface2) !important; }
+      .tl-tool[data-active="true"] { background: var(--accent) !important; color: #000 !important; }
+      .tl-tool__icon { color: inherit !important; }
+      /* tldraw style panel / color picker */
+      .tl-style-panel { background: var(--bg) !important; border-left: 1px solid var(--border) !important; }
+      .tl-style-panel__section { border-bottom: 1px solid var(--border) !important; }
+      .tl-color-picker { background: var(--surface) !important; border: 1px solid var(--border) !important; }
+      .tl-color-swatch { border: 1px solid var(--border) !important; }
+      .tl-color-swatch:hover { border-color: var(--accent) !important; }
+      .tl-color-swatch[data-active="true"] { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent) !important; }
+      .tl-swatches { background: var(--bg) !important; }
+      .tl-swatch { border: 1px solid var(--border) !important; }
+      .tl-swatch:hover { border-color: var(--accent) !important; }
+      /* tldraw preference bar / settings */
+      .tl-preferences { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; }
+      .tl-preference { color: var(--text) !important; }
+      .tl-preference:hover { background: var(--surface2) !important; }
+      .tl-settings { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; }
+      .tl-settings__button { color: var(--text) !important; }
+      .tl-settings__button:hover { background: var(--surface2) !important; }
+      /* tldraw text editor / textarea */
+      .tl-text-edit { background: var(--surface) !important; color: var(--text) !important; border: 1px solid var(--border) !important; }
+      /* tldraw debug / helper text */
+      .tl-debug { color: var(--muted) !important; }
+      /* tldraw selection box */
+      .tl-selection__bg { fill: var(--accent) !important; fill-opacity: 0.1 !important; stroke: var(--accent) !important; }
+      .tl-selection__fg { stroke: var(--accent) !important; }
+      /* tldraw layers panel */
+      .tl-layers { background: var(--bg) !important; }
+      .tl-layers__item { color: var(--text) !important; }
+      .tl-layers__item:hover { background: var(--surface2) !important; }
+      .tl-layers__item[data-active="true"] { color: var(--accent) !important; }
+      /* tldraw file menu / export menu */
+      .tl-file-menu { background: var(--bg) !important; border: 1px solid var(--border) !important; }
+      .tl-file-menu__button { color: var(--text) !important; }
+      .tl-file-menu__button:hover { background: var(--surface2) !important; }
+      /* tldraw zoom controls */
+      .tl-zoom-controls { background: var(--bg) !important; border: 1px solid var(--border) !important; }
+      .tl-zoom-control { color: var(--text) !important; }
+      .tl-zoom-control:hover { background: var(--surface2) !important; }
+      /* tldraw shortcut */
+      .tl-shortcut { color: var(--muted) !important; background: var(--surface2) !important; border: 1px solid var(--border) !important; }
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
