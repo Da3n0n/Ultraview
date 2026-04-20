@@ -222,43 +222,71 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         color:var(--muted); font-size:12px; }
       .drawings-main { flex:1; position:relative; overflow:hidden; background:var(--vscode-editor-background); }
       #tldraw-container { width:100%; height:100%; }
-      /* tldraw UI overrides to match VS Code theme */
-      .tl-background { background: var(--vscode-editor-background) !important; }
-      .tl-toolbar { background: var(--vscode-sideBar-background) !important; border: 1px solid var(--border) !important; }
-      .tl-toolbar__button { color: var(--text) !important; }
-      .tl-toolbar__button:hover { background: var(--surface2) !important; }
-      .tl-toolbar__button[data-active="true"] { background: var(--accent) !important; color: #000 !important; }
-      .tl-panel { background: var(--vscode-sideBar-background) !important; border-color: var(--border) !important; color: var(--text) !important; }
-      .tl-input { background: var(--surface) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
-      .tl-input:focus { border-color: var(--accent) !important; }
-      .tl-button { background: var(--surface2) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
-      .tl-button:hover { border-color: var(--accent) !important; }
-      .tl-button[data-active="true"] { background: var(--accent) !important; color: #000 !important; border-color: var(--accent) !important; }
-      .tl-context-bar { background: var(--bg) !important; }
-      .tl-popover { background: var(--bg) !important; border: 1px solid var(--border) !important; }
-      .tl-menu { background: var(--bg) !important; border: 1px solid var(--border) !important; }
-      .tl-menu-item { color: var(--text) !important; }
-      .tl-menu-item:hover { background: var(--surface2) !important; }
-      .tl-spinner { border-color: var(--border) !important; border-top-color: var(--accent) !important; }
-      .tl-toast { background: var(--bg) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
-      .tl-helper { color: var(--muted) !important; }
-      .tl-label { color: var(--text) !important; }
-      /* tldraw top bar / nav */
+      /* tldraw CSS overrides using VS Code theme variables */
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      .tl-container { background: var(--vscode-editor-background) !important; color: var(--text) !important; font-family: 'Inter', var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif) !important; }
+      .tl-container * { color: var(--text) !important; font-family: inherit !important; }
+      .tl-theme__dark, .tl-theme__light {
+        --tl-color-background: var(--vscode-editor-background) !important;
+        --tl-color-panel: var(--vscode-sideBar-background) !important;
+        --tl-color-panel-contrast: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
+        --tl-color-low: var(--vscode-list-hoverBackground, rgba(255,255,255,.05)) !important;
+        --tl-color-low-border: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
+        --tl-color-muted-0: var(--vscode-editor-background) !important;
+        --tl-color-muted-1: var(--surface2) !important;
+        --tl-color-muted-2: var(--surface) !important;
+        --tl-color-divider: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
+        --tl-color-text: var(--vscode-editor-foreground) !important;
+        --tl-color-text-0: var(--vscode-editor-foreground) !important;
+        --tl-color-text-1: var(--vscode-editor-foreground) !important;
+        --tl-color-text-3: var(--vscode-descriptionForeground) !important;
+        --tl-color-selected: var(--accent) !important;
+        --tl-color-focus: var(--accent) !important;
+        --tl-color-primary: var(--accent) !important;
+        --tl-color-success: #6ee7b7 !important;
+        --tl-color-danger: #f87171 !important;
+        --tl-color-warning: #fbbf24 !important;
+        --tl-color-info: #7dd3fc !important;
+        --tl-color-grid: var(--vscode-panel-border, rgba(128,128,128,.24)) !important;
+        --tl-color-brush-fill: rgba(255,255,255,0.1) !important;
+        --tl-color-brush-stroke: var(--accent) !important;
+        --tl-color-overlay: rgba(0,0,0,0.4) !important;
+        --tl-color-selection-fill: var(--accent) !important;
+        --tl-color-selection-stroke: var(--accent) !important;
+      }
+      .tl-theme__dark { background: var(--vscode-editor-background) !important; }
+      .tl-theme__light { background: var(--vscode-editor-background) !important; }
+      /* Toolbar / nav bars */
       .tl-header { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; }
       .tl-nav { background: var(--bg) !important; }
       .tl-nav__button { color: var(--text) !important; }
       .tl-nav__button:hover { background: var(--surface2) !important; }
       .tl-app-bar { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; }
-      /* tldraw bottom toolbar */
+      /* Bottom toolbar */
       .tl-bottombar { background: var(--bg) !important; border-top: 1px solid var(--border) !important; }
       .tl-tools { background: var(--bg) !important; }
       .tl-tool { background: transparent !important; color: var(--text) !important; }
       .tl-tool:hover { background: var(--surface2) !important; }
       .tl-tool[data-active="true"] { background: var(--accent) !important; color: #000 !important; }
-      .tl-tool__icon { color: inherit !important; }
-      /* tldraw style panel / color picker */
+      /* Panels */
+      .tl-panel { background: var(--bg) !important; border-color: var(--border) !important; color: var(--text) !important; }
       .tl-style-panel { background: var(--bg) !important; border-left: 1px solid var(--border) !important; }
       .tl-style-panel__section { border-bottom: 1px solid var(--border) !important; }
+      /* Inputs */
+      .tl-input, input.tl-input { background: var(--surface) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
+      .tl-input:focus, input.tl-input:focus { border-color: var(--accent) !important; outline: none !important; }
+      /* Buttons */
+      .tl-button, button.tl-button { background: var(--surface2) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
+      .tl-button:hover, button.tl-button:hover { border-color: var(--accent) !important; }
+      .tl-button[data-active="true"], button.tl-button[data-active="true"] { background: var(--accent) !important; color: #000 !important; border-color: var(--accent) !important; }
+      /* Context bar */
+      .tl-context-bar { background: var(--bg) !important; }
+      /* Popovers / menus */
+      .tl-popover { background: var(--bg) !important; border: 1px solid var(--border) !important; }
+      .tl-menu { background: var(--bg) !important; border: 1px solid var(--border) !important; }
+      .tl-menu-item { color: var(--text) !important; }
+      .tl-menu-item:hover { background: var(--surface2) !important; }
+      /* Color picker */
       .tl-color-picker { background: var(--surface) !important; border: 1px solid var(--border) !important; }
       .tl-color-swatch { border: 1px solid var(--border) !important; }
       .tl-color-swatch:hover { border-color: var(--accent) !important; }
@@ -266,35 +294,59 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tl-swatches { background: var(--bg) !important; }
       .tl-swatch { border: 1px solid var(--border) !important; }
       .tl-swatch:hover { border-color: var(--accent) !important; }
-      /* tldraw preference bar / settings */
+      /* Preferences / settings */
       .tl-preferences { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; }
       .tl-preference { color: var(--text) !important; }
       .tl-preference:hover { background: var(--surface2) !important; }
       .tl-settings { background: var(--bg) !important; border-bottom: 1px solid var(--border) !important; }
       .tl-settings__button { color: var(--text) !important; }
       .tl-settings__button:hover { background: var(--surface2) !important; }
-      /* tldraw text editor / textarea */
+      /* Text editor */
       .tl-text-edit { background: var(--surface) !important; color: var(--text) !important; border: 1px solid var(--border) !important; }
-      /* tldraw debug / helper text */
-      .tl-debug { color: var(--muted) !important; }
-      /* tldraw selection box */
-      .tl-selection__bg { fill: var(--accent) !important; fill-opacity: 0.1 !important; stroke: var(--accent) !important; }
-      .tl-selection__fg { stroke: var(--accent) !important; }
-      /* tldraw layers panel */
+      /* Layers panel */
       .tl-layers { background: var(--bg) !important; }
       .tl-layers__item { color: var(--text) !important; }
       .tl-layers__item:hover { background: var(--surface2) !important; }
       .tl-layers__item[data-active="true"] { color: var(--accent) !important; }
-      /* tldraw file menu / export menu */
+      /* File menu / export */
       .tl-file-menu { background: var(--bg) !important; border: 1px solid var(--border) !important; }
       .tl-file-menu__button { color: var(--text) !important; }
       .tl-file-menu__button:hover { background: var(--surface2) !important; }
-      /* tldraw zoom controls */
+      /* Zoom controls */
       .tl-zoom-controls { background: var(--bg) !important; border: 1px solid var(--border) !important; }
       .tl-zoom-control { color: var(--text) !important; }
       .tl-zoom-control:hover { background: var(--surface2) !important; }
-      /* tldraw shortcut */
+      /* Shortcuts */
       .tl-shortcut { color: var(--muted) !important; background: var(--surface2) !important; border: 1px solid var(--border) !important; }
+      /* Spinner */
+      .tl-spinner { border-color: var(--border) !important; border-top-color: var(--accent) !important; }
+      /* Toast */
+      .tl-toast { background: var(--bg) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
+      /* Helpers / labels */
+      .tl-helper { color: var(--muted) !important; }
+      .tl-label { color: var(--text) !important; }
+      /* Debug */
+      .tl-debug { color: var(--muted) !important; }
+      /* Selection */
+      .tl-selection__bg { fill: var(--accent) !important; fill-opacity: 0.15 !important; stroke: var(--accent) !important; }
+      .tl-selection__fg { stroke: var(--accent) !important; }
+      /* Canvas background */
+      .tl-background { background: var(--vscode-editor-background) !important; }
+      .tl-grid-dot { fill: var(--border) !important; }
+      /* Hyperlink button */
+      .tl-hyperlink-button { color: var(--text) !important; }
+      .tl-hyperlink-button:hover { color: var(--accent) !important; }
+      /* Error boundary */
+      .tl-error-boundary { background: var(--bg) !important; color: var(--text) !important; }
+      /* Note container */
+      .tl-note__container { background: var(--surface) !important; }
+      /* Bookmark */
+      .tl-bookmark__container { background: var(--surface) !important; border-color: var(--border) !important; }
+      /* Frame label */
+      .tl-frame-label { background: var(--surface2) !important; color: var(--text) !important; }
+      /* Shape error boundary */
+      .tl-shape-error-boundary { background: var(--surface) !important; border-color: var(--border) !important; }
+      /* Scrollbars */
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
