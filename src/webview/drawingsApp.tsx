@@ -242,20 +242,47 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         gap:8px;
         flex:0 0 auto;
         max-width:220px;
-        padding:8px 12px;
-        border:1px solid var(--accent);
-        border-radius:999px;
-        background:color-mix(in srgb, var(--accent) 18%, var(--surface) 82%);
-        color:var(--text);
+        min-height:34px;
+        padding:7px 12px;
+        border:1px solid transparent;
+        border-bottom:none;
+        border-radius:8px 8px 0 0;
+        background:var(--vscode-tab-inactiveBackground, var(--surface));
+        color:var(--vscode-tab-inactiveForeground, var(--text));
         cursor:pointer;
         transition:all .16s ease;
         font:inherit;
       }
-      .drawing-tab:hover { filter:brightness(1.03); }
-      .drawing-tab.active {
-        border-color:var(--border);
-        background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
+      .drawing-tab::after {
+        content:'';
+        position:absolute;
+        left:0;
+        right:0;
+        bottom:-1px;
+        height:1px;
+        background:var(--vscode-editorGroupHeader-tabsBackground, var(--surface));
       }
+      .drawing-tab:hover {
+        background:var(--vscode-tab-hoverBackground, var(--vscode-tab-inactiveBackground, var(--surface)));
+        color:var(--vscode-tab-hoverForeground, var(--vscode-tab-inactiveForeground, var(--text)));
+      }
+      .drawing-tab.active {
+        background:var(--vscode-tab-activeBackground, var(--bg));
+        color:var(--vscode-tab-activeForeground, var(--text));
+        border-color:var(--vscode-tab-border, var(--border));
+        border-bottom-color:var(--vscode-tab-activeBackground, var(--bg));
+      }
+      .drawing-tab.active::before {
+        content:'';
+        position:absolute;
+        left:0;
+        right:0;
+        top:0;
+        height:2px;
+        background:var(--vscode-tab-activeBorderTop, var(--vscode-tab-activeBorder, transparent));
+        border-radius:8px 8px 0 0;
+      }
+      .drawing-tab.active::after { display:none; }
       .drawing-tab-label {
         min-width:0;
         overflow:hidden;
@@ -268,8 +295,8 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         flex:0 0 auto;
         padding:2px 7px;
         border-radius:999px;
-        background:rgba(255,255,255,.08);
-        color:var(--muted);
+        background:var(--vscode-badge-background, rgba(255,255,255,.08));
+        color:var(--vscode-badge-foreground, var(--muted));
         font-size:10px;
         text-transform:uppercase;
         letter-spacing:.04em;
@@ -281,11 +308,15 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         justify-content:center;
         width:18px;
         height:18px;
-        border-radius:999px;
-        color:var(--muted);
+        border-radius:4px;
+        color:currentColor;
+        opacity:.7;
         font-size:12px;
       }
-      .drawing-tab-delete:hover { background:rgba(255,80,80,.15); color:#ff6b6b; }
+      .drawing-tab-delete:hover {
+        opacity:1;
+        background:var(--vscode-toolbar-hoverBackground, var(--surface2));
+      }
       .topbar-actions {
         position:relative;
         flex:0 0 auto;
