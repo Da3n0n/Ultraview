@@ -313,17 +313,19 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         gap:4px;
         min-width:180px;
         padding:6px;
-        border:1px solid var(--border);
+        border:1px solid color-mix(in srgb, var(--border) 70%, white 30%);
         border-radius:12px;
-        background:var(--surface);
-        box-shadow:0 10px 30px rgba(0,0,0,.24);
+        background:color-mix(in srgb, var(--surface) 92%, black 8%);
+        backdrop-filter:blur(16px) saturate(1.15);
+        -webkit-backdrop-filter:blur(16px) saturate(1.15);
+        box-shadow:0 14px 36px rgba(0,0,0,.32);
         z-index:1002;
       }
       .add-menu.hidden { display:none; }
       .add-menu-item {
         border:none;
         border-radius:8px;
-        background:transparent;
+        background:color-mix(in srgb, var(--surface2) 55%, transparent);
         color:var(--text);
         cursor:pointer;
         padding:9px 10px;
@@ -331,7 +333,9 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         font:inherit;
         font-size:12px;
       }
-      .add-menu-item:hover { background:var(--surface2); }
+      .add-menu-item:hover {
+        background:color-mix(in srgb, var(--accent) 14%, var(--surface) 86%);
+      }
       .empty-hint {
         flex:1;
         display:flex;
@@ -473,6 +477,15 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tlui-navigation-panel {
         background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
         border: 1px solid var(--border) !important;
+        box-shadow: 0 12px 30px rgba(0,0,0,.18) !important;
+      }
+      .tlui-toolbar__tools .tlui-buttons__grid,
+      .tlui-toolbar__overflow + .tlui-popover__content .tlui-buttons__grid,
+      [data-testid='tools.more-content'] {
+        background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 14px !important;
+        padding: 6px !important;
         box-shadow: 0 12px 30px rgba(0,0,0,.18) !important;
       }
       .tlui-menu__group + .tlui-menu__group,
