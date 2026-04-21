@@ -421,12 +421,16 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tl-overlay { background: var(--surface) !important; backdrop-filter: none !important; }
       .tl-note__container { background: var(--surface2) !important; opacity: 1 !important; }
       .tl-note__container::before { display: none !important; }
-      .tl-popover, .tl-menu {
+      .tl-popover, .tl-menu, .tlui-popover__content, .tlui-menu__submenu__content, .tlui-menu.scrollable {
         background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
         border: 1px solid var(--border) !important;
         backdrop-filter: none !important;
         border-radius: 14px !important;
         box-shadow: 0 16px 44px rgba(0,0,0,.26) !important;
+      }
+      .tlui-popover__content,
+      .tlui-menu__submenu__content {
+        overflow: hidden !important;
       }
       .tlui-toolbar__tools__button,
       .tlui-kbd,
