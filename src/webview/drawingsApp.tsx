@@ -346,26 +346,29 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         padding:6px;
         border:1px solid color-mix(in srgb, var(--border) 70%, white 30%);
         border-radius:12px;
-        background:color-mix(in srgb, var(--surface) 92%, black 8%);
-        backdrop-filter:blur(16px) saturate(1.15);
-        -webkit-backdrop-filter:blur(16px) saturate(1.15);
-        box-shadow:0 14px 36px rgba(0,0,0,.32);
+        background:color-mix(in srgb, var(--surface) 82%, black 18%);
+        backdrop-filter:blur(24px) saturate(1.2);
+        -webkit-backdrop-filter:blur(24px) saturate(1.2);
+        box-shadow:0 16px 40px rgba(0,0,0,.38);
         z-index:1002;
       }
       .add-menu.hidden { display:none; }
       .add-menu-item {
         border:none;
         border-radius:8px;
-        background:color-mix(in srgb, var(--surface2) 55%, transparent);
+        background:color-mix(in srgb, var(--surface2) 58%, black 42%);
         color:var(--text);
         cursor:pointer;
-        padding:9px 10px;
+        padding:11px 12px;
         text-align:left;
         font:inherit;
-        font-size:12px;
+        font-size:13px;
+        font-weight:700;
+        line-height:1.2;
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
       }
       .add-menu-item:hover {
-        background:color-mix(in srgb, var(--accent) 14%, var(--surface) 86%);
+        background:color-mix(in srgb, var(--accent) 22%, var(--surface) 78%);
       }
       .empty-hint {
         flex:1;

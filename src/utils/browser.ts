@@ -5,7 +5,7 @@ const INTERNAL_BROWSER_COMMANDS: ReadonlyArray<{
   getArgs: (url: string) => unknown[];
 }> = [
   {
-    id: 'browse-lite.openUrl',
+    id: 'browse-lite.open',
     getArgs: (url: string) => [url],
   },
   {
