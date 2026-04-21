@@ -389,7 +389,7 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         backdrop-filter: none !important;
       }
       .tl-panel, .tl-style-panel, .tl-layers {
-        background: var(--surface) !important;
+        background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
         border-color: var(--border) !important;
         backdrop-filter: none !important;
         border-radius: 16px !important;
@@ -401,34 +401,26 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tl-note__container { background: var(--surface2) !important; opacity: 1 !important; }
       .tl-note__container::before { display: none !important; }
       .tl-popover, .tl-menu {
-        background: var(--surface) !important;
+        background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
         border: 1px solid var(--border) !important;
         backdrop-filter: none !important;
         border-radius: 14px !important;
         box-shadow: 0 16px 44px rgba(0,0,0,.26) !important;
       }
-      .tlui-button,
       .tlui-toolbar__tools__button,
-      .tlui-menu__button,
-      .tlui-popover__button,
       .tlui-kbd,
       .tlui-toolbar__extras__controls button {
         border-radius: 12px !important;
       }
-      .tlui-button {
+      .tlui-toolbar__tools__button,
+      .tlui-toolbar__extras__controls button {
         color: var(--text) !important;
       }
-      .tlui-button:hover,
-      .tlui-menu__button:hover,
-      .tlui-popover__button:hover,
       .tlui-toolbar__tools__button:hover {
         background: color-mix(in srgb, var(--accent) 14%, var(--surface) 86%) !important;
       }
-      .tlui-button[data-state='open'],
-      .tlui-button[aria-checked='true'],
-      .tlui-button[aria-selected='true'],
       .tlui-toolbar__tools__button[aria-checked='true'],
-      .tlui-menu__button[aria-checked='true'] {
+      .tlui-toolbar__tools__button[aria-selected='true'] {
         background: color-mix(in srgb, var(--accent) 22%, var(--surface) 78%) !important;
         color: var(--text) !important;
       }
@@ -449,9 +441,43 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tlui-page-menu {
         border-radius: 14px !important;
       }
+      .tlui-style-panel,
+      .tlui-page-menu,
+      .tlui-help-menu,
+      .tlui-actions-menu,
+      .tlui-navigation-panel {
+        background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
+        border: 1px solid var(--border) !important;
+        box-shadow: 0 12px 30px rgba(0,0,0,.18) !important;
+      }
       .tlui-menu__group + .tlui-menu__group,
       .tlui-style-panel__section + .tlui-style-panel__section {
         border-top: 1px solid var(--border) !important;
+      }
+      .tlui-style-panel .tlui-button,
+      .tlui-style-panel .tlui-menu__button,
+      .tlui-style-panel .tlui-popover__button,
+      .tlui-page-menu .tlui-button,
+      .tlui-page-menu .tlui-menu__button,
+      .tlui-page-menu .tlui-popover__button {
+        color: var(--text) !important;
+        background: transparent !important;
+      }
+      .tlui-style-panel .tlui-button:hover,
+      .tlui-style-panel .tlui-menu__button:hover,
+      .tlui-style-panel .tlui-popover__button:hover,
+      .tlui-page-menu .tlui-button:hover,
+      .tlui-page-menu .tlui-menu__button:hover,
+      .tlui-page-menu .tlui-popover__button:hover {
+        background: var(--surface2) !important;
+      }
+      .tlui-style-panel [data-state='open'],
+      .tlui-style-panel [aria-checked='true'],
+      .tlui-style-panel [aria-selected='true'],
+      .tlui-page-menu [data-state='open'],
+      .tlui-page-menu [aria-checked='true'],
+      .tlui-page-menu [aria-selected='true'] {
+        background: color-mix(in srgb, var(--surface2) 88%, transparent) !important;
       }
       .tlui-kbd {
         background: var(--surface2) !important;
