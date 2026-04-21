@@ -241,18 +241,18 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         flex:0 0 auto;
         max-width:220px;
         padding:8px 12px;
-        border:1px solid var(--border);
+        border:1px solid var(--accent);
         border-radius:999px;
-        background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
+        background:color-mix(in srgb, var(--accent) 18%, var(--surface) 82%);
         color:var(--text);
         cursor:pointer;
         transition:all .16s ease;
         font:inherit;
       }
-      .drawing-tab:hover { border-color:var(--accent); }
+      .drawing-tab:hover { filter:brightness(1.03); }
       .drawing-tab.active {
-        border-color:var(--accent);
-        background:color-mix(in srgb, var(--accent) 18%, var(--surface) 82%);
+        border-color:var(--border);
+        background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
       }
       .drawing-tab-label {
         min-width:0;
