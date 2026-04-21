@@ -1,6 +1,6 @@
 import * as React from 'react';
 import * as ReactDOM from 'react-dom/client';
-import { Tldraw, createTLStore, getSnapshot } from 'tldraw';
+import { Tldraw, createTLStore, getSnapshot, loadSnapshot } from 'tldraw';
 
 import 'tldraw/tldraw.css';
 
@@ -33,10 +33,9 @@ function getVscode(): { postMessage: (msg: Record<string, unknown>) => void } {
 }
 
 const STORAGE_KEY = 'ultraview.drawings.editorState';
-const SAVE_DEBOUNCE_MS = 1200;
+const SAVE_DEBOUNCE_MS = 300;
 
 let currentDrawingId: string | null = null;
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSavedContent: string | null = null;
 let currentStore: ReturnType<typeof createTLStore> | null = null;
 let reactRoot: ReturnType<typeof ReactDOM.createRoot> | null = null;
@@ -105,28 +104,29 @@ function isDarkMode(): boolean {
 }
 
 function scheduleAutoSave(drawingId: string, store: ReturnType<typeof createTLStore>): void {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      if (!store) return;
-      const content = JSON.stringify(getSnapshot(store));
-      if (content !== lastSavedContent) {
-        lastSavedContent = content;
-        getVscode().postMessage({ type: 'saveDrawing', id: drawingId, content });
-      }
-    } catch { /* ignore */ }
-  }, SAVE_DEBOUNCE_MS);
+  flushSave(drawingId, store);
+}
+
+function flushSave(drawingId: string, store: ReturnType<typeof createTLStore>): void {
+  if (!store) return;
+  try {
+    const content = JSON.stringify(getSnapshot(store));
+    if (content !== lastSavedContent) {
+      lastSavedContent = content;
+      getVscode().postMessage({ type: 'saveDrawing', id: drawingId, content });
+    }
+  } catch { /* ignore */ }
 }
 
 function createStore(initialContent?: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let snapshot: any = undefined;
+  const store = createTLStore();
   if (initialContent) {
     try {
-      snapshot = JSON.parse(initialContent);
+      const parsed = JSON.parse(initialContent);
+      loadSnapshot(store, parsed);
     } catch { /* ignore */ }
   }
-  return createTLStore(snapshot ? { snapshot } : {});
+  return store;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,6 +140,10 @@ function mountTldraw(container: HTMLElement, store: any): void {
   reactRoot.render(React.createElement(Tldraw, {
     store: store as any,
     inferDarkMode: isDarkMode(),
+    cameraOptions: { wheelBehavior: 'zoom' },
+    onMount: (editor: any) => {
+      editor.user.updateUserPreferences({ animationSpeed: 0 });
+    },
   }));
 }
 
@@ -294,11 +298,14 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         }
         return;
       }
+      if (currentStore && currentDrawingId) {
+        flushSave(currentDrawingId, currentStore);
+      }
       const id = item.getAttribute('data-id');
       if (id) {
         currentDrawingId = id;
         saveEditorState({ activeDrawingId: id });
-        setState({ activeDrawingId: id });
+        setState({ activeDrawingId: id, filter: 'all' });
         getVscode().postMessage({ type: 'switchDrawing', id });
       }
     });

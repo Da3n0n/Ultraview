@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 const ENABLE_COMMAND = 'ultraview.enableTransparent';
 const DISABLE_COMMAND = 'ultraview.disableTransparent';
 const THEME_LABEL = 'Ultraview Transparent';
+const THEME_LABEL_DARK = 'Ultraview Transparent Dark';
 const STATE_PREVIOUS_THEME = 'ultraview.transparent.previousTheme';
 
 const PATCH_MARKER = 'ultraview-transparent-patched';
@@ -37,6 +38,12 @@ export function registerThemeCommands(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(DISABLE_COMMAND, async () => {
       await disableTransparent(context);
     }),
+    vscode.commands.registerCommand(ENABLE_DARK_COMMAND, async () => {
+      await enableTransparentDark(context);
+    }),
+    vscode.commands.registerCommand(DISABLE_DARK_COMMAND, async () => {
+      await disableTransparentDark(context);
+    }),
   );
 }
 
@@ -55,6 +62,74 @@ async function enableTransparent(context: vscode.ExtensionContext): Promise<void
   } catch (error) {
     handleThemeError('enable transparent mode', error);
   }
+}
+
+async function enableTransparentDark(context: vscode.ExtensionContext): Promise<void> {
+  try {
+    const paths = resolveInstallPaths(vscode.env.appRoot);
+    patchMainJs(paths.mainJs, getPreferredEffect());
+    patchWorkbenchHtml(paths.workbenchHtml, DEFAULT_OPACITY);
+    patchWorkbenchJs(paths.workbenchJs);
+    await rememberCurrentThemeDark(context);
+    await setWorkbenchTheme(THEME_LABEL_DARK);
+
+    void vscode.window.showInformationMessage(
+      'Ultraview Transparent Dark is enabled. Fully close and reopen the IDE to apply translucency.',
+    );
+  } catch (error) {
+    handleThemeError('enable transparent dark mode', error);
+  }
+}
+
+async function disableTransparentDark(context: vscode.ExtensionContext): Promise<void> {
+  try {
+    const paths = resolveInstallPaths(vscode.env.appRoot);
+    const removedResults = [
+      unpatchMainJs(paths.mainJs),
+      unpatchWorkbenchHtml(paths.workbenchHtml),
+      unpatchWorkbenchJs(paths.workbenchJs),
+    ];
+    const removed = removedResults.some(Boolean);
+
+    await restorePreviousThemeDark(context);
+
+    if (!removed) {
+      void vscode.window.showInformationMessage(
+        'Ultraview Transparent Dark was already disabled. Your previous theme has been restored if it was saved.',
+      );
+      return;
+    }
+
+    void vscode.window.showInformationMessage(
+      'Ultraview Transparent Dark is disabled. Fully close and reopen the IDE to remove translucency.',
+    );
+  } catch (error) {
+    handleThemeError('disable transparent dark mode', error);
+  }
+}
+
+async function rememberCurrentThemeDark(context: vscode.ExtensionContext): Promise<void> {
+  const currentTheme = getCurrentTheme();
+  if (currentTheme && currentTheme !== THEME_LABEL_DARK) {
+    await context.globalState.update(STATE_PREVIOUS_THEME_DARK, currentTheme);
+  }
+}
+
+async function restorePreviousThemeDark(context: vscode.ExtensionContext): Promise<void> {
+  const currentTheme = getCurrentTheme();
+  const previousTheme = context.globalState.get<string>(STATE_PREVIOUS_THEME_DARK);
+  const nextTheme =
+    previousTheme && previousTheme !== THEME_LABEL_DARK
+      ? previousTheme
+      : currentTheme === THEME_LABEL_DARK
+        ? DEFAULT_FALLBACK_THEME
+        : undefined;
+
+  if (nextTheme) {
+    await setWorkbenchTheme(nextTheme);
+  }
+
+  await context.globalState.update(STATE_PREVIOUS_THEME_DARK, undefined);
 }
 
 async function disableTransparent(context: vscode.ExtensionContext): Promise<void> {
