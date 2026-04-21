@@ -381,6 +381,27 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         background: color-mix(in srgb, var(--surface) 94%, transparent) !important;
         border-top: 1px solid var(--border) !important;
       }
+      .tlui-menu-zone {
+        padding: 6px !important;
+        border-radius: 16px !important;
+        border: 1px solid var(--border) !important;
+        background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
+        box-shadow: 0 12px 30px rgba(0,0,0,.18) !important;
+      }
+      .tlui-menu-zone .tlui-buttons__horizontal {
+        gap: 2px !important;
+      }
+      .tlui-menu-zone .tlui-button,
+      .tlui-page-menu__trigger,
+      .tlui-page-menu__header .tlui-button {
+        background: transparent !important;
+        color: var(--text) !important;
+      }
+      .tlui-menu-zone .tlui-button:hover,
+      .tlui-page-menu__trigger:hover,
+      .tlui-page-menu__header .tlui-button:hover {
+        background: var(--surface2) !important;
+      }
       .tlui-layout__left { background: color-mix(in srgb, var(--surface) 94%, transparent) !important; }
       .tlui-layout__top,
       .tlui-layout__bottom,
@@ -454,29 +475,37 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tlui-style-panel__section + .tlui-style-panel__section {
         border-top: 1px solid var(--border) !important;
       }
-      .tlui-style-panel .tlui-button,
+      .tlui-style-panel .tlui-button:not(.tlui-button-grid__button),
       .tlui-style-panel .tlui-menu__button,
       .tlui-style-panel .tlui-popover__button,
-      .tlui-page-menu .tlui-button,
+      .tlui-page-menu .tlui-button:not(.tlui-button-grid__button),
       .tlui-page-menu .tlui-menu__button,
       .tlui-page-menu .tlui-popover__button {
         color: var(--text) !important;
         background: transparent !important;
       }
-      .tlui-style-panel .tlui-button:hover,
+      .tlui-style-panel .tlui-button:not(.tlui-button-grid__button):hover,
       .tlui-style-panel .tlui-menu__button:hover,
       .tlui-style-panel .tlui-popover__button:hover,
-      .tlui-page-menu .tlui-button:hover,
+      .tlui-page-menu .tlui-button:not(.tlui-button-grid__button):hover,
       .tlui-page-menu .tlui-menu__button:hover,
       .tlui-page-menu .tlui-popover__button:hover {
         background: var(--surface2) !important;
       }
-      .tlui-style-panel [data-state='open'],
-      .tlui-style-panel [aria-checked='true'],
-      .tlui-style-panel [aria-selected='true'],
-      .tlui-page-menu [data-state='open'],
-      .tlui-page-menu [aria-checked='true'],
-      .tlui-page-menu [aria-selected='true'] {
+      .tlui-style-panel .tlui-button-grid__button {
+        background: transparent !important;
+        border-radius: 12px !important;
+      }
+      .tlui-style-panel .tlui-button-grid__button:hover {
+        background: transparent !important;
+        filter: brightness(1.08);
+      }
+      .tlui-style-panel :not(.tlui-button-grid__button)[data-state='open'],
+      .tlui-style-panel :not(.tlui-button-grid__button)[aria-checked='true'],
+      .tlui-style-panel :not(.tlui-button-grid__button)[aria-selected='true'],
+      .tlui-page-menu :not(.tlui-button-grid__button)[data-state='open'],
+      .tlui-page-menu :not(.tlui-button-grid__button)[aria-checked='true'],
+      .tlui-page-menu :not(.tlui-button-grid__button)[aria-selected='true'] {
         background: color-mix(in srgb, var(--surface2) 88%, transparent) !important;
       }
       .tlui-kbd {
