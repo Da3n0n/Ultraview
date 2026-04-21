@@ -104,12 +104,12 @@ function isDarkMode(): boolean {
   return luminance < 0.5;
 }
 
-function scheduleAutoSave(drawingId: string): void {
+function scheduleAutoSave(drawingId: string, store: ReturnType<typeof createTLStore>): void {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      if (!currentStore) return;
-        const content = JSON.stringify(getSnapshot(currentStore));
+      if (!store) return;
+      const content = JSON.stringify(getSnapshot(store));
       if (content !== lastSavedContent) {
         lastSavedContent = content;
         getVscode().postMessage({ type: 'saveDrawing', id: drawingId, content });
@@ -406,12 +406,14 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
     container.style.height = '100%';
 
     const drawing = state.drawings.find(d => d.id === state.activeDrawingId);
-    currentStore = createStore(drawing?.tldrawContent);
+    const newStore = createStore(drawing?.tldrawContent);
+    currentStore = newStore;
     lastSavedContent = drawing?.tldrawContent ?? null;
-    mountTldraw(container, currentStore);
+    mountTldraw(container, newStore);
 
-    currentStore?.listen(() => {
-      if (state.activeDrawingId) scheduleAutoSave(state.activeDrawingId);
+    const drawingId = state.activeDrawingId;
+    newStore.listen(() => {
+      scheduleAutoSave(drawingId, newStore);
     });
   }
 
