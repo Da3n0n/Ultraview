@@ -1,6 +1,6 @@
 import * as React from 'react';
 import * as ReactDOM from 'react-dom/client';
-import { Tldraw, createTLStore } from 'tldraw';
+import { Tldraw, createTLStore, getSnapshot } from 'tldraw';
 
 import 'tldraw/tldraw.css';
 
@@ -109,7 +109,7 @@ function scheduleAutoSave(drawingId: string): void {
   saveTimer = setTimeout(() => {
     try {
       if (!currentStore) return;
-      const content = JSON.stringify(currentStore.getSnapshot());
+        const content = JSON.stringify(getSnapshot(currentStore));
       if (content !== lastSavedContent) {
         lastSavedContent = content;
         getVscode().postMessage({ type: 'saveDrawing', id: drawingId, content });
