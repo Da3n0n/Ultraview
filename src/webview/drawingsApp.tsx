@@ -216,6 +216,8 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         padding:10px 12px;
         border-bottom:1px solid var(--border);
         background:var(--surface);
+        position:relative;
+        z-index:1000;
       }
       .tabs-scroll {
         flex:1;
@@ -287,6 +289,7 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .topbar-actions {
         position:relative;
         flex:0 0 auto;
+        z-index:1001;
       }
       .icon-btn {
         width:34px;
@@ -314,7 +317,7 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         border-radius:12px;
         background:var(--surface);
         box-shadow:0 10px 30px rgba(0,0,0,.24);
-        z-index:10;
+        z-index:1002;
       }
       .add-menu.hidden { display:none; }
       .add-menu-item {
@@ -353,14 +356,44 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
       .tl-container { background: var(--vscode-editor-background) !important; }
       .tl-background { background: var(--vscode-editor-background) !important; }
       .tl-grid-dot { fill: var(--border) !important; }
-      .tl-header { background: var(--surface) !important; border-bottom: 1px solid var(--border) !important; }
-      .tl-app-bar { background: var(--surface) !important; border-bottom: 1px solid var(--border) !important; }
-      .tl-bottombar { background: var(--surface) !important; border-top: 1px solid var(--border) !important; }
-      .tlui-layout__left { background: var(--surface) !important; }
+      .tlui-layout {
+        --tl-color-panel: var(--surface) !important;
+        --tl-color-low: var(--surface2) !important;
+        --tl-color-muted-1: color-mix(in srgb, var(--surface) 88%, white 12%) !important;
+        --tl-color-muted-2: color-mix(in srgb, var(--surface) 78%, white 22%) !important;
+        --tl-color-overlay: rgba(0, 0, 0, 0.18) !important;
+        --tl-color-text: var(--text) !important;
+        --tl-color-text-3: var(--muted) !important;
+        --tl-color-primary: var(--accent) !important;
+        --tl-color-selected: color-mix(in srgb, var(--accent) 24%, transparent) !important;
+        --tl-color-background: var(--vscode-editor-background) !important;
+      }
+      .tl-header {
+        background: color-mix(in srgb, var(--surface) 94%, transparent) !important;
+        border-bottom: 1px solid var(--border) !important;
+        backdrop-filter: none !important;
+      }
+      .tl-app-bar {
+        background: color-mix(in srgb, var(--surface) 94%, transparent) !important;
+        border-bottom: 1px solid var(--border) !important;
+      }
+      .tl-bottombar {
+        background: color-mix(in srgb, var(--surface) 94%, transparent) !important;
+        border-top: 1px solid var(--border) !important;
+      }
+      .tlui-layout__left { background: color-mix(in srgb, var(--surface) 94%, transparent) !important; }
+      .tlui-layout__top,
+      .tlui-layout__bottom,
+      .tlui-layout__left,
+      .tlui-layout__right {
+        backdrop-filter: none !important;
+      }
       .tl-panel, .tl-style-panel, .tl-layers {
         background: var(--surface) !important;
         border-color: var(--border) !important;
         backdrop-filter: none !important;
+        border-radius: 16px !important;
+        box-shadow: 0 14px 40px rgba(0,0,0,.22) !important;
       }
       .tl-context-bar { background: var(--surface) !important; backdrop-filter: none !important; }
       .tl-blob { display: none !important; }
@@ -371,6 +404,81 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
         background: var(--surface) !important;
         border: 1px solid var(--border) !important;
         backdrop-filter: none !important;
+        border-radius: 14px !important;
+        box-shadow: 0 16px 44px rgba(0,0,0,.26) !important;
+      }
+      .tlui-button,
+      .tlui-toolbar__tools__button,
+      .tlui-menu__button,
+      .tlui-popover__button,
+      .tlui-kbd,
+      .tlui-toolbar__extras__controls button {
+        border-radius: 12px !important;
+      }
+      .tlui-button {
+        color: var(--text) !important;
+      }
+      .tlui-button:hover,
+      .tlui-menu__button:hover,
+      .tlui-popover__button:hover,
+      .tlui-toolbar__tools__button:hover {
+        background: color-mix(in srgb, var(--accent) 14%, var(--surface) 86%) !important;
+      }
+      .tlui-button[data-state='open'],
+      .tlui-button[aria-checked='true'],
+      .tlui-button[aria-selected='true'],
+      .tlui-toolbar__tools__button[aria-checked='true'],
+      .tlui-menu__button[aria-checked='true'] {
+        background: color-mix(in srgb, var(--accent) 22%, var(--surface) 78%) !important;
+        color: var(--text) !important;
+      }
+      .tlui-toolbar__tools {
+        padding: 6px !important;
+        border-radius: 16px !important;
+        border: 1px solid var(--border) !important;
+        background: color-mix(in srgb, var(--surface) 96%, transparent) !important;
+        box-shadow: 0 12px 30px rgba(0,0,0,.18) !important;
+      }
+      .tlui-toolbar__tools__button {
+        color: var(--text) !important;
+      }
+      .tlui-style-panel__section,
+      .tlui-help-menu,
+      .tlui-navigation-panel,
+      .tlui-actions-menu,
+      .tlui-page-menu {
+        border-radius: 14px !important;
+      }
+      .tlui-menu__group + .tlui-menu__group,
+      .tlui-style-panel__section + .tlui-style-panel__section {
+        border-top: 1px solid var(--border) !important;
+      }
+      .tlui-kbd {
+        background: var(--surface2) !important;
+        border: 1px solid var(--border) !important;
+        color: var(--muted) !important;
+        box-shadow: none !important;
+      }
+      .tlui-menu,
+      .tlui-style-panel,
+      .tlui-help-menu,
+      .tlui-actions-menu {
+        color: var(--text) !important;
+      }
+      .tlui-slider__track,
+      .tlui-slider__thumb {
+        color: var(--accent) !important;
+      }
+      .tlui-minimap {
+        border-radius: 16px !important;
+        overflow: hidden !important;
+        border: 1px solid var(--border) !important;
+        background: var(--surface) !important;
+      }
+      .tlui-navigation-panel {
+        background: var(--surface) !important;
+        border: 1px solid var(--border) !important;
+        box-shadow: 0 12px 28px rgba(0,0,0,.18) !important;
       }
       ::-webkit-scrollbar { width: 8px; height: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
