@@ -112,7 +112,7 @@ export class DrawingProvider implements vscode.WebviewViewProvider {
         this._handleRenameDrawing(msg, webview);
         break;
       case 'saveDrawing':
-        this._handleSaveDrawing(msg);
+        this._handleSaveDrawing(msg, webview);
         break;
       case 'switchDrawing':
         this._handleSwitchDrawing(msg, webview);
@@ -174,10 +174,14 @@ export class DrawingProvider implements vscode.WebviewViewProvider {
     void this._sendDrawings(webview);
   }
 
-  private _handleSaveDrawing(msg: Record<string, unknown>): void {
+  private _handleSaveDrawing(msg: Record<string, unknown>, webview: vscode.Webview): void {
     const id = String(msg.id);
     const content = String(msg.content ?? '');
     this.drawingManager.saveDrawingContent(id, content);
+    const drawing = this.drawingManager.getDrawing(id);
+    if (drawing) {
+      void webview.postMessage({ type: 'drawingSaved', drawing });
+    }
   }
 
   private _handleSwitchDrawing(msg: Record<string, unknown>, webview: vscode.Webview): void {
@@ -244,9 +248,15 @@ export class DrawingProvider implements vscode.WebviewViewProvider {
           drawingManager.renameDrawing(String(msg.id), String(msg.name));
           void panel.webview.postMessage({ type: 'drawings', drawings: drawingManager.listSidebarDrawings() });
           break;
-        case 'saveDrawing':
-          drawingManager.saveDrawingContent(String(msg.id), String(msg.content ?? ''));
+        case 'saveDrawing': {
+          const id = String(msg.id);
+          drawingManager.saveDrawingContent(id, String(msg.content ?? ''));
+          const drawing = drawingManager.getDrawing(id);
+          if (drawing) {
+            void panel.webview.postMessage({ type: 'drawingSaved', drawing });
+          }
           break;
+        }
         case 'switchDrawing':
           void panel.webview.postMessage({ type: 'currentDrawing', drawing: drawingManager.getDrawing(String(msg.id)) });
           break;
