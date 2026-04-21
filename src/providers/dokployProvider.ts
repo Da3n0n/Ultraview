@@ -7,7 +7,7 @@ const DOKPLOY_PROFILES_KEY = 'ultraview.dokploy.profiles.v1';
 const DOKPLOY_ACTIVE_PROFILE_KEY = 'ultraview.dokploy.activeProfile.v1';
 const DOKPLOY_PROFILE_CACHE_KEY = 'ultraview.dokploy.profileCache.v1';
 const DOKPLOY_TOKEN_SECRET_PREFIX = 'ultraview.dokploy.token.';
-const DOKPLOY_CACHE_STALE_MS = 2 * 60 * 1000;
+const DOKPLOY_CACHE_STALE_MS = 5 * 1000;
 
 interface DokployProfile {
     id: string;
@@ -19,16 +19,35 @@ interface DokployServiceState {
     id: string;
     name: string;
     projectName: string;
-    type: 'application' | 'compose';
+    type: 'application' | 'compose' | 'database';
+    serviceKind?: string;
+    serverId?: string;
     domains: string[];
     status: string;
     statusTone: 'success' | 'warning' | 'danger' | 'info' | 'muted';
     updatedAt?: number;
 }
 
+interface DokployServerMetricState {
+    serverId: string;
+    serverName: string;
+    cpuPercent?: number;
+    memoryPercent?: number;
+    memoryUsedBytes?: number;
+    memoryTotalBytes?: number;
+    diskPercent?: number;
+    diskReadBytes?: number;
+    diskWriteBytes?: number;
+    networkRxBytes?: number;
+    networkTxBytes?: number;
+    updatedAt?: number;
+}
+
 interface DokployProfileCache {
     connected: boolean;
+    projectCount?: number;
     services: DokployServiceState[];
+    serverMetrics?: DokployServerMetricState[];
     version?: string;
     lastSyncedAt?: number;
     lastError?: string;
@@ -44,7 +63,28 @@ interface DokployServiceCandidate {
     id: string;
     name: string;
     projectName: string;
-    type: 'application' | 'compose';
+    type: 'application' | 'compose' | 'database';
+    serviceKind?: string;
+    serverId?: string;
+}
+
+interface CandidateScanContext {
+    projectName?: string;
+    parentKey?: string;
+}
+
+interface DokployProjectRef {
+    id: string;
+    name: string;
+}
+
+interface DokployServerRef {
+    id: string;
+    name: string;
+    ipAddress?: string;
+    metricsPort?: number;
+    metricsToken?: string;
+    metricsUrl?: string;
 }
 
 function getDokployConfiguration(): vscode.WorkspaceConfiguration {
@@ -184,7 +224,10 @@ function sanitizeServiceCache(value: unknown): DokployServiceState | undefined {
     const id = readString(record.id);
     const name = readString(record.name);
     const projectName = readString(record.projectName);
-    const type = record.type === 'application' || record.type === 'compose' ? record.type : undefined;
+    const type =
+        record.type === 'application' || record.type === 'compose' || record.type === 'database'
+            ? record.type
+            : undefined;
     if (!id || !name || !projectName || !type) {
         return undefined;
     }
@@ -200,6 +243,8 @@ function sanitizeServiceCache(value: unknown): DokployServiceState | undefined {
         name,
         projectName,
         type,
+        serviceKind: readString(record.serviceKind),
+        serverId: readString(record.serverId),
         domains,
         status,
         statusTone:
@@ -210,6 +255,34 @@ function sanitizeServiceCache(value: unknown): DokployServiceState | undefined {
             record.statusTone === 'muted'
                 ? record.statusTone
                 : normalizeStatusTone(status),
+        updatedAt: readTimestamp(record.updatedAt),
+    };
+}
+
+function sanitizeServerMetricCache(value: unknown): DokployServerMetricState | undefined {
+    const record = asRecord(value);
+    if (!record) {
+        return undefined;
+    }
+
+    const serverId = readString(record.serverId);
+    const serverName = readString(record.serverName);
+    if (!serverId || !serverName) {
+        return undefined;
+    }
+
+    return {
+        serverId,
+        serverName,
+        cpuPercent: readNumber(record.cpuPercent),
+        memoryPercent: readNumber(record.memoryPercent),
+        memoryUsedBytes: readNumber(record.memoryUsedBytes),
+        memoryTotalBytes: readNumber(record.memoryTotalBytes),
+        diskPercent: readNumber(record.diskPercent),
+        diskReadBytes: readNumber(record.diskReadBytes),
+        diskWriteBytes: readNumber(record.diskWriteBytes),
+        networkRxBytes: readNumber(record.networkRxBytes),
+        networkTxBytes: readNumber(record.networkTxBytes),
         updatedAt: readTimestamp(record.updatedAt),
     };
 }
@@ -225,10 +298,17 @@ function sanitizeProfileCache(value: unknown): DokployProfileCache | undefined {
               .map((entry) => sanitizeServiceCache(entry))
               .filter((entry): entry is DokployServiceState => !!entry)
         : [];
+    const serverMetrics = Array.isArray(record.serverMetrics)
+        ? record.serverMetrics
+              .map((entry) => sanitizeServerMetricCache(entry))
+              .filter((entry): entry is DokployServerMetricState => !!entry)
+        : [];
 
     return {
         connected: !!record.connected,
+        projectCount: readNumber(record.projectCount),
         services,
+        serverMetrics,
         version: readString(record.version),
         lastSyncedAt: readTimestamp(record.lastSyncedAt),
         lastError: readString(record.lastError),
@@ -477,60 +557,197 @@ function summarizeDeploymentStatus(payload: unknown): { status: string; updatedA
 function extractServiceCandidates(payload: unknown): DokployServiceCandidate[] {
     const seen = new Set<string>();
     const services: DokployServiceCandidate[] = [];
-    const projects = Array.isArray(payload) ? payload : [payload];
+    const serviceKeys = new Set([
+        'applications',
+        'application',
+        'composes',
+        'compose',
+        'services',
+        'service',
+    ]);
 
-    for (const projectValue of projects) {
-        const project = asRecord(projectValue);
-        if (!project) {
-            continue;
+    function resolveProjectName(
+        record: Record<string, unknown>,
+        context: CandidateScanContext
+    ): string {
+        return (
+            pickString(record, ['projectName', 'project']) ||
+            context.projectName ||
+            pickString(record, ['name']) ||
+            'Project'
+        );
+    }
+
+    function pushCandidate(
+        type: DokployServiceCandidate['type'],
+        id: string,
+        item: Record<string, unknown>,
+        projectName: string,
+        serviceKind?: string
+    ): void {
+        const uniqueId = `${type}:${id}`;
+        if (seen.has(uniqueId)) {
+            return;
         }
 
-        const projectName = pickString(project, ['name', 'projectName']) || 'Project';
-        for (const value of Object.values(project)) {
-            if (!Array.isArray(value)) {
+        seen.add(uniqueId);
+        services.push({
+            id,
+            name: pickString(item, ['name', 'appName', 'slug', 'serviceName']) || id,
+            projectName,
+            type,
+            serviceKind,
+            serverId: pickString(item, ['serverId']),
+        });
+    }
+
+    function inferType(
+        item: Record<string, unknown>,
+        context: CandidateScanContext
+    ): DokployServiceCandidate['type'] | undefined {
+        if (readString(item.applicationId)) {
+            return 'application';
+        }
+        if (readString(item.composeId)) {
+            return 'compose';
+        }
+        if (
+            readString(item.postgresId) ||
+            readString(item.mysqlId) ||
+            readString(item.mariadbId) ||
+            readString(item.mongoId) ||
+            readString(item.redisId)
+        ) {
+            return 'database';
+        }
+        if (readString(item.appId)) {
+            return 'application';
+        }
+        if (readString(item.serviceId)) {
+            return 'compose';
+        }
+
+        const parentKey = (context.parentKey || '').toLowerCase();
+        if (parentKey.includes('application')) {
+            return 'application';
+        }
+        if (parentKey.includes('compose')) {
+            return 'compose';
+        }
+
+        const serviceType = readString(item.type)?.toLowerCase();
+        if (serviceType === 'application' || serviceType === 'compose' || serviceType === 'database') {
+            return serviceType;
+        }
+        if (serviceType?.includes('docker-compose') || serviceType?.includes('compose')) {
+            return 'compose';
+        }
+        if (
+            serviceType?.includes('postgres') ||
+            serviceType?.includes('mysql') ||
+            serviceType?.includes('mariadb') ||
+            serviceType?.includes('mongo') ||
+            serviceType?.includes('redis') ||
+            serviceType?.includes('database')
+        ) {
+            return 'database';
+        }
+        if (readString(item.appName) && parentKey.includes('service')) {
+            return 'application';
+        }
+
+        return undefined;
+    }
+
+    function readCandidateId(
+        item: Record<string, unknown>,
+        type: DokployServiceCandidate['type']
+    ): string | undefined {
+        if (type === 'application') {
+            return readString(item.applicationId) || readString(item.appId) || readString(item.id);
+        }
+        if (type === 'compose') {
+            return readString(item.composeId) || readString(item.serviceId) || readString(item.id);
+        }
+        return (
+            readString(item.postgresId) ||
+            readString(item.mysqlId) ||
+            readString(item.mariadbId) ||
+            readString(item.mongoId) ||
+            readString(item.redisId) ||
+            readString(item.databaseId) ||
+            readString(item.id)
+        );
+    }
+
+    function inferServiceKind(item: Record<string, unknown>, context: CandidateScanContext): string | undefined {
+        const parentKey = (context.parentKey || '').toLowerCase();
+        return (
+            pickString(item, ['serviceKind', 'databaseType', 'type']) ||
+            (parentKey.includes('postgres')
+                ? 'Postgres'
+                : parentKey.includes('mysql')
+                  ? 'MySQL'
+                  : parentKey.includes('mariadb')
+                    ? 'MariaDB'
+                    : parentKey.includes('mongo')
+                      ? 'MongoDB'
+                      : parentKey.includes('redis')
+                        ? 'Redis'
+                        : undefined)
+        );
+    }
+
+    function scan(value: unknown, context: CandidateScanContext = {}): void {
+        if (Array.isArray(value)) {
+            for (const entry of value) {
+                scan(entry, context);
+            }
+            return;
+        }
+
+        const record = asRecord(value);
+        if (!record) {
+            return;
+        }
+
+        const projectName = resolveProjectName(record, context);
+        const type = inferType(record, context);
+        if (type === 'application') {
+            const id = readCandidateId(record, 'application');
+            if (id) {
+                pushCandidate('application', id, record, projectName, inferServiceKind(record, context));
+            }
+        } else if (type === 'compose') {
+            const id = readCandidateId(record, 'compose');
+            if (id) {
+                pushCandidate('compose', id, record, projectName, inferServiceKind(record, context));
+            }
+        } else if (type === 'database') {
+            const id = readCandidateId(record, 'database');
+            if (id) {
+                pushCandidate('database', id, record, projectName, inferServiceKind(record, context));
+            }
+        }
+
+        for (const [key, child] of Object.entries(record)) {
+            const nextContext: CandidateScanContext = {
+                projectName,
+                parentKey: key,
+            };
+
+            if (serviceKeys.has(key.toLowerCase()) && Array.isArray(child)) {
+                for (const entry of child) {
+                    scan(entry, nextContext);
+                }
                 continue;
             }
 
-            for (const itemValue of value) {
-                const item = asRecord(itemValue);
-                if (!item) {
-                    continue;
-                }
-
-                const applicationId = readString(item.applicationId);
-                if (applicationId) {
-                    const uniqueId = `application:${applicationId}`;
-                    if (!seen.has(uniqueId)) {
-                        seen.add(uniqueId);
-                        services.push({
-                            id: applicationId,
-                            name:
-                                pickString(item, ['name', 'appName', 'slug', 'serviceName']) ||
-                                applicationId,
-                            projectName,
-                            type: 'application',
-                        });
-                    }
-                }
-
-                const composeId = readString(item.composeId);
-                if (composeId) {
-                    const uniqueId = `compose:${composeId}`;
-                    if (!seen.has(uniqueId)) {
-                        seen.add(uniqueId);
-                        services.push({
-                            id: composeId,
-                            name:
-                                pickString(item, ['name', 'appName', 'slug', 'serviceName']) ||
-                                composeId,
-                            projectName,
-                            type: 'compose',
-                        });
-                    }
-                }
-            }
+            scan(child, nextContext);
         }
     }
+
+    scan(payload);
 
     return services.sort((left, right) => {
         return (
@@ -539,6 +756,494 @@ function extractServiceCandidates(payload: unknown): DokployServiceCandidate[] {
             left.type.localeCompare(right.type)
         );
     });
+}
+
+function extractSearchCandidates(
+    payload: unknown,
+    type: DokployServiceCandidate['type']
+): DokployServiceCandidate[] {
+    const items = Array.isArray(payload)
+        ? payload
+        : Array.isArray(asRecord(payload)?.items)
+          ? (asRecord(payload)?.items as unknown[])
+          : Array.isArray(asRecord(payload)?.data)
+            ? (asRecord(payload)?.data as unknown[])
+            : [];
+
+    const candidates: DokployServiceCandidate[] = [];
+    for (const entry of items) {
+        const item = asRecord(entry);
+        if (!item) {
+            continue;
+        }
+
+        const id =
+            type === 'application'
+                ? readString(item.applicationId) || readString(item.appId) || readString(item.id)
+                : type === 'compose'
+                  ? readString(item.composeId) || readString(item.serviceId) || readString(item.id)
+                  : readString(item.databaseId) || readString(item.id);
+
+        if (!id) {
+            continue;
+        }
+
+        candidates.push({
+            id,
+            name: pickString(item, ['name', 'appName', 'slug', 'serviceName']) || id,
+            projectName: pickString(item, ['projectName', 'project', 'environmentName']) || 'Project',
+            type,
+            serviceKind:
+                type === 'database'
+                    ? pickString(item, ['databaseType', 'type']) || 'Database'
+                    : pickString(item, ['type']),
+        });
+    }
+
+    return candidates;
+}
+
+function extractProjectRefs(payload: unknown): DokployProjectRef[] {
+    const projects = Array.isArray(payload) ? payload : [];
+
+    return projects
+        .map((entry) => {
+            const item = asRecord(entry);
+            if (!item) {
+                return undefined;
+            }
+
+            const id = readString(item.projectId) || readString(item.id);
+            if (!id) {
+                return undefined;
+            }
+
+            return {
+                id,
+                name: pickString(item, ['name', 'projectName']) || 'Project',
+            } satisfies DokployProjectRef;
+        })
+        .filter((entry): entry is DokployProjectRef => !!entry);
+}
+
+function extractServerRefs(payload: unknown): DokployServerRef[] {
+    const servers = Array.isArray(payload) ? payload : [];
+    const refs: DokployServerRef[] = [];
+
+    for (const entry of servers) {
+        const item = asRecord(entry);
+        if (!item) {
+            continue;
+        }
+
+        const id = readString(item.serverId) || readString(item.id);
+        if (!id) {
+            continue;
+        }
+
+        const metricsConfig = asRecord(item.metricsConfig);
+        const serverMetrics = asRecord(metricsConfig?.server);
+        const monitoringConfig =
+            asRecord(item.monitoring) ||
+            asRecord(item.monitoringConfig) ||
+            asRecord(metricsConfig?.monitoring);
+        const rawUrl =
+            pickString(item, ['metricsUrl']) ||
+            pickString(item, ['monitoringUrl']) ||
+            pickString(serverMetrics ?? {}, ['url']) ||
+            pickString(serverMetrics ?? {}, ['baseUrl']) ||
+            pickString(monitoringConfig ?? {}, ['url', 'baseUrl']);
+        const ipAddress = pickString(item, ['ipAddress', 'host', 'ip', 'address']);
+        const metricsPort =
+            readNumber(serverMetrics?.port) ||
+            readNumber(monitoringConfig?.port) ||
+            readNumber(item.metricsPort) ||
+            4500;
+
+        let metricsUrl = rawUrl;
+        if (!metricsUrl && ipAddress) {
+            const host = /^https?:\/\//i.test(ipAddress) ? ipAddress : `http://${ipAddress}`;
+            metricsUrl = `${host.replace(/\/$/, '')}:${metricsPort}`;
+        }
+
+        refs.push({
+            id,
+            name: pickString(item, ['name']) || 'Server',
+            ipAddress,
+            metricsPort,
+            metricsToken:
+                pickString(item, ['metricsToken']) ||
+                pickString(item, ['monitoringToken']) ||
+                pickString(serverMetrics ?? {}, ['token']) ||
+                pickString(metricsConfig ?? {}, ['token']) ||
+                pickString(monitoringConfig ?? {}, ['token']),
+            metricsUrl,
+        });
+    }
+
+    return refs;
+}
+
+function collectNumericValues(value: unknown, out: Array<{ key: string; value: number }>): void {
+    if (Array.isArray(value)) {
+        value.forEach((entry) => collectNumericValues(entry, out));
+        return;
+    }
+
+    const record = asRecord(value);
+    if (!record) {
+        return;
+    }
+
+    for (const [key, child] of Object.entries(record)) {
+        const num = readNumber(child);
+        if (num !== undefined) {
+            out.push({ key: key.toLowerCase(), value: num });
+            continue;
+        }
+        collectNumericValues(child, out);
+    }
+}
+
+function normalizeMetricKey(value: string): string {
+    return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function readMetricSample(value: unknown): number | undefined {
+    const direct = readNumber(value);
+    if (direct !== undefined) {
+        return direct;
+    }
+
+    if (Array.isArray(value)) {
+        if (value.length === 2) {
+            const tupleSample = readNumber(value[1]);
+            if (tupleSample !== undefined) {
+                return tupleSample;
+            }
+        }
+        for (let index = value.length - 1; index >= 0; index -= 1) {
+            const sample = readMetricSample(value[index]);
+            if (sample !== undefined) {
+                return sample;
+            }
+        }
+        return undefined;
+    }
+
+    const record = asRecord(value);
+    if (!record) {
+        return undefined;
+    }
+
+    return (
+        readNumber(record.current) ??
+        readNumber(record.last) ??
+        readNumber(record.avg) ??
+        readMetricSample(record.value) ??
+        readMetricSample(record.values) ??
+        readMetricSample(record.data)
+    );
+}
+
+function collectStructuredMetricValues(value: unknown, out: Array<{ key: string; value: number }>): void {
+    if (Array.isArray(value)) {
+        value.forEach((entry) => collectStructuredMetricValues(entry, out));
+        return;
+    }
+
+    const record = asRecord(value);
+    if (!record) {
+        return;
+    }
+
+    const metricRecord = asRecord(record.metric);
+    const metricName =
+        pickString(metricRecord ?? {}, ['__name__', 'name', 'metric']) ||
+        pickString(record, ['name', 'metricName', 'seriesName']);
+    const sample =
+        readMetricSample(record.values) ??
+        readMetricSample(record.value) ??
+        readMetricSample(record.result) ??
+        readMetricSample(record.data);
+
+    if (metricName && sample !== undefined) {
+        out.push({ key: normalizeMetricKey(metricName), value: sample });
+    }
+
+    Object.values(record).forEach((child) => collectStructuredMetricValues(child, out));
+}
+
+function pickMetricValue(
+    values: Array<{ key: string; value: number }>,
+    patterns: string[]
+): number | undefined {
+    for (const pattern of patterns) {
+        const exact = values.find((entry) => entry.key === pattern);
+        if (exact) {
+            return exact.value;
+        }
+    }
+
+    for (const pattern of patterns) {
+        const partial = values.find((entry) => entry.key.includes(pattern));
+        if (partial) {
+            return partial.value;
+        }
+    }
+
+    return undefined;
+}
+
+function normalizePercent(value: number | undefined): number | undefined {
+    if (value === undefined || !Number.isFinite(value)) {
+        return undefined;
+    }
+    if (value <= 1) {
+        return value * 100;
+    }
+    return value;
+}
+
+function parseServerMetricState(server: DokployServerRef, payload: unknown): DokployServerMetricState | undefined {
+    const values: Array<{ key: string; value: number }> = [];
+    collectStructuredMetricValues(payload, values);
+    collectNumericValues(payload, values);
+    if (values.length === 0) {
+        return undefined;
+    }
+
+    const cpuPercent = normalizePercent(
+        pickMetricValue(values, [
+            'cpupercent',
+            'cpuusagepercent',
+            'cpuusage',
+            'cpu',
+            'cpuusageseconds',
+            'cpu_usage_percent',
+            'cpu_usage'
+        ])
+    );
+    const memoryPercent = normalizePercent(
+        pickMetricValue(values, [
+            'memorypercent',
+            'memoryusagepercent',
+            'memoryusagepercentage',
+            'memorypercentage',
+            'memoryusage_percentage',
+            'memory_percentage'
+        ])
+    );
+    const memoryUsedBytes = pickMetricValue(
+        values,
+        [
+            'memoryusedbytes',
+            'memoryusagebytes',
+            'memorybytes',
+            'memoryused',
+            'memory_usage_bytes',
+            'memory_working_set_bytes'
+        ]
+    );
+    const memoryTotalBytes = pickMetricValue(
+        values,
+        ['memorytotalbytes', 'memorylimitbytes', 'memorytotal', 'memory_limit_bytes']
+    );
+    const diskPercent = normalizePercent(
+        pickMetricValue(values, [
+            'diskpercent',
+            'diskusagepercent',
+            'diskusagepercentage',
+            'diskpercentage',
+            'diskusage_percentage',
+            'disk_percentage'
+        ])
+    );
+    const diskReadBytes = pickMetricValue(
+        values,
+        ['diskreadbytes', 'ioreadbytes', 'readbytes', 'disk_read_bytes', 'disk_read_bytes_total']
+    );
+    const diskWriteBytes = pickMetricValue(
+        values,
+        ['diskwritebytes', 'iowritebytes', 'writebytes', 'disk_write_bytes', 'disk_write_bytes_total']
+    );
+    const networkRxBytes = pickMetricValue(
+        values,
+        [
+            'networkrxbytes',
+            'rxbytes',
+            'networkreceivebytes',
+            'receivedbytes',
+            'network_receive_bytes',
+            'network_receive_bytes_total'
+        ]
+    );
+    const networkTxBytes = pickMetricValue(
+        values,
+        [
+            'networktxbytes',
+            'txbytes',
+            'networktransmitbytes',
+            'sentbytes',
+            'network_transmit_bytes',
+            'network_transmit_bytes_total'
+        ]
+    );
+
+    if (
+        cpuPercent === undefined &&
+        memoryPercent === undefined &&
+        memoryUsedBytes === undefined &&
+        memoryTotalBytes === undefined &&
+        diskPercent === undefined &&
+        diskReadBytes === undefined &&
+        diskWriteBytes === undefined &&
+        networkRxBytes === undefined &&
+        networkTxBytes === undefined
+    ) {
+        return undefined;
+    }
+
+    return {
+        serverId: server.id,
+        serverName: server.name,
+        cpuPercent,
+        memoryPercent,
+        memoryUsedBytes,
+        memoryTotalBytes,
+        diskPercent,
+        diskReadBytes,
+        diskWriteBytes,
+        networkRxBytes,
+        networkTxBytes,
+        updatedAt: Date.now(),
+    };
+}
+
+async function fetchProfileServerMetrics(
+    profile: DokployProfile,
+    apiToken: string,
+    candidates: DokployServiceCandidate[]
+): Promise<DokployServerMetricState[]> {
+    const serverIds = Array.from(
+        new Set(candidates.map((candidate) => candidate.serverId).filter((value): value is string => !!value))
+    );
+    if (serverIds.length === 0) {
+        return [];
+    }
+
+    const serversPayload = await fetchDokployJson(profile, apiToken, 'server.all').catch(() => []);
+    const serverRefs = extractServerRefs(serversPayload);
+    const matchingServers = serverRefs.filter((server) => serverIds.includes(server.id));
+    const servers = (matchingServers.length ? matchingServers : serverRefs).filter(
+        (server) => !!server.metricsUrl && !!server.metricsToken
+    );
+    if (servers.length === 0) {
+        return [];
+    }
+
+    const metricResults = await Promise.allSettled(
+        servers.map((server) =>
+            fetchDokployJson(
+                profile,
+                apiToken,
+                `server.getServerMetrics?url=${encodeURIComponent(server.metricsUrl ?? '')}&token=${encodeURIComponent(server.metricsToken ?? '')}&dataPoints=20`
+            ).then((payload) => parseServerMetricState(server, payload))
+        )
+    );
+
+    return metricResults
+        .filter(
+            (result): result is PromiseFulfilledResult<DokployServerMetricState | undefined> =>
+                result.status === 'fulfilled'
+        )
+        .map((result) => result.value)
+        .filter((entry): entry is DokployServerMetricState => !!entry);
+}
+
+async function fetchServiceCandidates(
+    profile: DokployProfile,
+    apiToken: string
+): Promise<{ candidates: DokployServiceCandidate[]; projectCount?: number }> {
+    const projectsPayload = await fetchDokployJson(profile, apiToken, 'project.all');
+    const projects = extractProjectRefs(projectsPayload);
+    const projectCount = projects.length || (Array.isArray(projectsPayload) ? projectsPayload.length : undefined);
+
+    if (projects.length > 0) {
+        const projectAppResults = await Promise.allSettled(
+            projects.map((project) =>
+                fetchDokployJson(
+                    profile,
+                    apiToken,
+                    `project.app?projectId=${encodeURIComponent(project.id)}`
+                ).then((payload) => ({
+                    project,
+                    candidates: extractServiceCandidates(
+                        Array.isArray(payload)
+                            ? payload.map((entry) => {
+                                  const record = asRecord(entry);
+                                  return record ? { ...record, projectName: project.name } : entry;
+                              })
+                            : payload
+                    ),
+                }))
+            )
+        );
+
+        const projectAppCandidates = projectAppResults
+            .filter(
+                (
+                    result
+                ): result is PromiseFulfilledResult<{
+                    project: DokployProjectRef;
+                    candidates: DokployServiceCandidate[];
+                }> => result.status === 'fulfilled'
+            )
+            .flatMap((result) => result.value.candidates);
+
+        if (projectAppCandidates.length > 0) {
+            return {
+                projectCount,
+                candidates: projectAppCandidates.sort((left, right) => {
+                    return (
+                        left.projectName.localeCompare(right.projectName) ||
+                        left.name.localeCompare(right.name) ||
+                        left.type.localeCompare(right.type)
+                    );
+                }),
+            };
+        }
+    }
+
+    const projectCandidates = extractServiceCandidates(projectsPayload);
+    if (projectCandidates.length > 0) {
+        return { candidates: projectCandidates, projectCount };
+    }
+
+    const fallbackResults = await Promise.allSettled([
+        fetchDokployJson(profile, apiToken, 'application.search?limit=100'),
+        fetchDokployJson(profile, apiToken, 'compose.search?limit=100'),
+    ]);
+
+    const applicationCandidates =
+        fallbackResults[0].status === 'fulfilled'
+            ? extractSearchCandidates(fallbackResults[0].value, 'application')
+            : [];
+    const composeCandidates =
+        fallbackResults[1].status === 'fulfilled'
+            ? extractSearchCandidates(fallbackResults[1].value, 'compose')
+            : [];
+
+    return {
+        projectCount,
+        candidates: [...applicationCandidates, ...composeCandidates].sort((left, right) => {
+        return (
+            left.projectName.localeCompare(right.projectName) ||
+            left.name.localeCompare(right.name) ||
+            left.type.localeCompare(right.type)
+        );
+        }),
+    };
 }
 
 async function fetchDokployJson(
@@ -574,6 +1279,20 @@ async function fetchServiceState(
     apiToken: string,
     candidate: DokployServiceCandidate
 ): Promise<DokployServiceState> {
+    if (candidate.type === 'database') {
+        return {
+            id: candidate.id,
+            name: candidate.name,
+            projectName: candidate.projectName,
+            type: 'database',
+            serviceKind: candidate.serviceKind,
+            serverId: candidate.serverId,
+            domains: [],
+            status: candidate.serviceKind || 'Managed database',
+            statusTone: 'muted',
+        };
+    }
+
     const domainEndpoint =
         candidate.type === 'application'
             ? `domain.byApplicationId?applicationId=${encodeURIComponent(candidate.id)}`
@@ -604,6 +1323,8 @@ async function fetchServiceState(
         name: candidate.name,
         projectName: candidate.projectName,
         type: candidate.type,
+        serviceKind: candidate.serviceKind,
+        serverId: candidate.serverId,
         domains,
         status,
         statusTone: normalizeStatusTone(status),
@@ -1041,21 +1762,24 @@ export class DokployProvider implements vscode.WebviewViewProvider {
         await DokployProvider.refreshAllViews();
 
         try {
-            const [projectsPayload, versionPayload] = await Promise.all([
-                fetchDokployJson(profile, apiToken, 'project.all'),
+            const [serviceSnapshot, versionPayload] = await Promise.all([
+                fetchServiceCandidates(profile, apiToken),
                 fetchDokployJson(profile, apiToken, 'settings.getDokployVersion').catch(() => undefined),
             ]);
-
-            const candidates = extractServiceCandidates(projectsPayload);
-            const services = await Promise.all(
-                candidates.map((candidate) => fetchServiceState(profile, apiToken, candidate))
-            );
+            const [services, serverMetrics] = await Promise.all([
+                Promise.all(
+                    serviceSnapshot.candidates.map((candidate) => fetchServiceState(profile, apiToken, candidate))
+                ),
+                fetchProfileServerMetrics(profile, apiToken, serviceSnapshot.candidates).catch(() => []),
+            ]);
 
             const caches = readProfileCaches(this.context);
             const versionRecord = asRecord(versionPayload);
             caches[profile.id] = {
                 connected: true,
+                projectCount: serviceSnapshot.projectCount,
                 services,
+                serverMetrics,
                 version:
                     (versionRecord && pickString(versionRecord, ['version', 'dokployVersion'])) ||
                     readString(versionPayload),
