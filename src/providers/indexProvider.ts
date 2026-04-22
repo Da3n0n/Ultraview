@@ -57,7 +57,7 @@ export class IndexProvider implements vscode.CustomReadonlyEditorProvider {
           case 'ready': {
             initialize();
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables, dbSize, filePath, dbType });
+            panel.webview.postMessage({ type: 'schema', tables, dbSize, sourceLabel: filePath, dbType });
             break;
           }
           case 'getTableData': {

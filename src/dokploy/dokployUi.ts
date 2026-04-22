@@ -447,6 +447,11 @@ export function buildDokployHtml(isPanel: boolean): string {
     flex-direction: column;
     gap: 9px;
   }
+  .service-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
   .service-head {
     display: flex;
     align-items: flex-start;
@@ -737,6 +742,12 @@ function render() {
       if (action === 'auth') vscode.postMessage({ type: 'authProfileApi', profileId: profileId });
       if (action === 'disconnect') vscode.postMessage({ type: 'disconnectProfileApi', profileId: profileId });
       if (action === 'refresh-profile') vscode.postMessage({ type: 'refreshProfileData', profileId: profileId });
+      if (action === 'open-service-db') {
+        const serviceId = button.getAttribute('data-service-id');
+        if (serviceId) {
+          vscode.postMessage({ type: 'openServiceDatabase', profileId: profileId, serviceId: serviceId });
+        }
+      }
       if (action === 'open-domain') {
         const url = button.getAttribute('data-url');
         if (url) window.open(url, '_blank');
@@ -777,12 +788,19 @@ function renderProfileBody(profile, cache, services, hasToken, isRefreshing, isA
     const isProjectExpanded = !!expandedProjectIds[projectKey];
     const serviceCards = project.services.map(function(service) {
       const domains = Array.isArray(service.domains) ? service.domains : [];
+      const canOpenDb = service &&
+        service.type === 'database' &&
+        typeof service.serviceKind === 'string' &&
+        service.serviceKind.toLowerCase().includes('postgres');
       const domainHtml = domains.length
         ? domains.map(function(domain) {
             const href = buildDomainHref(domain);
             return '<a class="domain-link" data-action="open-domain" data-id="' + escAttr(profile.id) + '" data-url="' + escAttr(href) + '" href="' + escAttr(href) + '">' + escHtml(domain) + '</a>';
           }).join('')
         : '<span class="domain-empty">No domains linked</span>';
+      const actionHtml = canOpenDb
+        ? '<div class="service-actions"><button class="btn" data-action="open-service-db" data-id="' + escAttr(profile.id) + '" data-service-id="' + escAttr(service.id) + '">Open DB</button></div>'
+        : '';
 
       return '' +
         '<div class="service-card">' +
@@ -794,6 +812,7 @@ function renderProfileBody(profile, cache, services, hasToken, isRefreshing, isA
             '<span class="status-pill ' + escAttr(service.statusTone || 'muted') + '">' + escHtml(service.status || 'Unknown') + '</span>' +
           '</div>' +
           '<div class="domain-list">' + domainHtml + '</div>' +
+          actionHtml +
           (service.updatedAt ? '<div class="meta-line">Updated ' + escHtml(formatTime(service.updatedAt)) + '</div>' : '') +
         '</div>';
     }).join('');

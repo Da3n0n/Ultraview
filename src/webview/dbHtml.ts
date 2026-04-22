@@ -4,7 +4,8 @@ import { buildReactWebviewPage } from './shared/buildReactWebviewPage';
 export function buildDbHtml(
   extensionPath: string,
   webview: vscode.Webview,
-  dbType: string
+  dbType: string,
+  sourceLabel?: string
 ): string {
   return buildReactWebviewPage({
     extensionPath,
@@ -12,6 +13,6 @@ export function buildDbHtml(
     bundleName: 'db',
     title: `${dbType} Viewer`,
     loadingLabel: `Loading ${dbType} viewer...`,
-    initialState: { dbType },
+    initialState: { dbType, sourceLabel },
   });
 }

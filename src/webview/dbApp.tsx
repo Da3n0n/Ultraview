@@ -19,7 +19,7 @@ interface QueryState {
 interface SchemaState {
   tables: DbTable[];
   dbSize: number;
-  filePath: string;
+  sourceLabel: string;
   dbType: string;
 }
 
@@ -102,7 +102,7 @@ function App() {
         const nextSchema: SchemaState = {
           tables: message.tables,
           dbSize: message.dbSize,
-          filePath: message.filePath,
+          sourceLabel: message.sourceLabel,
           dbType: message.dbType,
         };
 
@@ -743,15 +743,15 @@ function App() {
                   </div>
                 </div>
                 <div className="db-card">
-                  <div className="db-card-title">File Size</div>
+                  <div className="db-card-title">Source Size</div>
                   <div className="db-stat-value">{formatBytes(schema?.dbSize)}</div>
-                  <div className="db-stat-sub">Source file footprint</div>
+                  <div className="db-stat-sub">Available when the source reports a size</div>
                 </div>
               </div>
 
               <div className="db-card">
-                <div className="db-card-title">Source File</div>
-                <div>{schema?.filePath ?? 'Loading...'}</div>
+                <div className="db-card-title">Source</div>
+                <div>{schema?.sourceLabel ?? initialState.sourceLabel ?? 'Loading...'}</div>
               </div>
             </div>
           </section>

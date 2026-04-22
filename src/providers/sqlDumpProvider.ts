@@ -97,7 +97,7 @@ export class SqlDumpProvider implements vscode.CustomReadonlyEditorProvider {
               columns: t.columns
             }));
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables: schema, dbSize, filePath, dbType: 'SQL Dump' });
+            panel.webview.postMessage({ type: 'schema', tables: schema, dbSize, sourceLabel: filePath, dbType: 'SQL Dump' });
             break;
           }
           case 'getTableData': {

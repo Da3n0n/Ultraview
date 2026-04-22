@@ -61,7 +61,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
               return { name, rowCount: null, columns: cols };
             });
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables, dbSize, filePath, dbType: 'SQLite' });
+            panel.webview.postMessage({ type: 'schema', tables, dbSize, sourceLabel: filePath, dbType: 'SQLite' });
             break;
           }
           case 'getTableData': {

@@ -46,7 +46,7 @@ export class AccessProvider implements vscode.CustomReadonlyEditorProvider {
               return { name, rowCount: tbl.getData().length, columns: cols };
             });
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables, dbSize, filePath, dbType: 'Access DB (.mdb/.accdb)' });
+            panel.webview.postMessage({ type: 'schema', tables, dbSize, sourceLabel: filePath, dbType: 'Access DB (.mdb/.accdb)' });
             break;
           }
           case 'getTableData': {

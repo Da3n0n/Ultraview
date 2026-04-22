@@ -2,6 +2,7 @@
 'use strict';
 
 const path = require('path');
+const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
 
 /** @type {import('webpack').Configuration} */
@@ -32,6 +33,9 @@ const config = {
     ]
   },
   plugins: [
+    new webpack.IgnorePlugin({
+      resourceRegExp: /^pg-native$/
+    }),
     new CopyPlugin({
       patterns: [
         {

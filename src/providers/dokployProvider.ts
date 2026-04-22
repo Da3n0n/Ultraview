@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { buildDokployHtml } from '../dokploy/dokployUi';
+import { PostgresProvider } from './postgresProvider';
 import { openUrlInVsCodeBrowser } from '../utils/browser';
 
 const DOKPLOY_CONFIG_KEY = 'dokploy.url';
@@ -26,6 +27,15 @@ interface DokployServiceState {
     status: string;
     statusTone: 'success' | 'warning' | 'danger' | 'info' | 'muted';
     updatedAt?: number;
+    databaseConnection?: DokployDatabaseConnectionHint;
+}
+
+interface DokployDatabaseConnectionHint {
+    host?: string;
+    port?: number;
+    database?: string;
+    user?: string;
+    ssl?: boolean;
 }
 
 interface DokployServerMetricState {
@@ -66,6 +76,7 @@ interface DokployServiceCandidate {
     type: 'application' | 'compose' | 'database';
     serviceKind?: string;
     serverId?: string;
+    databaseConnection?: DokployDatabaseConnectionHint;
 }
 
 interface CandidateScanContext {
@@ -122,6 +133,24 @@ function readNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function readBoolean(value: unknown): boolean | undefined {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'on', 'require', 'required'].includes(normalized)) {
+            return true;
+        }
+        if (['false', '0', 'no', 'off'].includes(normalized)) {
+            return false;
+        }
+    }
+
+    return undefined;
+}
+
 function readTimestamp(value: unknown): number | undefined {
     const numeric = readNumber(value);
     if (numeric !== undefined) {
@@ -150,6 +179,36 @@ function pickString(source: Record<string, unknown>, keys: string[]): string | u
 function pickTimestamp(source: Record<string, unknown>, keys: string[]): number | undefined {
     for (const key of keys) {
         const value = readTimestamp(source[key]);
+        if (value !== undefined) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+function pickNumber(source: Record<string, unknown>, keys: string[]): number | undefined {
+    for (const key of keys) {
+        const value = readNumber(source[key]);
+        if (value !== undefined) {
+            return value;
+        }
+
+        const text = readString(source[key]);
+        if (!text) {
+            continue;
+        }
+
+        const numeric = Number(text);
+        if (Number.isFinite(numeric)) {
+            return numeric;
+        }
+    }
+    return undefined;
+}
+
+function pickBoolean(source: Record<string, unknown>, keys: string[]): boolean | undefined {
+    for (const key of keys) {
+        const value = readBoolean(source[key]);
         if (value !== undefined) {
             return value;
         }
@@ -256,7 +315,29 @@ function sanitizeServiceCache(value: unknown): DokployServiceState | undefined {
                 ? record.statusTone
                 : normalizeStatusTone(status),
         updatedAt: readTimestamp(record.updatedAt),
+        databaseConnection: sanitizeDatabaseConnectionHint(record.databaseConnection),
     };
+}
+
+function sanitizeDatabaseConnectionHint(value: unknown): DokployDatabaseConnectionHint | undefined {
+    const record = asRecord(value);
+    if (!record) {
+        return undefined;
+    }
+
+    const port = pickNumber(record, ['port']);
+    const ssl = pickBoolean(record, ['ssl']);
+    const hint: DokployDatabaseConnectionHint = {
+        host: pickString(record, ['host']),
+        port,
+        database: pickString(record, ['database']),
+        user: pickString(record, ['user']),
+        ssl,
+    };
+
+    return hint.host || hint.port || hint.database || hint.user || hint.ssl !== undefined
+        ? hint
+        : undefined;
 }
 
 function sanitizeServerMetricCache(value: unknown): DokployServerMetricState | undefined {
@@ -554,6 +635,164 @@ function summarizeDeploymentStatus(payload: unknown): { status: string; updatedA
     };
 }
 
+function flattenRecords(value: unknown): Record<string, unknown>[] {
+    const records: Record<string, unknown>[] = [];
+
+    const scan = (entry: unknown): void => {
+        if (Array.isArray(entry)) {
+            entry.forEach(scan);
+            return;
+        }
+
+        const record = asRecord(entry);
+        if (!record) {
+            return;
+        }
+
+        records.push(record);
+        Object.values(record).forEach(scan);
+    };
+
+    scan(value);
+    return records;
+}
+
+function extractEnvVars(value: unknown): Record<string, string> {
+    const vars: Record<string, string> = {};
+
+    for (const record of flattenRecords(value)) {
+        const key =
+            pickString(record, ['name', 'key', 'envKey', 'variable', 'envName']) ||
+            pickString(record, ['slug']);
+        const recordValue = pickString(record, ['value', 'envValue']);
+
+        if (!key || !recordValue) {
+            continue;
+        }
+
+        vars[key.toUpperCase()] = recordValue;
+    }
+
+    return vars;
+}
+
+function isLikelyPostgresService(serviceKind?: string): boolean {
+    return (serviceKind || '').toLowerCase().includes('postgres');
+}
+
+function extractPostgresConnectionHint(value: unknown): DokployDatabaseConnectionHint | undefined {
+    const env = extractEnvVars(value);
+    const records = flattenRecords(value);
+
+    const parseConnectionUrl = (): Partial<DokployDatabaseConnectionHint> => {
+        const rawUrl =
+            env.DATABASE_URL ||
+            env.POSTGRES_URL ||
+            env.POSTGRES_URI ||
+            env.POSTGRESQL_URL ||
+            records
+                .map((record) =>
+                    pickString(record, [
+                        'databaseUrl',
+                        'connectionString',
+                        'connectionUri',
+                        'postgresUrl',
+                        'postgresUri',
+                    ])
+                )
+                .find((entry) => !!entry);
+        if (!rawUrl) {
+            return {};
+        }
+
+        try {
+            const url = new URL(rawUrl);
+            return {
+                host: url.hostname || undefined,
+                port: url.port ? Number(url.port) : undefined,
+                database: url.pathname.replace(/^\/+/, '') || undefined,
+                user: url.username || undefined,
+                ssl:
+                    url.searchParams.get('sslmode') === 'require' ||
+                    url.searchParams.get('ssl') === 'true' ||
+                    undefined,
+            };
+        } catch {
+            return {};
+        }
+    };
+
+    const fromUrl = parseConnectionUrl();
+    const directHost = records
+        .map((record) =>
+            pickString(record, [
+                'host',
+                'hostname',
+                'dbHost',
+                'databaseHost',
+                'postgresHost',
+                'pgHost',
+                'publicHost',
+                'internalHost',
+            ])
+        )
+        .find((entry) => !!entry);
+    const directPort = records
+        .map((record) =>
+            pickNumber(record, ['port', 'dbPort', 'databasePort', 'postgresPort', 'pgPort'])
+        )
+        .find((entry) => entry !== undefined);
+    const directDatabase = records
+        .map((record) =>
+            pickString(record, ['database', 'databaseName', 'dbName', 'postgresDb', 'postgresDatabase'])
+        )
+        .find((entry) => !!entry);
+    const directUser = records
+        .map((record) =>
+            pickString(record, ['user', 'username', 'dbUser', 'databaseUser', 'postgresUser'])
+        )
+        .find((entry) => !!entry);
+    const directSsl = records
+        .map((record) =>
+            pickBoolean(record, ['ssl', 'sslEnabled', 'requireSsl', 'tls', 'tlsEnabled'])
+        )
+        .find((entry) => entry !== undefined);
+
+    const hint: DokployDatabaseConnectionHint = {
+        host:
+            fromUrl.host ||
+            env.POSTGRES_HOST ||
+            env.PGHOST ||
+            env.DB_HOST ||
+            directHost,
+        port:
+            fromUrl.port ||
+            (env.POSTGRES_PORT ? Number(env.POSTGRES_PORT) : undefined) ||
+            (env.PGPORT ? Number(env.PGPORT) : undefined) ||
+            directPort,
+        database:
+            fromUrl.database ||
+            env.POSTGRES_DB ||
+            env.PGDATABASE ||
+            env.DB_NAME ||
+            directDatabase,
+        user:
+            fromUrl.user ||
+            env.POSTGRES_USER ||
+            env.PGUSER ||
+            env.DB_USER ||
+            directUser,
+        ssl:
+            fromUrl.ssl ??
+            (env.PGSSLMODE ? env.PGSSLMODE.toLowerCase() === 'require' : undefined) ??
+            directSsl,
+    };
+
+    return hint.host || hint.port || hint.database || hint.user || hint.ssl !== undefined
+        ? hint
+        : undefined;
+}
+
 function extractServiceCandidates(payload: unknown): DokployServiceCandidate[] {
     const seen = new Set<string>();
     const services: DokployServiceCandidate[] = [];
@@ -598,6 +837,10 @@ function extractServiceCandidates(payload: unknown): DokployServiceCandidate[] {
             type,
             serviceKind,
             serverId: pickString(item, ['serverId']),
+            databaseConnection:
+                type === 'database' && isLikelyPostgresService(serviceKind)
+                    ? extractPostgresConnectionHint(item)
+                    : undefined,
         });
     }
 
@@ -1290,6 +1533,7 @@ async function fetchServiceState(
             domains: [],
             status: candidate.serviceKind || 'Managed database',
             statusTone: 'muted',
+            databaseConnection: candidate.databaseConnection,
         };
     }
 
@@ -1529,6 +1773,14 @@ export class DokployProvider implements vscode.WebviewViewProvider {
                             await this.deleteProfile(msg.profileId);
                         }
                         break;
+                    case 'openServiceDatabase':
+                        if (
+                            typeof msg.profileId === 'string' &&
+                            typeof msg.serviceId === 'string'
+                        ) {
+                            await this.openServiceDatabase(msg.profileId, msg.serviceId);
+                        }
+                        break;
                 }
             },
             undefined,
@@ -1598,6 +1850,36 @@ export class DokployProvider implements vscode.WebviewViewProvider {
                 void this.refreshProfileSnapshot(profile.id, false);
             }
         }
+    }
+
+    private async openServiceDatabase(profileId: string, serviceId: string): Promise<void> {
+        await this.ensureInitialized();
+        const profile = readProfiles(this.context).find((item) => item.id === profileId);
+        const cache = readProfileCaches(this.context)[profileId];
+        const service = cache?.services.find((item) => item.id === serviceId);
+
+        if (!profile || !service || service.type !== 'database') {
+            return;
+        }
+
+        if (!isLikelyPostgresService(service.serviceKind)) {
+            vscode.window.showInformationMessage(
+                `${service.serviceKind || 'This database'} is not supported in the live DB viewer yet.`
+            );
+            return;
+        }
+
+        await setActiveProfileId(this.context, profile.id);
+        await syncActiveProfileToConfig(this.context);
+
+        await PostgresProvider.openConnectionPanel(this.context, {
+            host: service.databaseConnection?.host,
+            port: service.databaseConnection?.port,
+            database: service.databaseConnection?.database,
+            user: service.databaseConnection?.user,
+            ssl: service.databaseConnection?.ssl,
+            label: `${profile.name} / ${service.projectName} / ${service.name}`,
+        });
     }
 
     private async addProfile(): Promise<void> {

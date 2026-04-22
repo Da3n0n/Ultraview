@@ -107,9 +107,7 @@ function App() {
         [state.accounts, state.activeAccountId]
     );
 
-    const canAddCurrent =
-        Boolean(state.activeRepo) &&
-        !state.projects.some((project) => project.path === state.activeRepo);
+    
 
     const runProjectCommand = (type: 'gitPull' | 'gitPush' | 'gitSync', id: string) => {
         setPendingProjects((current) => ({ ...current, [id]: true }));
@@ -255,16 +253,29 @@ function App() {
                 <section className="section">
                     <div className="section-header">
                         <div className="section-title">Accounts</div>
-                        <button
-                            className="button"
-                            onClick={() =>
-                                getVscode()?.postMessage({
-                                    type: 'addAccount' satisfies GitPanelOutboundMessage['type'],
-                                })
-                            }
-                        >
-                            + Account
-                        </button>
+                        <div className="toolbar-group">
+                            <button
+                                className="button"
+                                title="Open as full panel"
+                                onClick={() =>
+                                    getVscode()?.postMessage({
+                                        type: 'openPanel' satisfies GitPanelOutboundMessage['type'],
+                                    })
+                                }
+                            >
+                                &#x2B21;
+                            </button>
+                            <button
+                                className="button"
+                                onClick={() =>
+                                    getVscode()?.postMessage({
+                                        type: 'addAccount' satisfies GitPanelOutboundMessage['type'],
+                                    })
+                                }
+                            >
+                                + Account
+                            </button>
+                        </div>
                     </div>
                     <div className="accounts-grid">
                         {state.accounts.length === 0 ? (
@@ -353,24 +364,14 @@ function App() {
                         <div className="toolbar-group">
                             <button
                                 className="button"
-                                title="Open as full panel"
-                                onClick={() =>
-                                    getVscode()?.postMessage({
-                                        type: 'openPanel' satisfies GitPanelOutboundMessage['type'],
-                                    })
-                                }
-                            >
-                                &#x2B21;
-                            </button>
-                            <button
-                                className="button"
+                                title="Refresh"
                                 onClick={() =>
                                     getVscode()?.postMessage({
                                         type: 'refreshProjects' satisfies GitPanelOutboundMessage['type'],
                                     })
                                 }
                             >
-                                Refresh
+                                &#x21BB;
                             </button>
                             <button
                                 className="button"
@@ -380,7 +381,7 @@ function App() {
                                     })
                                 }
                             >
-                                Add Repo
+                                + Repo
                             </button>
                             <button
                                 className="button"
@@ -390,20 +391,7 @@ function App() {
                                     })
                                 }
                             >
-                                Add Local
-                            </button>
-                            <button
-                                className="button"
-                                disabled={!canAddCurrent}
-                                onClick={() =>
-                                    getVscode()?.postMessage({
-                                        type: 'addCurrentProject' satisfies GitPanelOutboundMessage['type'],
-                                    })
-                                }
-                            >
-                                {canAddCurrent
-                                    ? `Add ${state.activeRepoName || 'Current'}`
-                                    : 'Current Added'}
+                                + Local
                             </button>
                         </div>
                     </div>

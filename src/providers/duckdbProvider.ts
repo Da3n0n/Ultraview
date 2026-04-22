@@ -83,7 +83,7 @@ export class DuckDbProvider implements vscode.CustomReadonlyEditorProvider {
               return { name: t.name, rowCount: null, columns: cols };
             }));
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables: tableInfos, dbSize, filePath, dbType: 'DuckDB' });
+            panel.webview.postMessage({ type: 'schema', tables: tableInfos, dbSize, sourceLabel: filePath, dbType: 'DuckDB' });
             break;
           }
           case 'getTableData': {
