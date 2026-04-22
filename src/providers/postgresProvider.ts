@@ -43,6 +43,14 @@ interface PostgresColumnInfo {
     notnull?: number;
 }
 
+interface PostgresTableColumnRow {
+    schema_name: string;
+    table_name: string;
+    column_name: string;
+    data_type: string;
+    is_nullable: 'YES' | 'NO';
+}
+
 function looksLikePostgresConnectionString(value?: string): boolean {
     return !!value && /^postgres(?:ql)?:\/\//i.test(value.trim());
 }
@@ -97,6 +105,18 @@ function normalizeConnectionHint(
 
 function quoteIdentifier(value: string): string {
     return `"${value.replace(/"/g, '""')}"`;
+}
+
+function quoteTableReference(value: string): string {
+    const { schema, table } = parseTableReference(value);
+    return `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
+}
+
+function asNullableValue(value: unknown): unknown {
+    if (value === '__UV_NULL__') {
+        return null;
+    }
+    return value;
 }
 
 function parseTableReference(value: string): { schema: string; table: string } {
@@ -254,6 +274,85 @@ async function queryRows<T extends Record<string, unknown>>(
     return result.rows;
 }
 
+async function loadSchema(client: PostgresClient): Promise<{
+    tables: Array<{ name: string; rowCount: null; columns: PostgresColumnInfo[] }>;
+}> {
+    const tables = await queryRows<{
+        schema_name: string;
+        table_name: string;
+    }>(
+        client,
+        `SELECT table_schema AS schema_name, table_name
+         FROM information_schema.tables
+         WHERE table_type = 'BASE TABLE'
+           AND table_schema NOT IN ('pg_catalog', 'information_schema')
+         ORDER BY table_schema, table_name`
+    );
+
+    const columns = await queryRows<PostgresTableColumnRow>(
+        client,
+        `SELECT table_schema AS schema_name,
+                table_name,
+                column_name,
+                data_type,
+                is_nullable
+         FROM information_schema.columns
+         WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+         ORDER BY table_schema, table_name, ordinal_position`
+    );
+
+    const primaryKeys = await queryRows<{
+        schema_name: string;
+        table_name: string;
+        column_name: string;
+    }>(
+        client,
+        `SELECT kcu.table_schema AS schema_name,
+                kcu.table_name,
+                kcu.column_name
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.key_column_usage kcu
+           ON tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+         WHERE tc.constraint_type = 'PRIMARY KEY'
+           AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')`
+    );
+
+    const pkLookup = new Set(
+        primaryKeys.map((row) => `${row.schema_name}.${row.table_name}.${row.column_name}`)
+    );
+    const columnMap = new Map<string, PostgresColumnInfo[]>();
+
+    for (const column of columns) {
+        const key = `${column.schema_name}.${column.table_name}`;
+        const current = columnMap.get(key) || [];
+        current.push({
+            name: column.column_name,
+            type: column.data_type,
+            pk: pkLookup.has(`${column.schema_name}.${column.table_name}.${column.column_name}`)
+                ? 1
+                : 0,
+            notnull: column.is_nullable === 'NO' ? 1 : 0,
+        });
+        columnMap.set(key, current);
+    }
+
+    return {
+        tables: tables.map((table) => {
+            const key = `${table.schema_name}.${table.table_name}`;
+            const label =
+                table.schema_name === 'public'
+                    ? table.table_name
+                    : `${table.schema_name}.${table.table_name}`;
+            return {
+                name: label,
+                rowCount: null,
+                columns: columnMap.get(key) || [],
+            };
+        }),
+    };
+}
+
 export class PostgresProvider {
     static async openConnectionPanel(
         context: vscode.ExtensionContext,
@@ -308,96 +407,19 @@ export class PostgresProvider {
                 switch (msg.type) {
                     case 'ready': {
                         await ensureConnected();
-                        const tables = await queryRows<{
-                            schema_name: string;
-                            table_name: string;
-                        }>(
-                            client,
-                            `SELECT table_schema AS schema_name, table_name
-                             FROM information_schema.tables
-                             WHERE table_type = 'BASE TABLE'
-                               AND table_schema NOT IN ('pg_catalog', 'information_schema')
-                             ORDER BY table_schema, table_name`
-                        );
-
-                        const columns = await queryRows<{
-                            schema_name: string;
-                            table_name: string;
-                            column_name: string;
-                            data_type: string;
-                            is_nullable: 'YES' | 'NO';
-                        }>(
-                            client,
-                            `SELECT table_schema AS schema_name,
-                                    table_name,
-                                    column_name,
-                                    data_type,
-                                    is_nullable
-                             FROM information_schema.columns
-                             WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-                             ORDER BY table_schema, table_name, ordinal_position`
-                        );
-
-                        const primaryKeys = await queryRows<{
-                            schema_name: string;
-                            table_name: string;
-                            column_name: string;
-                        }>(
-                            client,
-                            `SELECT kcu.table_schema AS schema_name,
-                                    kcu.table_name,
-                                    kcu.column_name
-                             FROM information_schema.table_constraints tc
-                             JOIN information_schema.key_column_usage kcu
-                               ON tc.constraint_name = kcu.constraint_name
-                              AND tc.table_schema = kcu.table_schema
-                             WHERE tc.constraint_type = 'PRIMARY KEY'
-                               AND tc.table_schema NOT IN ('pg_catalog', 'information_schema')`
-                        );
-
-                        const pkLookup = new Set(
-                            primaryKeys.map(
-                                (row) => `${row.schema_name}.${row.table_name}.${row.column_name}`
-                            )
-                        );
-                        const columnMap = new Map<string, PostgresColumnInfo[]>();
-
-                        for (const column of columns) {
-                            const key = `${column.schema_name}.${column.table_name}`;
-                            const current = columnMap.get(key) || [];
-                            current.push({
-                                name: column.column_name,
-                                type: column.data_type,
-                                pk: pkLookup.has(
-                                    `${column.schema_name}.${column.table_name}.${column.column_name}`
-                                )
-                                    ? 1
-                                    : 0,
-                                notnull: column.is_nullable === 'NO' ? 1 : 0,
-                            });
-                            columnMap.set(key, current);
-                        }
+                        const schemaState = await loadSchema(client);
 
                         panel.webview.postMessage({
                             type: 'schema',
-                            tables: tables.map((table) => {
-                                const key = `${table.schema_name}.${table.table_name}`;
-                                const label =
-                                    table.schema_name === 'public'
-                                        ? table.table_name
-                                        : `${table.schema_name}.${table.table_name}`;
-                                return {
-                                    name: label,
-                                    rowCount: null,
-                                    columns: columnMap.get(key) || [],
-                                };
-                            }),
+                            tables: schemaState.tables,
                             dbSize: 0,
                             sourceLabel:
                                 config.label ||
                                 `${config.host}:${config.port}/${config.database}`,
                             dbType: 'PostgreSQL',
                             dbName: config.database,
+                            canEditData: true,
+                            canEditSchema: true,
                         });
                         await options?.onConnected?.(config);
                         break;
@@ -406,24 +428,32 @@ export class PostgresProvider {
                         await ensureConnected();
                         const pageSize = msg.pageSize ?? 200;
                         const offset = (msg.page ?? 0) * pageSize;
-                        const { schema, table } = parseTableReference(String(msg.table));
-                        const tableRef = `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
+                        const tableRef = quoteTableReference(String(msg.table));
                         const countResult = await client.query<{ count: string }>(
                             `SELECT COUNT(*)::text AS count FROM ${tableRef}`
                         );
                         const rowCount = Number(countResult.rows[0]?.count ?? '0');
                         const rowsResult = await client.query(
-                            `SELECT * FROM ${tableRef} LIMIT $1 OFFSET $2`,
+                            `SELECT ctid::text AS "__uv_row_id", * FROM ${tableRef} LIMIT $1 OFFSET $2`,
                             [pageSize, offset]
                         );
-                        const columns = rowsResult.fields.map((field) => field.name);
+                        const columns = rowsResult.fields
+                            .map((field) => field.name)
+                            .filter((field) => field !== '__uv_row_id');
+                        const rowIds = rowsResult.rows.map((row) => String(row.__uv_row_id ?? ''));
+                        const rows = rowsResult.rows.map((row) => {
+                            const next = { ...row };
+                            delete next.__uv_row_id;
+                            return next;
+                        });
                         panel.webview.postMessage({
                             type: 'tableData',
                             table: msg.table,
                             columns,
-                            rows: rowsResult.rows,
+                            rows,
                             page: msg.page ?? 0,
                             rowCount,
+                            rowIds,
                         });
                         break;
                     }
@@ -436,6 +466,148 @@ export class PostgresProvider {
                             rows: result.rows,
                             changes: typeof result.rowCount === 'number' ? result.rowCount : undefined,
                         });
+                        break;
+                    }
+                    case 'updateCell': {
+                        await ensureConnected();
+                        const tableRef = quoteTableReference(String(msg.table));
+                        await client.query(
+                            `UPDATE ${tableRef} SET ${quoteIdentifier(String(msg.column))} = $1 WHERE ctid = $2::tid`,
+                            [asNullableValue(msg.value), String(msg.rowId)]
+                        );
+                        panel.webview.postMessage({ type: 'actionComplete', message: 'Cell updated.' });
+                        break;
+                    }
+                    case 'insertRow': {
+                        await ensureConnected();
+                        const tableRef = quoteTableReference(String(msg.table));
+                        const entries = Object.entries(msg.values || {});
+                        if (entries.length === 0) {
+                            await client.query(`INSERT INTO ${tableRef} DEFAULT VALUES`);
+                        } else {
+                            const columns = entries.map(([column]) => quoteIdentifier(column)).join(', ');
+                            const placeholders = entries.map((_, index) => `$${index + 1}`).join(', ');
+                            await client.query(
+                                `INSERT INTO ${tableRef} (${columns}) VALUES (${placeholders})`,
+                                entries.map(([, value]) => asNullableValue(value))
+                            );
+                        }
+                        panel.webview.postMessage({ type: 'actionComplete', message: 'Row added.' });
+                        break;
+                    }
+                    case 'deleteRow': {
+                        await ensureConnected();
+                        const tableRef = quoteTableReference(String(msg.table));
+                        await client.query(
+                            `DELETE FROM ${tableRef} WHERE ctid = $1::tid`,
+                            [String(msg.rowId)]
+                        );
+                        panel.webview.postMessage({ type: 'actionComplete', message: 'Row deleted.' });
+                        break;
+                    }
+                    case 'createTable': {
+                        await ensureConnected();
+                        const tableName = String(msg.tableName || '').trim();
+                        const columns = Array.isArray(msg.columns) ? msg.columns : [];
+                        if (!tableName || columns.length === 0) {
+                            throw new Error('Table name and at least one column are required.');
+                        }
+                        const columnSql = columns.map((column) => {
+                            const parts = [
+                                quoteIdentifier(String(column.name)),
+                                String(column.type || 'text').trim(),
+                            ];
+                            if (column.notnull) {
+                                parts.push('NOT NULL');
+                            }
+                            if (column.primaryKey) {
+                                parts.push('PRIMARY KEY');
+                            }
+                            if (column.defaultValue?.trim()) {
+                                parts.push(`DEFAULT ${column.defaultValue.trim()}`);
+                            }
+                            return parts.join(' ');
+                        }).join(', ');
+                        await client.query(`CREATE TABLE ${quoteTableReference(tableName)} (${columnSql})`);
+                        const schemaState = await loadSchema(client);
+                        panel.webview.postMessage({
+                            type: 'schema',
+                            tables: schemaState.tables,
+                            dbSize: 0,
+                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            dbType: 'PostgreSQL',
+                            dbName: config.database,
+                            canEditData: true,
+                            canEditSchema: true,
+                        });
+                        panel.webview.postMessage({ type: 'actionComplete', message: 'Table created.' });
+                        break;
+                    }
+                    case 'deleteTable': {
+                        await ensureConnected();
+                        await client.query(`DROP TABLE ${quoteTableReference(String(msg.table))}`);
+                        const schemaState = await loadSchema(client);
+                        panel.webview.postMessage({
+                            type: 'schema',
+                            tables: schemaState.tables,
+                            dbSize: 0,
+                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            dbType: 'PostgreSQL',
+                            dbName: config.database,
+                            canEditData: true,
+                            canEditSchema: true,
+                        });
+                        panel.webview.postMessage({ type: 'actionComplete', message: 'Table deleted.' });
+                        break;
+                    }
+                    case 'addColumn': {
+                        await ensureConnected();
+                        const column = msg.column;
+                        if (!column?.name || !column?.type) {
+                            throw new Error('Column name and type are required.');
+                        }
+                        const parts = [
+                            `ALTER TABLE ${quoteTableReference(String(msg.table))}`,
+                            `ADD COLUMN ${quoteIdentifier(String(column.name))} ${String(column.type).trim()}`,
+                        ];
+                        if (column.notnull) {
+                            parts.push('NOT NULL');
+                        }
+                        if (column.defaultValue?.trim()) {
+                            parts.push(`DEFAULT ${column.defaultValue.trim()}`);
+                        }
+                        await client.query(parts.join(' '));
+                        const schemaState = await loadSchema(client);
+                        panel.webview.postMessage({
+                            type: 'schema',
+                            tables: schemaState.tables,
+                            dbSize: 0,
+                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            dbType: 'PostgreSQL',
+                            dbName: config.database,
+                            canEditData: true,
+                            canEditSchema: true,
+                        });
+                        panel.webview.postMessage({ type: 'actionComplete', message: 'Column added.' });
+                        break;
+                    }
+                    case 'deleteColumn': {
+                        await ensureConnected();
+                        await client.query(
+                            `ALTER TABLE ${quoteTableReference(String(msg.table))} DROP COLUMN ${quoteIdentifier(String(msg.column))}`
+                        );
+                        const schemaState = await loadSchema(client);
+                        panel.webview.postMessage({
+                            type: 'schema',
+                            tables: schemaState.tables,
+                            dbSize: 0,
+                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            dbType: 'PostgreSQL',
+                            dbName: config.database,
+                            canEditData: true,
+                            canEditSchema: true,
+                        });
+                        panel.webview.postMessage({ type: 'actionComplete', message: 'Column removed.' });
                         break;
                     }
                 }
