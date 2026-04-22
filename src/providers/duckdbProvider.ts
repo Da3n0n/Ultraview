@@ -105,7 +105,7 @@ export class DuckDbProvider implements vscode.CustomReadonlyEditorProvider {
     const loadTables = async () => {
       const tables = await query(`SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'main'`) as { name: string }[];
       return Promise.all(tables.map(async (t) => {
-        const cols = await query(`SELECT column_name as name, data_type as type FROM information_schema.columns WHERE table_name='${t.name.replace(/'/g, "''")}' AND table_schema='main'`) as Array<{ name: string; type: string }>;
+        const cols = await query(`SELECT column_name as name, data_type as type, column_default as defaultValue FROM information_schema.columns WHERE table_name='${t.name.replace(/'/g, "''")}' AND table_schema='main'`) as Array<{ name: string; type: string; defaultValue?: string | null }>;
         return {
           name: t.name,
           rowCount: null,
@@ -237,6 +237,27 @@ export class DuckDbProvider implements vscode.CustomReadonlyEditorProvider {
             await execute(`ALTER TABLE ${quoteIdentifier(String(msg.table))} DROP COLUMN ${quoteIdentifier(String(msg.column))}`);
             await postSchema();
             panel.webview.postMessage({ type: 'actionComplete', message: 'Column removed.' });
+            break;
+          }
+          case 'updateColumn': {
+            const next = msg.next;
+            if (!next?.name || !next?.type) {
+              throw new Error('Column name and type are required.');
+            }
+            let currentName = String(msg.column);
+            if (currentName !== next.name) {
+              await execute(`ALTER TABLE ${quoteIdentifier(String(msg.table))} RENAME COLUMN ${quoteIdentifier(currentName)} TO ${quoteIdentifier(next.name)}`);
+              currentName = next.name;
+            }
+            await execute(`ALTER TABLE ${quoteIdentifier(String(msg.table))} ALTER COLUMN ${quoteIdentifier(currentName)} TYPE ${String(next.type).trim()}`);
+            if (next.defaultValue?.trim()) {
+              await execute(`ALTER TABLE ${quoteIdentifier(String(msg.table))} ALTER COLUMN ${quoteIdentifier(currentName)} SET DEFAULT ${next.defaultValue.trim()}`);
+            } else {
+              await execute(`ALTER TABLE ${quoteIdentifier(String(msg.table))} ALTER COLUMN ${quoteIdentifier(currentName)} DROP DEFAULT`);
+            }
+            await execute(`ALTER TABLE ${quoteIdentifier(String(msg.table))} ALTER COLUMN ${quoteIdentifier(currentName)} ${next.notnull ? 'SET' : 'DROP'} NOT NULL`);
+            await postSchema();
+            panel.webview.postMessage({ type: 'actionComplete', message: 'Column updated.' });
             break;
           }
         }

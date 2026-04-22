@@ -11,6 +11,7 @@ export interface DbColumn {
   type: string;
   pk?: number;
   notnull?: number;
+  defaultValue?: string | null;
 }
 
 export interface DbTable {
@@ -74,4 +75,5 @@ export type DbOutboundMessage =
   | { type: 'createTable'; tableName: string; columns: Array<{ name: string; type: string; notnull?: boolean; primaryKey?: boolean; defaultValue?: string }> }
   | { type: 'deleteTable'; table: string }
   | { type: 'addColumn'; table: string; column: { name: string; type: string; notnull?: boolean; defaultValue?: string } }
-  | { type: 'deleteColumn'; table: string; column: string };
+  | { type: 'deleteColumn'; table: string; column: string }
+  | { type: 'updateColumn'; table: string; column: string; next: { name: string; type: string; notnull?: boolean; defaultValue?: string } };

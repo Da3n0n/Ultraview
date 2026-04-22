@@ -41,6 +41,7 @@ interface PostgresColumnInfo {
     type: string;
     pk?: number;
     notnull?: number;
+    defaultValue?: string | null;
 }
 
 interface PostgresTableColumnRow {
@@ -49,6 +50,7 @@ interface PostgresTableColumnRow {
     column_name: string;
     data_type: string;
     is_nullable: 'YES' | 'NO';
+    column_default: string | null;
 }
 
 function looksLikePostgresConnectionString(value?: string): boolean {
@@ -295,7 +297,8 @@ async function loadSchema(client: PostgresClient): Promise<{
                 table_name,
                 column_name,
                 data_type,
-                is_nullable
+                is_nullable,
+                column_default
          FROM information_schema.columns
          WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          ORDER BY table_schema, table_name, ordinal_position`
@@ -333,6 +336,7 @@ async function loadSchema(client: PostgresClient): Promise<{
                 ? 1
                 : 0,
             notnull: column.is_nullable === 'NO' ? 1 : 0,
+            defaultValue: column.column_default,
         });
         columnMap.set(key, current);
     }
@@ -614,6 +618,49 @@ export class PostgresProvider {
                             canEditSchema: true,
                         });
                         panel.webview.postMessage({ type: 'actionComplete', message: 'Column removed.' });
+                        break;
+                    }
+                    case 'updateColumn': {
+                        await ensureConnected();
+                        const tableRef = quoteTableReference(String(msg.table));
+                        const next = msg.next;
+                        if (!next?.name || !next?.type) {
+                            throw new Error('Column name and type are required.');
+                        }
+                        let currentName = String(msg.column);
+                        if (currentName !== next.name) {
+                            await client.query(
+                                `ALTER TABLE ${tableRef} RENAME COLUMN ${quoteIdentifier(currentName)} TO ${quoteIdentifier(next.name)}`
+                            );
+                            currentName = next.name;
+                        }
+                        await client.query(
+                            `ALTER TABLE ${tableRef} ALTER COLUMN ${quoteIdentifier(currentName)} TYPE ${String(next.type).trim()}`
+                        );
+                        if (next.defaultValue?.trim()) {
+                            await client.query(
+                                `ALTER TABLE ${tableRef} ALTER COLUMN ${quoteIdentifier(currentName)} SET DEFAULT ${next.defaultValue.trim()}`
+                            );
+                        } else {
+                            await client.query(
+                                `ALTER TABLE ${tableRef} ALTER COLUMN ${quoteIdentifier(currentName)} DROP DEFAULT`
+                            );
+                        }
+                        await client.query(
+                            `ALTER TABLE ${tableRef} ALTER COLUMN ${quoteIdentifier(currentName)} ${next.notnull ? 'SET' : 'DROP'} NOT NULL`
+                        );
+                        const schemaState = await loadSchema(client);
+                        panel.webview.postMessage({
+                            type: 'schema',
+                            tables: schemaState.tables,
+                            dbSize: 0,
+                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            dbType: 'PostgreSQL',
+                            dbName: config.database,
+                            canEditData: true,
+                            canEditSchema: true,
+                        });
+                        panel.webview.postMessage({ type: 'actionComplete', message: 'Column updated.' });
                         break;
                     }
                 }

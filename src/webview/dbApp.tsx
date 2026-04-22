@@ -7,7 +7,7 @@ import type {
   DbTable,
 } from './dbTypes';
 
-type TabKey = 'data' | 'structure' | 'query' | 'stats';
+type TabKey = 'data' | 'structure' | 'query';
 
 interface QueryState {
   columns: string[];
@@ -32,6 +32,10 @@ interface CreateColumnDraft {
   notnull: boolean;
   primaryKey: boolean;
   defaultValue: string;
+}
+
+interface ColumnDraft extends CreateColumnDraft {
+  originalName: string;
 }
 
 function getInitialState(): DbInitialState {
@@ -123,13 +127,27 @@ function emptyColumnDraft(): CreateColumnDraft {
   };
 }
 
+function makeColumnDraft(column: DbTable['columns'][number]): ColumnDraft {
+  return {
+    originalName: column.name,
+    name: column.name,
+    type: column.type || 'text',
+    notnull: !!column.notnull,
+    primaryKey: !!column.pk,
+    defaultValue: column.defaultValue ? String(column.defaultValue) : '',
+  };
+}
+
+const COMMON_COLUMN_TYPES = ['text', 'integer', 'bigint', 'numeric', 'real', 'boolean', 'date', 'timestamp', 'json', 'jsonb', 'uuid', 'varchar(255)'];
+
 function App() {
   const initialState = getInitialState();
   const [schema, setSchema] = useState<SchemaState | null>(null);
   const [activeTableName, setActiveTableName] = useState<string>('');
   const [activeTab, setActiveTab] = useState<TabKey>('data');
-  const [page, setPage] = useState(0);
   const [pageSize] = useState(200);
+  const [requestedPage, setRequestedPage] = useState(0);
+  const [loadedPages, setLoadedPages] = useState<number[]>([]);
   const [tableRows, setTableRows] = useState<Record<string, unknown>[]>([]);
   const [tableColumns, setTableColumns] = useState<string[]>([]);
   const [tableRowIds, setTableRowIds] = useState<string[]>([]);
@@ -145,8 +163,10 @@ function App() {
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; column: string } | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [newRowValues, setNewRowValues] = useState<Record<string, string>>({});
+  const [showCreateTable, setShowCreateTable] = useState(false);
   const [createTableName, setCreateTableName] = useState('');
   const [createTableColumns, setCreateTableColumns] = useState<CreateColumnDraft[]>([emptyColumnDraft()]);
+  const [columnDrafts, setColumnDrafts] = useState<ColumnDraft[]>([]);
   const [newColumnDraft, setNewColumnDraft] = useState<CreateColumnDraft>(emptyColumnDraft());
 
   const activeTable = useMemo(
@@ -197,15 +217,23 @@ function App() {
         } else {
           setActiveTableName('');
         }
+        setShowCreateTable(false);
         return;
       }
 
       if (message.type === 'tableData') {
         setLoadingTable(false);
         setSavingAction(false);
-        setTableColumns(message.columns);
-        setTableRows(message.rows);
-        setTableRowIds(message.rowIds ?? []);
+        setTableColumns((current) => (message.page === 0 || current.length === 0 ? message.columns : current));
+        if (message.page === 0) {
+          setTableRows(message.rows);
+          setTableRowIds(message.rowIds ?? []);
+          setLoadedPages([0]);
+        } else {
+          setTableRows((current) => [...current, ...message.rows]);
+          setTableRowIds((current) => [...current, ...(message.rowIds ?? [])]);
+          setLoadedPages((current) => (current.includes(message.page) ? current : [...current, message.page]));
+        }
         setTableRowCount(message.rowCount ?? null);
         setTableError('');
         setEditingCell(null);
@@ -228,10 +256,15 @@ function App() {
         setActionMessage(message.message);
         if (activeTableName) {
           setLoadingTable(true);
+          setRequestedPage(0);
+          setLoadedPages([]);
+          setTableRows([]);
+          setTableRowIds([]);
+          setTableColumns([]);
           getVscode()?.postMessage({
             type: 'getTableData',
             table: activeTableName,
-            page,
+            page: 0,
             pageSize,
           });
         }
@@ -256,25 +289,36 @@ function App() {
 
     window.addEventListener('message', handleMessage as EventListener);
     return () => window.removeEventListener('message', handleMessage as EventListener);
-  }, [activeTab, activeTableName, page, pageSize]);
+  }, [activeTab, activeTableName, pageSize]);
 
   useEffect(() => {
     if (!schema || !activeTableName) return;
     setLoadingTable(true);
     setTableError('');
+    if (requestedPage === 0) {
+      setTableRows([]);
+      setTableColumns([]);
+      setTableRowIds([]);
+      setLoadedPages([]);
+    }
     getVscode()?.postMessage({
       type: 'getTableData',
       table: activeTableName,
-      page,
+      page: requestedPage,
       pageSize,
     });
-  }, [schema, activeTableName, page, pageSize]);
+  }, [schema, activeTableName, requestedPage, pageSize]);
 
   useEffect(() => {
     setNewRowValues({});
     setEditingCell(null);
     setEditingValue('');
   }, [activeTableName]);
+
+  useEffect(() => {
+    setColumnDrafts(activeTable?.columns.map(makeColumnDraft) ?? []);
+    setNewColumnDraft(emptyColumnDraft());
+  }, [activeTable]);
 
   useEffect(() => {
     if (!actionMessage) return;
@@ -287,16 +331,12 @@ function App() {
     return Math.max(1, Math.ceil(tableRowCount / pageSize));
   }, [tableRowCount, pageSize]);
 
-  const stats = useMemo(() => {
-    const tables = schema?.tables ?? [];
-    const knownRows = tables.reduce((sum, table) => sum + (table.rowCount ?? 0), 0);
-    const knownTableCount = tables.filter((table) => typeof table.rowCount === 'number').length;
-    return {
-      tableCount: tables.length,
-      knownRows,
-      knownTableCount,
-    };
-  }, [schema]);
+  const hasMoreRows = useMemo(() => {
+    if (tableRowCount === null) {
+      return tableRows.length >= pageSize;
+    }
+    return tableRows.length < tableRowCount;
+  }, [pageSize, tableRowCount, tableRows.length]);
 
   const runQuery = () => {
     setActiveTab('query');
@@ -306,21 +346,18 @@ function App() {
     getVscode()?.postMessage({ type: 'runQuery', sql: queryText });
   };
 
-  const reloadActiveTable = () => {
-    if (!activeTableName) return;
-    setLoadingTable(true);
-    setActionMessage('');
-    getVscode()?.postMessage({
-      type: 'getTableData',
-      table: activeTableName,
-      page,
-      pageSize,
-    });
+  const loadMoreRows = () => {
+    if (loadingTable || !activeTableName || !hasMoreRows) {
+      return;
+    }
+    setRequestedPage((current) => current + 1);
   };
 
   const selectTable = (tableName: string) => {
     setActiveTableName(tableName);
-    setPage(0);
+    setShowCreateTable(false);
+    setRequestedPage(0);
+    setLoadedPages([]);
     setTableRows([]);
     setTableColumns([]);
     setTableRowIds([]);
@@ -405,6 +442,7 @@ function App() {
       tableName,
       columns,
     });
+    setShowCreateTable(false);
     setCreateTableName('');
     setCreateTableColumns([emptyColumnDraft()]);
   };
@@ -430,9 +468,33 @@ function App() {
     setNewColumnDraft(emptyColumnDraft());
   };
 
+  const updateColumn = (draft: ColumnDraft) => {
+    if (!activeTableName) return;
+    if (!draft.name.trim() || !draft.type.trim()) {
+      setTableError('Column name and type are required.');
+      return;
+    }
+    setSavingAction(true);
+    setActionMessage('');
+    getVscode()?.postMessage({
+      type: 'updateColumn',
+      table: activeTableName,
+      column: draft.originalName,
+      next: {
+        name: draft.name.trim(),
+        type: draft.type.trim(),
+        notnull: draft.notnull,
+        defaultValue: draft.defaultValue.trim(),
+      },
+    });
+  };
+
   const renderDataTable = (columns: string[], rows: Record<string, unknown>[], editable = false) => {
-    if (rows.length === 0) {
+    if (rows.length === 0 && !editable) {
       return <div className="db-empty">No rows to show.</div>;
+    }
+    if (rows.length === 0 && editable && columns.length === 0) {
+      return <div className="db-empty">No columns to show.</div>;
     }
 
     const resolvedColumns = columns.length > 0 ? columns : Object.keys(rows[0] ?? {});
@@ -494,6 +556,27 @@ function App() {
                 ) : null}
               </tr>
             ))}
+            {editable ? (
+              <tr className="db-new-row">
+                {resolvedColumns.map((column) => (
+                  <td key={`new-${column}`}>
+                    <input
+                      className="db-input db-inline-input"
+                      value={newRowValues[column] ?? ''}
+                      onChange={(event) =>
+                        setNewRowValues((current) => ({ ...current, [column]: event.target.value }))
+                      }
+                      placeholder="NULL / value"
+                    />
+                  </td>
+                ))}
+                <td className="db-actions-cell">
+                  <button className="db-button" onClick={insertRow} disabled={savingAction}>
+                    Add
+                  </button>
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -505,25 +588,23 @@ function App() {
       <style>{`
         :root {
           --bg: var(--vscode-editor-background);
-          --surface: var(--vscode-sideBar-background, color-mix(in srgb, var(--bg) 92%, black));
-          --surface2: var(--vscode-list-hoverBackground, rgba(255,255,255,.05));
-          --surface3: rgba(255,255,255,.03);
+          --surface: var(--vscode-sideBar-background, var(--bg));
+          --surface2: var(--vscode-sideBar-background, var(--surface));
+          --surface3: var(--vscode-sideBar-background, var(--surface));
           --border: var(--vscode-panel-border, rgba(128,128,128,.24));
           --text: var(--vscode-editor-foreground);
           --muted: var(--vscode-descriptionForeground);
-          --accent: var(--vscode-textLink-foreground, #7dd3fc);
-          --success: var(--vscode-terminal-ansiGreen, #4ade80);
-          --warn: var(--vscode-terminal-ansiYellow, #fbbf24);
-          --danger: var(--vscode-errorForeground, #f87171);
+          --accent: var(--vscode-foreground, var(--text));
+          --success: var(--vscode-foreground, var(--text));
+          --warn: var(--vscode-foreground, var(--text));
+          --danger: var(--vscode-errorForeground, var(--text));
           --code: var(--vscode-input-background, rgba(0,0,0,.16));
         }
         .db-app {
           display: grid;
           grid-template-columns: 260px minmax(0, 1fr);
           height: 100vh;
-          background:
-            radial-gradient(circle at top left, rgba(125,211,252,.08), transparent 34%),
-            linear-gradient(180deg, color-mix(in srgb, var(--bg) 94%, black), var(--bg));
+          background: var(--bg);
           color: var(--text);
         }
         .db-sidebar {
@@ -574,9 +655,16 @@ function App() {
           align-content: start;
           gap: 6px;
         }
+        .db-sidebar-footer {
+          padding: 10px 8px 12px;
+          border-top: 1px solid var(--border);
+          display: grid;
+          gap: 8px;
+          background: var(--vscode-sideBar-background, var(--surface));
+        }
         .db-table-button {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
+          grid-template-columns: minmax(0, 1fr) auto auto;
           gap: 8px;
           align-items: center;
           width: 100%;
@@ -591,12 +679,12 @@ function App() {
         }
         .db-table-button:hover {
           background: var(--vscode-list-hoverBackground, var(--surface2));
-          border-color: rgba(125,211,252,.2);
+          border-color: var(--border);
           transform: translateX(1px);
         }
         .db-table-button.active {
-          background: var(--vscode-list-activeSelectionBackground, linear-gradient(180deg, rgba(125,211,252,.14), rgba(125,211,252,.07)));
-          border-color: var(--vscode-list-activeSelectionBackground, rgba(125,211,252,.35));
+          background: var(--vscode-list-activeSelectionBackground, var(--surface2));
+          border-color: var(--border);
           color: var(--vscode-list-activeSelectionForeground, var(--text));
         }
         .db-table-name {
@@ -615,39 +703,82 @@ function App() {
           background: rgba(255,255,255,.05);
           border: 1px solid var(--border);
         }
+        .db-table-delete {
+          opacity: .7;
+          border: none;
+          background: transparent;
+          color: var(--muted);
+          cursor: pointer;
+          padding: 2px 4px;
+          border-radius: 8px;
+          font-size: 12px;
+          line-height: 1;
+        }
+        .db-table-delete:hover {
+          opacity: 1;
+          color: var(--danger);
+          background: rgba(248,113,113,.08);
+        }
         .db-main {
           display: flex;
           flex-direction: column;
           min-width: 0;
           min-height: 0;
+          background: var(--bg);
         }
         .db-tabs {
           display: flex;
           gap: 4px;
           padding: 10px 12px 0;
           border-bottom: 1px solid var(--border);
-          background: rgba(0,0,0,.08);
+          background: var(--bg);
         }
         .db-tab {
+          position: relative;
           border: 1px solid transparent;
           border-bottom: none;
-          border-radius: 12px 12px 0 0;
-          padding: 9px 14px;
-          background: transparent;
-          color: var(--muted);
+          border-radius: 8px 8px 0 0;
+          padding: 7px 12px;
+          min-height: 34px;
+          background: var(--vscode-tab-inactiveBackground, var(--surface));
+          color: var(--vscode-tab-inactiveForeground, var(--text));
           cursor: pointer;
           font: inherit;
           font-size: 12px;
-          transition: color .14s ease, background .14s ease, border-color .14s ease;
+          font-weight: 600;
+          transition: all .16s ease;
+        }
+        .db-tab::after {
+          content: '';
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: -1px;
+          height: 1px;
+          background: var(--vscode-editorGroupHeader-tabsBackground, var(--surface));
         }
         .db-tab:hover {
-          color: var(--text);
-          background: rgba(255,255,255,.03);
+          background: var(--vscode-tab-hoverBackground, var(--vscode-tab-inactiveBackground, var(--surface)));
+          color: var(--vscode-tab-hoverForeground, var(--vscode-tab-inactiveForeground, var(--text)));
         }
         .db-tab.active {
-          color: var(--accent);
+          color: var(--vscode-tab-activeForeground, var(--text));
           background: var(--bg);
-          border-color: var(--border);
+          border-color: var(--vscode-tab-border, var(--border));
+          border-bottom-color: var(--vscode-tab-activeBackground, var(--bg));
+        }
+        .db-tab.active::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 0;
+          height: 2px;
+          background: var(--vscode-tab-activeBorderTop, var(--vscode-tab-activeBorder, transparent));
+          border-radius: 8px 8px 0 0;
+        }
+        .db-tab.active::after {
+          display: none;
         }
         .db-pane {
           flex: 1;
@@ -655,29 +786,11 @@ function App() {
           display: flex;
           flex-direction: column;
         }
-        .db-toolbar {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 14px;
-          border-bottom: 1px solid var(--border);
-          background: rgba(255,255,255,.02);
-          flex-wrap: wrap;
-        }
-        .db-toolbar-title {
-          font-size: 12px;
-          font-weight: 700;
-        }
-        .db-toolbar-meta {
-          margin-left: auto;
-          color: var(--muted);
-          font-size: 11px;
-        }
         .db-button {
           border: 1px solid var(--border);
           border-radius: 10px;
           padding: 6px 10px;
-          background: var(--surface2);
+          background: var(--surface);
           color: var(--text);
           cursor: pointer;
           font: inherit;
@@ -686,15 +799,15 @@ function App() {
         }
         .db-button:hover:not(:disabled) {
           transform: translateY(-1px);
-          background: color-mix(in srgb, var(--surface2) 75%, white 5%);
-          border-color: rgba(125,211,252,.35);
+          background: var(--surface);
+          border-color: var(--border);
         }
         .db-button:disabled {
           opacity: .45;
           cursor: default;
         }
         .db-button.danger:hover:not(:disabled) {
-          border-color: rgba(248,113,113,.45);
+          border-color: var(--border);
         }
         .db-content {
           flex: 1;
@@ -714,18 +827,21 @@ function App() {
           position: sticky;
           top: 0;
           z-index: 1;
-          background: color-mix(in srgb, var(--surface) 82%, var(--bg));
-          color: var(--accent);
+          background: var(--surface);
+          color: var(--text);
           text-align: left;
           padding: 9px 12px;
           border-bottom: 1px solid var(--border);
           white-space: nowrap;
         }
         .db-table tbody tr:nth-child(even) {
-          background: var(--surface3);
+          background: var(--surface);
         }
         .db-table tbody tr:hover {
-          background: rgba(125,211,252,.06);
+          background: var(--surface);
+        }
+        .db-table tbody tr.db-new-row {
+          background: var(--surface);
         }
         .db-table td {
           padding: 8px 12px;
@@ -749,15 +865,47 @@ function App() {
           gap: 8px;
           align-items: center;
         }
+        .db-inline-input {
+          min-width: 120px;
+        }
+        .db-new-row .db-input {
+          background: transparent;
+          border-color: transparent;
+          box-shadow: none;
+        }
+        .db-new-row .db-input::placeholder {
+          color: transparent;
+        }
+        .db-new-row .db-input:hover,
+        .db-new-row .db-input:focus {
+          background: var(--surface);
+          border-color: var(--border);
+        }
+        .db-new-row .db-input:focus::placeholder {
+          color: var(--muted);
+        }
+        .db-new-row .db-button {
+          opacity: 0;
+          pointer-events: none;
+        }
+        .db-new-row:focus-within .db-button {
+          opacity: 1;
+          pointer-events: auto;
+        }
         .db-pagination {
           display: flex;
           align-items: center;
+          flex-wrap: wrap;
           gap: 10px;
           padding: 10px 14px;
           border-top: 1px solid var(--border);
-          background: rgba(0,0,0,.08);
+          background: var(--surface);
           color: var(--muted);
           font-size: 11px;
+        }
+        .db-pagination-count {
+          color: var(--text);
+          font-weight: 600;
         }
         .db-pagination-spacer {
           flex: 1;
@@ -771,7 +919,7 @@ function App() {
         .db-card {
           border: 1px solid var(--border);
           border-radius: 16px;
-          background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+          background: var(--surface);
           padding: 14px;
           display: grid;
           gap: 10px;
@@ -791,7 +939,7 @@ function App() {
         .db-stat-value {
           font-size: 24px;
           font-weight: 800;
-          color: var(--accent);
+          color: var(--text);
         }
         .db-stat-sub {
           font-size: 11px;
@@ -805,7 +953,7 @@ function App() {
           border-top: 1px solid var(--border);
           border-bottom: 1px solid var(--border);
           padding: 14px;
-          background: var(--code);
+          background: var(--surface);
           color: var(--text);
           font: 12px/1.6 Consolas, 'Cascadia Code', monospace;
           outline: none;
@@ -835,10 +983,10 @@ function App() {
           font-style: italic;
         }
         .db-num {
-          color: var(--accent);
+          color: var(--text);
         }
         .db-bool {
-          color: var(--success);
+          color: var(--text);
         }
         .db-badges {
           display: flex;
@@ -853,19 +1001,22 @@ function App() {
           border: 1px solid transparent;
         }
         .db-badge.pk {
-          color: var(--accent);
-          background: rgba(125,211,252,.12);
-          border-color: rgba(125,211,252,.28);
+          color: var(--text);
+          background: var(--vscode-badge-background, var(--surface2));
+          border-color: var(--border);
         }
         .db-badge.nn {
-          color: var(--danger);
-          background: rgba(248,113,113,.12);
-          border-color: rgba(248,113,113,.26);
+          color: var(--text);
+          background: var(--vscode-badge-background, var(--surface2));
+          border-color: var(--border);
         }
         .db-form-grid {
           display: grid;
           gap: 10px;
           grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        }
+        .db-form-grid.compact {
+          grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
         }
         .db-field {
           display: grid;
@@ -882,7 +1033,17 @@ function App() {
           border: 1px solid var(--border);
           border-radius: 10px;
           padding: 8px 10px;
-          background: var(--vscode-input-background, var(--code));
+          background: var(--surface);
+          color: var(--text);
+          font: inherit;
+        }
+        .db-select {
+          width: 100%;
+          box-sizing: border-box;
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 8px 10px;
+          background: var(--surface);
           color: var(--text);
           font: inherit;
         }
@@ -907,7 +1068,7 @@ function App() {
           border: 1px solid var(--border);
           border-radius: 12px;
           padding: 12px;
-          background: rgba(255,255,255,.02);
+          background: var(--surface);
           display: grid;
           gap: 10px;
         }
@@ -980,20 +1141,50 @@ function App() {
             >
               <span className="db-table-name">{table.name}</span>
               <span className="db-table-count">{table.rowCount ?? '-'}</span>
+              {canEditSchema ? (
+                <span
+                  className="db-table-delete"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSavingAction(true);
+                    setActionMessage('');
+                    getVscode()?.postMessage({ type: 'deleteTable', table: table.name });
+                  }}
+                  role="button"
+                  aria-label={`Delete ${table.name}`}
+                >
+                  ×
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
+        {canEditSchema ? (
+          <div className="db-sidebar-footer">
+            <button
+              className="db-button"
+              onClick={() => {
+                setShowCreateTable((current) => !current);
+                setActiveTableName('');
+                setActionMessage('');
+                setTableError('');
+              }}
+            >
+              {showCreateTable ? 'Close' : '+ Add Table'}
+            </button>
+          </div>
+        ) : null}
       </aside>
 
       <main className="db-main">
         <div className="db-tabs">
-          {(['data', 'structure', 'query', 'stats'] as TabKey[]).map((tab) => (
+          {(['data', 'structure', 'query'] as TabKey[]).map((tab) => (
             <button
               key={tab}
               className={`db-tab${tab === activeTab ? ' active' : ''}`}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'data' ? 'Data' : tab === 'structure' ? 'Structure' : tab === 'query' ? 'Query' : 'Stats'}
+              {tab === 'data' ? 'Data' : tab === 'structure' ? 'Structure' : 'Query'}
             </button>
           ))}
         </div>
@@ -1004,45 +1195,125 @@ function App() {
 
         {activeTab === 'data' && (
           <section className="db-pane">
-            <div className="db-toolbar">
-              <div className="db-toolbar-title">{activeTableName || 'Select a table'}</div>
-              {canEditData && activeTableName ? (
-                <>
-                  <button className="db-button" onClick={insertRow} disabled={savingAction}>Add Row</button>
-                  <button className="db-button" onClick={reloadActiveTable} disabled={loadingTable || savingAction}>Refresh</button>
-                </>
-              ) : null}
-              <div className="db-toolbar-meta">
-                {tableRowCount !== null ? `${tableRowCount} rows` : activeTable?.rowCount ?? 0} total
-              </div>
-            </div>
-            {canEditData && activeTableName && tableColumns.length > 0 ? (
-              <div className="db-panel" style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-                <div className="db-card" style={{ padding: 12 }}>
-                  <div className="db-card-title">Quick Insert</div>
-                  <div className="db-form-grid">
-                    {tableColumns.map((column) => (
-                      <label key={column} className="db-field">
-                        <span className="db-field-label">{column}</span>
-                        <input
-                          className="db-input"
-                          value={newRowValues[column] ?? ''}
-                          onChange={(event) =>
-                            setNewRowValues((current) => ({ ...current, [column]: event.target.value }))
-                          }
-                          placeholder="Leave blank for default"
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
             <div className="db-content">
               {tableError ? (
                 <div className="db-empty">{tableError}</div>
               ) : loadingTable ? (
                 <div className="db-empty">Loading rows...</div>
+              ) : showCreateTable && canEditSchema ? (
+                <div className="db-panel">
+                  <div className="db-card">
+                    <div className="db-card-title">Create Table</div>
+                    <label className="db-field">
+                      <span className="db-field-label">Table Name</span>
+                      <input
+                        className="db-input"
+                        value={createTableName}
+                        onChange={(event) => setCreateTableName(event.target.value)}
+                        placeholder="public.my_table or my_table"
+                      />
+                    </label>
+                    <div className="db-stack">
+                      {createTableColumns.map((column, index) => (
+                        <div key={index} className="db-column-draft">
+                          <div className="db-form-grid compact">
+                            <label className="db-field">
+                              <span className="db-field-label">Name</span>
+                              <input
+                                className="db-input"
+                                value={column.name}
+                                onChange={(event) =>
+                                  setCreateTableColumns((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, name: event.target.value } : item
+                                    )
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="db-field">
+                              <span className="db-field-label">Type</span>
+                              <input
+                                className="db-input"
+                                value={column.type}
+                                onChange={(event) =>
+                                  setCreateTableColumns((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, type: event.target.value } : item
+                                    )
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="db-field">
+                              <span className="db-field-label">Default</span>
+                              <input
+                                className="db-input"
+                                value={column.defaultValue}
+                                onChange={(event) =>
+                                  setCreateTableColumns((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, defaultValue: event.target.value } : item
+                                    )
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+                          <div className="db-check-row">
+                            <label className="db-check">
+                              <input
+                                type="checkbox"
+                                checked={column.notnull}
+                                onChange={(event) =>
+                                  setCreateTableColumns((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, notnull: event.target.checked } : item
+                                    )
+                                  )
+                                }
+                              />
+                              Not Null
+                            </label>
+                            <label className="db-check">
+                              <input
+                                type="checkbox"
+                                checked={column.primaryKey}
+                                onChange={(event) =>
+                                  setCreateTableColumns((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index ? { ...item, primaryKey: event.target.checked } : item
+                                    )
+                                  )
+                                }
+                              />
+                              Primary Key
+                            </label>
+                            <button
+                              className="db-button danger"
+                              onClick={() =>
+                                setCreateTableColumns((current) =>
+                                  current.length > 1 ? current.filter((_, itemIndex) => itemIndex !== index) : current
+                                )
+                              }
+                              disabled={createTableColumns.length <= 1}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="db-check-row">
+                      <button className="db-button" onClick={() => setCreateTableColumns((current) => [...current, emptyColumnDraft()])}>
+                        Add Column
+                      </button>
+                      <button className="db-button" onClick={createTable} disabled={savingAction}>
+                        Create Table
+                      </button>
+                    </div>
+                  </div>
+                </div>
               ) : !activeTableName ? (
                 <div className="db-empty">Select a table to begin.</div>
               ) : (
@@ -1050,15 +1321,19 @@ function App() {
               )}
             </div>
             <div className="db-pagination">
-              <span>Page {page + 1}{totalPages ? ` of ${totalPages}` : ''}</span>
+              <span className="db-pagination-count">
+                {tableRows.length}{tableRowCount !== null ? ` of ${tableRowCount}` : '+'} rows
+              </span>
+              <span>
+                {totalPages ? `${loadedPages.length} of ${totalPages} chunks loaded` : 'Continuous list'}
+              </span>
               <span className="db-pagination-spacer" />
-              <button className="db-button" disabled={page <= 0 || loadingTable} onClick={() => setPage((current) => Math.max(0, current - 1))}>Prev</button>
               <button
                 className="db-button"
-                disabled={loadingTable || (totalPages !== null ? page + 1 >= totalPages : tableRows.length < pageSize)}
-                onClick={() => setPage((current) => current + 1)}
+                disabled={loadingTable || !hasMoreRows}
+                onClick={loadMoreRows}
               >
-                Next
+                {loadingTable && tableRows.length > 0 ? 'Loading...' : hasMoreRows ? 'Load More' : 'All Rows Loaded'}
               </button>
             </div>
           </section>
@@ -1067,143 +1342,10 @@ function App() {
         {activeTab === 'structure' && (
           <section className="db-pane">
             <div className="db-panel">
-              {canEditSchema ? (
-                <div className="db-card">
-                  <div className="db-card-title">Create Table</div>
-                  <label className="db-field">
-                    <span className="db-field-label">Table Name</span>
-                    <input
-                      className="db-input"
-                      value={createTableName}
-                      onChange={(event) => setCreateTableName(event.target.value)}
-                      placeholder="public.my_table or my_table"
-                    />
-                  </label>
-                  <div className="db-stack">
-                    {createTableColumns.map((column, index) => (
-                      <div key={index} className="db-column-draft">
-                        <div className="db-form-grid">
-                          <label className="db-field">
-                            <span className="db-field-label">Column Name</span>
-                            <input
-                              className="db-input"
-                              value={column.name}
-                              onChange={(event) =>
-                                setCreateTableColumns((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index ? { ...item, name: event.target.value } : item
-                                  )
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="db-field">
-                            <span className="db-field-label">Type</span>
-                            <input
-                              className="db-input"
-                              value={column.type}
-                              onChange={(event) =>
-                                setCreateTableColumns((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index ? { ...item, type: event.target.value } : item
-                                  )
-                                )
-                              }
-                            />
-                          </label>
-                          <label className="db-field">
-                            <span className="db-field-label">Default</span>
-                            <input
-                              className="db-input"
-                              value={column.defaultValue}
-                              onChange={(event) =>
-                                setCreateTableColumns((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index ? { ...item, defaultValue: event.target.value } : item
-                                  )
-                                )
-                              }
-                            />
-                          </label>
-                        </div>
-                        <div className="db-check-row">
-                          <label className="db-check">
-                            <input
-                              type="checkbox"
-                              checked={column.notnull}
-                              onChange={(event) =>
-                                setCreateTableColumns((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index ? { ...item, notnull: event.target.checked } : item
-                                  )
-                                )
-                              }
-                            />
-                            Not Null
-                          </label>
-                          <label className="db-check">
-                            <input
-                              type="checkbox"
-                              checked={column.primaryKey}
-                              onChange={(event) =>
-                                setCreateTableColumns((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index ? { ...item, primaryKey: event.target.checked } : item
-                                  )
-                                )
-                              }
-                            />
-                            Primary Key
-                          </label>
-                          <button
-                            className="db-button danger"
-                            onClick={() =>
-                              setCreateTableColumns((current) =>
-                                current.length > 1 ? current.filter((_, itemIndex) => itemIndex !== index) : current
-                              )
-                            }
-                            disabled={createTableColumns.length <= 1}
-                          >
-                            Remove Column
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="db-check-row">
-                    <button className="db-button" onClick={() => setCreateTableColumns((current) => [...current, emptyColumnDraft()])}>
-                      Add Column Draft
-                    </button>
-                    <button className="db-button" onClick={createTable} disabled={savingAction}>
-                      Create Table
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
               {!activeTable ? (
                 <div className="db-empty">Select a table to inspect its structure.</div>
               ) : (
                 <>
-                  {canEditSchema ? (
-                    <div className="db-card">
-                      <div className="db-card-title">Manage {activeTable.name}</div>
-                      <div className="db-check-row">
-                        <button
-                          className="db-button danger"
-                          onClick={() => {
-                            setSavingAction(true);
-                            setActionMessage('');
-                            getVscode()?.postMessage({ type: 'deleteTable', table: activeTable.name });
-                          }}
-                          disabled={savingAction}
-                        >
-                          Delete Table
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-
                   <div className="db-card">
                     <div className="db-card-title">{activeTable.name} Columns</div>
                     {activeTable.columns.length === 0 ? (
@@ -1216,22 +1358,105 @@ function App() {
                               <th>Name</th>
                               <th>Type</th>
                               <th>Flags</th>
+                              <th>Default</th>
                               {canEditSchema ? <th className="db-actions-col">Actions</th> : null}
                             </tr>
                           </thead>
                           <tbody>
-                            {activeTable.columns.map((column) => (
-                              <tr key={column.name}>
-                                <td>{column.name}</td>
-                                <td>{column.type || 'TEXT'}</td>
+                            {columnDrafts.map((column, index) => (
+                              <tr key={column.originalName}>
                                 <td>
-                                  <div className="db-badges">
-                                    {column.pk ? <span className="db-badge pk">PK</span> : null}
-                                    {column.notnull ? <span className="db-badge nn">NOT NULL</span> : null}
-                                  </div>
+                                  {canEditSchema ? (
+                                    <input
+                                      className="db-input"
+                                      value={column.name}
+                                      onChange={(event) =>
+                                        setColumnDrafts((current) =>
+                                          current.map((item, itemIndex) =>
+                                            itemIndex === index ? { ...item, name: event.target.value } : item
+                                          )
+                                        )
+                                      }
+                                    />
+                                  ) : column.name}
+                                </td>
+                                <td>
+                                  {canEditSchema ? (
+                                    <>
+                                      <input
+                                        className="db-input"
+                                        list="db-column-types"
+                                        value={column.type}
+                                        onChange={(event) =>
+                                          setColumnDrafts((current) =>
+                                            current.map((item, itemIndex) =>
+                                              itemIndex === index ? { ...item, type: event.target.value } : item
+                                            )
+                                          )
+                                        }
+                                      />
+                                      <datalist id="db-column-types">
+                                        {COMMON_COLUMN_TYPES.map((type) => (
+                                          <option key={type} value={type} />
+                                        ))}
+                                      </datalist>
+                                    </>
+                                  ) : (column.type || 'TEXT')}
+                                </td>
+                                <td>
+                                  {canEditSchema ? (
+                                    <div className="db-check-row">
+                                      <label className="db-check">
+                                        <input
+                                          type="checkbox"
+                                          checked={column.notnull}
+                                          onChange={(event) =>
+                                            setColumnDrafts((current) =>
+                                              current.map((item, itemIndex) =>
+                                                itemIndex === index ? { ...item, notnull: event.target.checked } : item
+                                              )
+                                            )
+                                          }
+                                        />
+                                        Not Null
+                                      </label>
+                                      <label className="db-check">
+                                        <input type="checkbox" checked={column.primaryKey} disabled />
+                                        PK
+                                      </label>
+                                    </div>
+                                  ) : (
+                                    <div className="db-badges">
+                                      {column.primaryKey ? <span className="db-badge pk">PK</span> : null}
+                                      {column.notnull ? <span className="db-badge nn">NOT NULL</span> : null}
+                                    </div>
+                                  )}
+                                </td>
+                                <td>
+                                  {canEditSchema ? (
+                                    <input
+                                      className="db-input"
+                                      value={column.defaultValue}
+                                      onChange={(event) =>
+                                        setColumnDrafts((current) =>
+                                          current.map((item, itemIndex) =>
+                                            itemIndex === index ? { ...item, defaultValue: event.target.value } : item
+                                          )
+                                        )
+                                      }
+                                      placeholder="Optional"
+                                    />
+                                  ) : (column.defaultValue || '-')}
                                 </td>
                                 {canEditSchema ? (
                                   <td className="db-actions-cell">
+                                    <button
+                                      className="db-button"
+                                      onClick={() => updateColumn(column)}
+                                      disabled={savingAction}
+                                    >
+                                      Save
+                                    </button>
                                     <button
                                       className="db-button danger"
                                       onClick={() => {
@@ -1240,7 +1465,7 @@ function App() {
                                         getVscode()?.postMessage({
                                           type: 'deleteColumn',
                                           table: activeTable.name,
-                                          column: column.name,
+                                          column: column.originalName,
                                         });
                                       }}
                                       disabled={savingAction}
@@ -1251,56 +1476,56 @@ function App() {
                                 ) : null}
                               </tr>
                             ))}
+                            {canEditSchema ? (
+                              <tr className="db-new-row">
+                                <td>
+                                  <input
+                                    className="db-input"
+                                    value={newColumnDraft.name}
+                                    onChange={(event) => setNewColumnDraft((current) => ({ ...current, name: event.target.value }))}
+                                    placeholder="new_column"
+                                  />
+                                </td>
+                                <td>
+                                  <input
+                                    className="db-input"
+                                    list="db-column-types"
+                                    value={newColumnDraft.type}
+                                    onChange={(event) => setNewColumnDraft((current) => ({ ...current, type: event.target.value }))}
+                                  />
+                                </td>
+                                <td>
+                                  <div className="db-check-row">
+                                    <label className="db-check">
+                                      <input
+                                        type="checkbox"
+                                        checked={newColumnDraft.notnull}
+                                        onChange={(event) => setNewColumnDraft((current) => ({ ...current, notnull: event.target.checked }))}
+                                      />
+                                      Not Null
+                                    </label>
+                                  </div>
+                                </td>
+                                <td>
+                                  <input
+                                    className="db-input"
+                                    value={newColumnDraft.defaultValue}
+                                    onChange={(event) => setNewColumnDraft((current) => ({ ...current, defaultValue: event.target.value }))}
+                                    placeholder="Optional"
+                                  />
+                                </td>
+                                <td className="db-actions-cell">
+                                  <button className="db-button" onClick={addColumn} disabled={savingAction}>
+                                    Add
+                                  </button>
+                                </td>
+                              </tr>
+                            ) : null}
                           </tbody>
                         </table>
                       </div>
                     )}
                   </div>
-
-                  {canEditSchema ? (
-                    <div className="db-card">
-                      <div className="db-card-title">Add Column</div>
-                      <div className="db-form-grid">
-                        <label className="db-field">
-                          <span className="db-field-label">Column Name</span>
-                          <input
-                            className="db-input"
-                            value={newColumnDraft.name}
-                            onChange={(event) => setNewColumnDraft((current) => ({ ...current, name: event.target.value }))}
-                          />
-                        </label>
-                        <label className="db-field">
-                          <span className="db-field-label">Type</span>
-                          <input
-                            className="db-input"
-                            value={newColumnDraft.type}
-                            onChange={(event) => setNewColumnDraft((current) => ({ ...current, type: event.target.value }))}
-                          />
-                        </label>
-                        <label className="db-field">
-                          <span className="db-field-label">Default</span>
-                          <input
-                            className="db-input"
-                            value={newColumnDraft.defaultValue}
-                            onChange={(event) => setNewColumnDraft((current) => ({ ...current, defaultValue: event.target.value }))}
-                          />
-                        </label>
-                      </div>
-                      <div className="db-check-row">
-                        <label className="db-check">
-                          <input
-                            type="checkbox"
-                            checked={newColumnDraft.notnull}
-                            onChange={(event) => setNewColumnDraft((current) => ({ ...current, notnull: event.target.checked }))}
-                          />
-                          Not Null
-                        </label>
-                        <button className="db-button" onClick={addColumn} disabled={savingAction}>
-                          Add Column
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
                 </>
               )}
             </div>
@@ -1348,41 +1573,6 @@ function App() {
           </section>
         )}
 
-        {activeTab === 'stats' && (
-          <section className="db-pane">
-            <div className="db-panel">
-              <div className="db-grid">
-                <div className="db-card">
-                  <div className="db-card-title">Database</div>
-                  <div className="db-stat-value">{schema?.dbType ?? initialState.dbType}</div>
-                  <div className="db-stat-sub">Current viewer type</div>
-                </div>
-                <div className="db-card">
-                  <div className="db-card-title">Tables</div>
-                  <div className="db-stat-value">{stats.tableCount}</div>
-                  <div className="db-stat-sub">Detected tables or preview groups</div>
-                </div>
-                <div className="db-card">
-                  <div className="db-card-title">Known Rows</div>
-                  <div className="db-stat-value">{stats.knownRows}</div>
-                  <div className="db-stat-sub">
-                    {stats.knownTableCount === stats.tableCount ? 'Based on all tables' : 'Only tables with available counts'}
-                  </div>
-                </div>
-                <div className="db-card">
-                  <div className="db-card-title">Source Size</div>
-                  <div className="db-stat-value">{formatBytes(schema?.dbSize)}</div>
-                  <div className="db-stat-sub">Available when the source reports a size</div>
-                </div>
-              </div>
-
-              <div className="db-card">
-                <div className="db-card-title">Source</div>
-                <div>{schema?.sourceLabel ?? initialState.sourceLabel ?? 'Loading...'}</div>
-              </div>
-            </div>
-          </section>
-        )}
       </main>
     </div>
   );

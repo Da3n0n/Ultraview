@@ -15,7 +15,7 @@ async function getSqlJs(extUri: vscode.Uri): Promise<SqlJsStatic> {
   return SQL!;
 }
 
-interface ColInfo { name: string; type: string; pk: number; notnull: number; }
+interface ColInfo { name: string; type: string; pk: number; notnull: number; defaultValue?: string | null; }
 type SqliteBindValue = number | string | Uint8Array | null;
 
 interface SqliteRowSelectorRowId {
@@ -129,10 +129,57 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
       return tableNames.map((name) => {
         const colsRes = d.exec(`PRAGMA table_info(${quoteIdentifier(name)})`);
         const cols: ColInfo[] = colsRes.length > 0
-          ? colsRes[0].values.map((r) => ({ name: String(r[1]), type: String(r[2]), pk: Number(r[5]), notnull: Number(r[3]) }))
+          ? colsRes[0].values.map((r) => ({ name: String(r[1]), type: String(r[2]), pk: Number(r[5]), notnull: Number(r[3]), defaultValue: r[4] === null ? null : String(r[4]) }))
           : [];
         return { name, rowCount: null, columns: cols };
       });
+    };
+
+    const rebuildTable = async (
+      d: Database,
+      tableName: string,
+      nextColumns: ColInfo[],
+      sourceColumns: string[]
+    ) => {
+      const tempTable = `__uv_tmp_${tableName}_${Date.now()}`;
+      const pkColumns = [...nextColumns]
+        .filter((column) => column.pk)
+        .sort((a, b) => (a.pk || 0) - (b.pk || 0));
+      const columnSql = nextColumns.map((column) => {
+        const parts = [quoteIdentifier(column.name), column.type || 'TEXT'];
+        if (column.notnull) {
+          parts.push('NOT NULL');
+        }
+        if (column.defaultValue !== undefined && column.defaultValue !== null && String(column.defaultValue).trim()) {
+          parts.push(`DEFAULT ${String(column.defaultValue).trim()}`);
+        }
+        if (pkColumns.length === 1 && column.pk) {
+          parts.push('PRIMARY KEY');
+        }
+        return parts.join(' ');
+      });
+      if (pkColumns.length > 1) {
+        columnSql.push(`PRIMARY KEY (${pkColumns.map((column) => quoteIdentifier(column.name)).join(', ')})`);
+      }
+
+      d.run('BEGIN');
+      try {
+        d.run(`ALTER TABLE ${quoteTableReference(tableName)} RENAME TO ${quoteIdentifier(tempTable)}`);
+        d.run(`CREATE TABLE ${quoteTableReference(tableName)} (${columnSql.join(', ')})`);
+        d.run(
+          `INSERT INTO ${quoteTableReference(tableName)} (${nextColumns.map((column) => quoteIdentifier(column.name)).join(', ')}) ` +
+          `SELECT ${sourceColumns.map((column) => quoteIdentifier(column)).join(', ')} FROM ${quoteIdentifier(tempTable)}`
+        );
+        d.run(`DROP TABLE ${quoteIdentifier(tempTable)}`);
+        d.run('COMMIT');
+      } catch (error) {
+        try {
+          d.run('ROLLBACK');
+        } catch {
+          // ignore rollback errors
+        }
+        throw error;
+      }
     };
 
     const postSchema = async () => {
@@ -344,6 +391,33 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
             await persistDb();
             await postSchema();
             panel.webview.postMessage({ type: 'actionComplete', message: 'Column removed.' });
+            break;
+          }
+          case 'updateColumn': {
+            const d = await openDb();
+            const tables = loadTables(d);
+            const tableMeta = tables.find((table) => table.name === msg.table);
+            if (!tableMeta) {
+              throw new Error(`Table not found: ${msg.table}`);
+            }
+            const next = msg.next;
+            const nextColumns = tableMeta.columns.map((column) => {
+              if (column.name !== msg.column) {
+                return column;
+              }
+              return {
+                ...column,
+                name: next.name,
+                type: next.type,
+                notnull: next.notnull ? 1 : 0,
+                defaultValue: next.defaultValue?.trim() || null,
+              };
+            });
+            const sourceColumns = tableMeta.columns.map((column) => column.name);
+            await rebuildTable(d, String(msg.table), nextColumns, sourceColumns);
+            await persistDb();
+            await postSchema();
+            panel.webview.postMessage({ type: 'actionComplete', message: 'Column updated.' });
             break;
           }
         }
