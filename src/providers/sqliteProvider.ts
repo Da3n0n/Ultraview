@@ -16,6 +16,7 @@ async function getSqlJs(extUri: vscode.Uri): Promise<SqlJsStatic> {
 }
 
 interface ColInfo { name: string; type: string; pk: number; notnull: number; }
+type SqliteBindValue = number | string | Uint8Array | null;
 
 interface SqliteRowSelectorRowId {
   kind: 'rowid';
@@ -49,14 +50,17 @@ function quoteTableReference(value: string): string {
   return schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(table)}` : quoteIdentifier(table);
 }
 
-function asSqliteValue(value: unknown): unknown {
+function asSqliteValue(value: unknown): SqliteBindValue {
   if (value === '__UV_NULL__') {
     return null;
   }
   if (typeof value === 'boolean') {
     return value ? 1 : 0;
   }
-  return value;
+  if (typeof value === 'number' || typeof value === 'string' || value instanceof Uint8Array || value === null) {
+    return value;
+  }
+  return String(value);
 }
 
 function buildSqliteSelector(table: { columns: ColInfo[] }, row: Record<string, unknown>): string {
@@ -227,7 +231,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
             }
             const selector = parseSqliteSelector(String(msg.rowId));
             let sql = `UPDATE ${quoteTableReference(String(msg.table))} SET ${quoteIdentifier(String(msg.column))} = ?`;
-            const params: unknown[] = [asSqliteValue(msg.value)];
+            const params: SqliteBindValue[] = [asSqliteValue(msg.value)];
             if (selector.kind === 'pk') {
               const whereParts = Object.keys(selector.values).map((column) => `${quoteIdentifier(column)} IS ?`);
               sql += ` WHERE ${whereParts.join(' AND ')}`;
@@ -262,7 +266,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
             const d = await openDb();
             const selector = parseSqliteSelector(String(msg.rowId));
             let sql = `DELETE FROM ${quoteTableReference(String(msg.table))}`;
-            const params: unknown[] = [];
+            const params: SqliteBindValue[] = [];
             if (selector.kind === 'pk') {
               const whereParts = Object.keys(selector.values).map((column) => `${quoteIdentifier(column)} IS ?`);
               sql += ` WHERE ${whereParts.join(' AND ')}`;
