@@ -44,7 +44,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
       return db!;
     };
 
-    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'SQLite');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'SQLite', filePath, path.basename(filePath));
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {
@@ -61,7 +61,7 @@ export class SqliteProvider implements vscode.CustomReadonlyEditorProvider {
               return { name, rowCount: null, columns: cols };
             });
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables, dbSize, sourceLabel: filePath, dbType: 'SQLite' });
+            panel.webview.postMessage({ type: 'schema', tables, dbSize, sourceLabel: filePath, dbType: 'SQLite', dbName: path.basename(filePath) });
             break;
           }
           case 'getTableData': {

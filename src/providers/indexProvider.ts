@@ -49,7 +49,7 @@ export class IndexProvider implements vscode.CustomReadonlyEditorProvider {
       tableRows = parsed.rowsByTable;
     };
 
-    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'Index File');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'Index File', filePath, path.basename(filePath));
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {
@@ -57,7 +57,7 @@ export class IndexProvider implements vscode.CustomReadonlyEditorProvider {
           case 'ready': {
             initialize();
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables, dbSize, sourceLabel: filePath, dbType });
+            panel.webview.postMessage({ type: 'schema', tables, dbSize, sourceLabel: filePath, dbType, dbName: path.basename(filePath) });
             break;
           }
           case 'getTableData': {

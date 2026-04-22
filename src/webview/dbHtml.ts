@@ -5,7 +5,8 @@ export function buildDbHtml(
   extensionPath: string,
   webview: vscode.Webview,
   dbType: string,
-  sourceLabel?: string
+  sourceLabel?: string,
+  dbName?: string
 ): string {
   return buildReactWebviewPage({
     extensionPath,
@@ -13,6 +14,6 @@ export function buildDbHtml(
     bundleName: 'db',
     title: `${dbType} Viewer`,
     loadingLabel: `Loading ${dbType} viewer...`,
-    initialState: { dbType, sourceLabel },
+    initialState: { dbType, sourceLabel, dbName },
   });
 }

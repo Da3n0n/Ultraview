@@ -32,11 +32,67 @@ interface PostgresConnectionConfig {
     label?: string;
 }
 
+interface OpenPostgresPanelOptions {
+    onConnected?: (config: PostgresConnectionConfig) => Thenable<void> | Promise<void> | void;
+}
+
 interface PostgresColumnInfo {
     name: string;
     type: string;
     pk?: number;
     notnull?: number;
+}
+
+function looksLikePostgresConnectionString(value?: string): boolean {
+    return !!value && /^postgres(?:ql)?:\/\//i.test(value.trim());
+}
+
+function parsePostgresConnectionString(value: string): Partial<PostgresConnectionConfig> | undefined {
+    if (!looksLikePostgresConnectionString(value)) {
+        return undefined;
+    }
+
+    try {
+        const url = new URL(value.trim());
+        return {
+            host: url.hostname || undefined,
+            port: url.port ? Number(url.port) : 5432,
+            database: url.pathname.replace(/^\/+/, '') || undefined,
+            user: url.username ? decodeURIComponent(url.username) : undefined,
+            password: url.password ? decodeURIComponent(url.password) : undefined,
+            ssl:
+                url.searchParams.get('sslmode') === 'require' ||
+                url.searchParams.get('ssl') === 'true' ||
+                undefined,
+        };
+    } catch {
+        return undefined;
+    }
+}
+
+function normalizeConnectionHint(
+    hint: Partial<PostgresConnectionConfig>
+): Partial<PostgresConnectionConfig> {
+    const merged: Partial<PostgresConnectionConfig> = { ...hint };
+
+    for (const key of ['host', 'database', 'user', 'password'] as const) {
+        const rawValue = hint[key];
+        if (typeof rawValue !== 'string' || !looksLikePostgresConnectionString(rawValue)) {
+            continue;
+        }
+
+        const parsed = parsePostgresConnectionString(rawValue);
+        if (!parsed) {
+            continue;
+        }
+
+        Object.assign(merged, parsed);
+        if (key === 'password' && parsed.password) {
+            merged.password = parsed.password;
+        }
+    }
+
+    return merged;
 }
 
 function quoteIdentifier(value: string): string {
@@ -78,23 +134,50 @@ async function promptForValue(
 async function resolveConnectionConfig(
     hint: Partial<PostgresConnectionConfig>
 ): Promise<PostgresConnectionConfig | undefined> {
+    const normalizedHint = normalizeConnectionHint(hint);
+    const parsedHint =
+        parsePostgresConnectionString(normalizedHint.host || '') ||
+        parsePostgresConnectionString(normalizedHint.database || '') ||
+        parsePostgresConnectionString(normalizedHint.user || '') ||
+        parsePostgresConnectionString(normalizedHint.password || '') ||
+        undefined;
+    const mergedHint: Partial<PostgresConnectionConfig> = {
+        ...normalizedHint,
+        ...parsedHint,
+    };
+
     const host =
-        hint.host ||
+        mergedHint.host ||
         (await promptForValue(
-            'Enter the PostgreSQL host',
-            'db.example.com or 127.0.0.1',
-            hint.host
+            'Enter the PostgreSQL host or paste the full PostgreSQL URL',
+            'db.example.com, 127.0.0.1, or postgresql://user:pass@host:5432/db',
+            mergedHint.host
         ));
     if (!host) {
         return undefined;
     }
 
+    const parsedHostValue = parsePostgresConnectionString(host);
+    const finalHint: Partial<PostgresConnectionConfig> = {
+        ...mergedHint,
+        ...parsedHostValue,
+        host: parsedHostValue?.host || host,
+    };
+
+    if (looksLikePostgresConnectionString(finalHint.host)) {
+        const parsedFinalHost = parsePostgresConnectionString(finalHint.host || '');
+        if (parsedFinalHost?.host) {
+            Object.assign(finalHint, parsedFinalHost);
+            finalHint.host = parsedFinalHost.host;
+        }
+    }
+
     const portText =
-        String(hint.port || '') ||
+        (finalHint.port ? String(finalHint.port) : '') ||
         (await promptForValue(
             'Enter the PostgreSQL port',
             '5432',
-            hint.port ? String(hint.port) : '5432',
+            finalHint.port ? String(finalHint.port) : '5432',
             false,
             (value) => {
                 if (!value.trim()) {
@@ -111,33 +194,33 @@ async function resolveConnectionConfig(
     }
 
     const database =
-        hint.database ||
+        finalHint.database ||
         (await promptForValue(
             'Enter the PostgreSQL database name',
             'postgres',
-            hint.database
+            finalHint.database
         ));
     if (!database) {
         return undefined;
     }
 
     const user =
-        hint.user ||
+        finalHint.user ||
         (await promptForValue(
             'Enter the PostgreSQL username',
             'postgres',
-            hint.user
+            finalHint.user
         ));
     if (!user) {
         return undefined;
     }
 
     const password =
-        hint.password ||
+        finalHint.password ||
         (await promptForValue(
             'Enter the PostgreSQL password',
             'Password for this database user',
-            '',
+            finalHint.password || '',
             true,
             (value) => (value.trim() ? undefined : 'Password is required.')
         ));
@@ -152,13 +235,13 @@ async function resolveConnectionConfig(
     }
 
     return {
-        host,
+        host: finalHint.host || host,
         port,
         database,
         user,
         password,
-        ssl: hint.ssl,
-        label: hint.label,
+        ssl: finalHint.ssl,
+        label: finalHint.label,
     };
 }
 
@@ -174,7 +257,8 @@ async function queryRows<T extends Record<string, unknown>>(
 export class PostgresProvider {
     static async openConnectionPanel(
         context: vscode.ExtensionContext,
-        hint: Partial<PostgresConnectionConfig>
+        hint: Partial<PostgresConnectionConfig>,
+        options?: OpenPostgresPanelOptions
     ): Promise<void> {
         const config = await resolveConnectionConfig(hint);
         if (!config) {
@@ -192,10 +276,16 @@ export class PostgresProvider {
             }
         );
 
-        panel.webview.html = buildDbHtml(context.extensionPath, panel.webview, 'PostgreSQL', config.label);
+        panel.webview.html = buildDbHtml(
+            context.extensionPath,
+            panel.webview,
+            'PostgreSQL',
+            config.label || `${config.host}:${config.port}/${config.database}`,
+            config.database
+        );
 
         const clientConfig = {
-            host: config.host,
+            host: parsePostgresConnectionString(config.host)?.host || config.host,
             port: config.port,
             database: config.database,
             user: config.user,
@@ -307,7 +397,9 @@ export class PostgresProvider {
                                 config.label ||
                                 `${config.host}:${config.port}/${config.database}`,
                             dbType: 'PostgreSQL',
+                            dbName: config.database,
                         });
+                        await options?.onConnected?.(config);
                         break;
                     }
                     case 'getTableData': {

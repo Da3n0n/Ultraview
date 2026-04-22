@@ -295,6 +295,11 @@ export function buildDokployHtml(isPanel: boolean): string {
     border-color: color-mix(in srgb, var(--success) 45%, transparent);
     background: color-mix(in srgb, var(--success) 16%, transparent);
   }
+  .summary-pill.db-linked {
+    color: var(--success);
+    border-color: color-mix(in srgb, var(--success) 45%, transparent);
+    background: color-mix(in srgb, var(--success) 16%, transparent);
+  }
   .summary-pill.disconnected {
     color: var(--muted);
     border-color: color-mix(in srgb, var(--muted) 35%, transparent);
@@ -792,6 +797,9 @@ function renderProfileBody(profile, cache, services, hasToken, isRefreshing, isA
         service.type === 'database' &&
         typeof service.serviceKind === 'string' &&
         service.serviceKind.toLowerCase().includes('postgres');
+      const linkedHtml = service && service.hasSavedConnection
+        ? '<span class="summary-pill db-linked">Connected</span>'
+        : '';
       const domainHtml = domains.length
         ? domains.map(function(domain) {
             const href = buildDomainHref(domain);
@@ -809,7 +817,10 @@ function renderProfileBody(profile, cache, services, hasToken, isRefreshing, isA
               '<div class="service-name">' + escHtml(service.name) + '</div>' +
               '<div class="service-sub">' + escHtml(service.type === 'database' ? (service.serviceKind || 'database') : service.type) + '</div>' +
             '</div>' +
-            '<span class="status-pill ' + escAttr(service.statusTone || 'muted') + '">' + escHtml(service.status || 'Unknown') + '</span>' +
+            '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+              linkedHtml +
+              '<span class="status-pill ' + escAttr(service.statusTone || 'muted') + '">' + escHtml(service.status || 'Unknown') + '</span>' +
+            '</div>' +
           '</div>' +
           '<div class="domain-list">' + domainHtml + '</div>' +
           actionHtml +

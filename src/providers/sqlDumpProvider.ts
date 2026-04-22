@@ -84,7 +84,7 @@ export class SqlDumpProvider implements vscode.CustomReadonlyEditorProvider {
       return parsed;
     };
 
-    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'SQL Dump');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'SQL Dump', filePath, path.basename(filePath));
 
     panel.webview.onDidReceiveMessage(async (msg) => {
       try {
@@ -97,7 +97,7 @@ export class SqlDumpProvider implements vscode.CustomReadonlyEditorProvider {
               columns: t.columns
             }));
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables: schema, dbSize, sourceLabel: filePath, dbType: 'SQL Dump' });
+            panel.webview.postMessage({ type: 'schema', tables: schema, dbSize, sourceLabel: filePath, dbType: 'SQL Dump', dbName: path.basename(filePath) });
             break;
           }
           case 'getTableData': {

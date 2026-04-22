@@ -21,6 +21,7 @@ interface SchemaState {
   dbSize: number;
   sourceLabel: string;
   dbType: string;
+  dbName?: string;
 }
 
 function getInitialState(): DbInitialState {
@@ -67,6 +68,13 @@ function formatValue(value: unknown): React.ReactNode {
   return String(value);
 }
 
+function deriveDbName(dbType: string, sourceLabel?: string): string {
+  if (!sourceLabel) return dbType;
+  const normalized = sourceLabel.replace(/\\/g, '/').trim();
+  const parts = normalized.split('/').map((part) => part.trim()).filter(Boolean);
+  return parts[parts.length - 1] || normalized || dbType;
+}
+
 function App() {
   const initialState = getInitialState();
   const [schema, setSchema] = useState<SchemaState | null>(null);
@@ -88,6 +96,13 @@ function App() {
     () => schema?.tables.find((table) => table.name === activeTableName) ?? null,
     [schema, activeTableName]
   );
+  const dbName =
+    schema?.dbName ??
+    initialState.dbName ??
+    deriveDbName(
+      schema?.dbType ?? initialState.dbType,
+      schema?.sourceLabel ?? initialState.sourceLabel
+    );
 
   useEffect(() => {
     getVscode()?.postMessage({ type: 'ready' });
@@ -104,6 +119,7 @@ function App() {
           dbSize: message.dbSize,
           sourceLabel: message.sourceLabel,
           dbType: message.dbType,
+          dbName: message.dbName,
         };
 
         setSchema(nextSchema);
@@ -263,14 +279,16 @@ function App() {
           display: flex;
           flex-direction: column;
           min-width: 0;
+          min-height: 0;
           border-right: 1px solid var(--border);
-          background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+          background: var(--vscode-sideBar-background, var(--surface));
         }
         .db-sidebar-header {
           padding: 14px 16px 12px;
           border-bottom: 1px solid var(--border);
           display: grid;
           gap: 6px;
+          background: var(--vscode-sideBar-background, var(--surface));
         }
         .db-overline {
           font-size: 11px;
@@ -290,7 +308,7 @@ function App() {
           font-size: 11px;
           color: var(--muted);
           border-bottom: 1px solid var(--border);
-          background: rgba(255,255,255,.02);
+          background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background, var(--surface)));
         }
         .db-meta strong {
           color: var(--text);
@@ -298,9 +316,11 @@ function App() {
         }
         .db-table-list {
           flex: 1;
+          min-height: 0;
           overflow: auto;
           padding: 8px;
           display: grid;
+          align-content: start;
           gap: 6px;
         }
         .db-table-button {
@@ -319,13 +339,14 @@ function App() {
           transition: transform .14s ease, background .14s ease, border-color .14s ease;
         }
         .db-table-button:hover {
-          background: var(--surface2);
+          background: var(--vscode-list-hoverBackground, var(--surface2));
           border-color: rgba(125,211,252,.2);
           transform: translateX(1px);
         }
         .db-table-button.active {
-          background: linear-gradient(180deg, rgba(125,211,252,.14), rgba(125,211,252,.07));
-          border-color: rgba(125,211,252,.35);
+          background: var(--vscode-list-activeSelectionBackground, linear-gradient(180deg, rgba(125,211,252,.14), rgba(125,211,252,.07)));
+          border-color: var(--vscode-list-activeSelectionBackground, rgba(125,211,252,.35));
+          color: var(--vscode-list-activeSelectionForeground, var(--text));
         }
         .db-table-name {
           min-width: 0;
@@ -573,12 +594,57 @@ function App() {
           background: rgba(248,113,113,.12);
           border-color: rgba(248,113,113,.26);
         }
+        @media (max-height: 780px) {
+          .db-sidebar-header {
+            padding: 12px 14px 10px;
+          }
+          .db-meta {
+            padding: 10px 14px;
+          }
+          .db-table-list {
+            padding: 6px;
+            gap: 4px;
+          }
+          .db-table-button {
+            padding: 8px 10px;
+            border-radius: 10px;
+          }
+        }
+        @media (max-width: 900px) {
+          .db-app {
+            grid-template-columns: 220px minmax(0, 1fr);
+          }
+        }
+        @media (max-width: 700px) {
+          .db-app {
+            grid-template-columns: 180px minmax(0, 1fr);
+          }
+          .db-sidebar-header {
+            padding: 10px 12px 8px;
+          }
+          .db-title {
+            font-size: 13px;
+          }
+          .db-overline {
+            font-size: 10px;
+          }
+          .db-meta {
+            padding: 8px 12px;
+            font-size: 10px;
+          }
+          .db-table-button {
+            padding: 8px 9px;
+          }
+          .db-table-name {
+            font-size: 11px;
+          }
+        }
       `}</style>
 
       <aside className="db-sidebar">
         <div className="db-sidebar-header">
-          <div className="db-overline">Ultraview Data</div>
-          <div className="db-title">{schema?.dbType ?? initialState.dbType}</div>
+          <div className="db-title">{dbName}</div>
+          <div className="db-overline">{schema?.dbType ?? initialState.dbType}</div>
         </div>
 
         <div className="db-meta">

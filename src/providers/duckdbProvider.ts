@@ -33,7 +33,7 @@ export class DuckDbProvider implements vscode.CustomReadonlyEditorProvider {
 
     const mod = tryLoadDuckDb();
 
-    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'DuckDB');
+    panel.webview.html = buildDbHtml(this.ctx.extensionPath, panel.webview, 'DuckDB', filePath, path.basename(filePath));
 
     if (!mod) {
       // DuckDB native module not installed — show install instructions
@@ -83,7 +83,7 @@ export class DuckDbProvider implements vscode.CustomReadonlyEditorProvider {
               return { name: t.name, rowCount: null, columns: cols };
             }));
             const dbSize = fs.statSync(filePath).size;
-            panel.webview.postMessage({ type: 'schema', tables: tableInfos, dbSize, sourceLabel: filePath, dbType: 'DuckDB' });
+            panel.webview.postMessage({ type: 'schema', tables: tableInfos, dbSize, sourceLabel: filePath, dbType: 'DuckDB', dbName: path.basename(filePath) });
             break;
           }
           case 'getTableData': {

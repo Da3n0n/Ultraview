@@ -1,6 +1,7 @@
 export interface DbInitialState {
   dbType: string;
   sourceLabel?: string;
+  dbName?: string;
 }
 
 export interface DbColumn {
@@ -22,6 +23,7 @@ export interface DbSchemaMessage {
   dbSize: number;
   sourceLabel: string;
   dbType: string;
+  dbName?: string;
 }
 
 export interface DbTableDataMessage {
