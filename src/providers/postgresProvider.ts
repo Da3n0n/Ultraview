@@ -265,7 +265,7 @@ async function resolveConnectionConfig(
     };
 }
 
-async function queryRows<T extends Record<string, unknown>>(
+async function queryRows<T extends object>(
     client: PostgresClient,
     sql: string,
     params: unknown[] = []
@@ -508,7 +508,13 @@ export class PostgresProvider {
                     case 'createTable': {
                         await ensureConnected();
                         const tableName = String(msg.tableName || '').trim();
-                        const columns = Array.isArray(msg.columns) ? msg.columns : [];
+                        const columns: Array<{
+                            name: string;
+                            type: string;
+                            notnull?: boolean;
+                            primaryKey?: boolean;
+                            defaultValue?: string;
+                        }> = Array.isArray(msg.columns) ? msg.columns : [];
                         if (!tableName || columns.length === 0) {
                             throw new Error('Table name and at least one column are required.');
                         }
