@@ -2,6 +2,8 @@ export interface DbInitialState {
   dbType: string;
   sourceLabel?: string;
   dbName?: string;
+  canEditData?: boolean;
+  canEditSchema?: boolean;
 }
 
 export interface DbColumn {
@@ -24,6 +26,8 @@ export interface DbSchemaMessage {
   sourceLabel: string;
   dbType: string;
   dbName?: string;
+  canEditData?: boolean;
+  canEditSchema?: boolean;
 }
 
 export interface DbTableDataMessage {
@@ -33,6 +37,7 @@ export interface DbTableDataMessage {
   rows: Record<string, unknown>[];
   page: number;
   rowCount?: number;
+  rowIds?: string[];
 }
 
 export interface DbQueryResultMessage {
@@ -47,13 +52,26 @@ export interface DbErrorMessage {
   message: string;
 }
 
+export interface DbActionMessage {
+  type: 'actionComplete';
+  message: string;
+}
+
 export type DbInboundMessage =
   | DbSchemaMessage
   | DbTableDataMessage
   | DbQueryResultMessage
-  | DbErrorMessage;
+  | DbErrorMessage
+  | DbActionMessage;
 
 export type DbOutboundMessage =
   | { type: 'ready' }
   | { type: 'getTableData'; table: string; page: number; pageSize: number }
-  | { type: 'runQuery'; sql: string };
+  | { type: 'runQuery'; sql: string }
+  | { type: 'updateCell'; table: string; rowId: string; column: string; value: unknown }
+  | { type: 'insertRow'; table: string; values: Record<string, unknown> }
+  | { type: 'deleteRow'; table: string; rowId: string }
+  | { type: 'createTable'; tableName: string; columns: Array<{ name: string; type: string; notnull?: boolean; primaryKey?: boolean; defaultValue?: string }> }
+  | { type: 'deleteTable'; table: string }
+  | { type: 'addColumn'; table: string; column: { name: string; type: string; notnull?: boolean; defaultValue?: string } }
+  | { type: 'deleteColumn'; table: string; column: string };
