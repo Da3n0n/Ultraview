@@ -168,6 +168,7 @@ function App() {
   const [createTableColumns, setCreateTableColumns] = useState<CreateColumnDraft[]>([emptyColumnDraft()]);
   const [columnDrafts, setColumnDrafts] = useState<ColumnDraft[]>([]);
   const [newColumnDraft, setNewColumnDraft] = useState<CreateColumnDraft>(emptyColumnDraft());
+  const [pendingDeleteTable, setPendingDeleteTable] = useState<string | null>(null);
 
   const activeTable = useMemo(
     () => schema?.tables.find((table) => table.name === activeTableName) ?? null,
@@ -487,6 +488,14 @@ function App() {
         defaultValue: draft.defaultValue.trim(),
       },
     });
+  };
+
+  const confirmDeleteTable = () => {
+    if (!pendingDeleteTable) return;
+    setSavingAction(true);
+    setActionMessage('');
+    getVscode()?.postMessage({ type: 'deleteTable', table: pendingDeleteTable });
+    setPendingDeleteTable(null);
   };
 
   const renderDataTable = (columns: string[], rows: Record<string, unknown>[], editable = false) => {
@@ -916,6 +925,41 @@ function App() {
           display: grid;
           gap: 14px;
         }
+        .db-modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.32);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 1000;
+        }
+        .db-modal {
+          width: min(420px, 100%);
+          border: 1px solid var(--border);
+          border-radius: 14px;
+          background: var(--surface);
+          padding: 16px;
+          display: grid;
+          gap: 12px;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+        }
+        .db-modal-title {
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--text);
+        }
+        .db-modal-body {
+          font-size: 12px;
+          color: var(--muted);
+          line-height: 1.5;
+        }
+        .db-modal-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+        }
         .db-card {
           border: 1px solid var(--border);
           border-radius: 16px;
@@ -1119,6 +1163,25 @@ function App() {
         }
       `}</style>
 
+      {pendingDeleteTable ? (
+        <div className="db-modal-backdrop" onClick={() => setPendingDeleteTable(null)}>
+          <div className="db-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="db-modal-title">Delete Table?</div>
+            <div className="db-modal-body">
+              This will permanently delete <strong>{pendingDeleteTable}</strong> and all of its data.
+            </div>
+            <div className="db-modal-actions">
+              <button className="db-button" onClick={() => setPendingDeleteTable(null)}>
+                Cancel
+              </button>
+              <button className="db-button danger" onClick={confirmDeleteTable} disabled={savingAction}>
+                Delete Table
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <aside className="db-sidebar">
         <div className="db-sidebar-header">
           <div className="db-title">{dbName}</div>
@@ -1146,9 +1209,7 @@ function App() {
                   className="db-table-delete"
                   onClick={(event) => {
                     event.stopPropagation();
-                    setSavingAction(true);
-                    setActionMessage('');
-                    getVscode()?.postMessage({ type: 'deleteTable', table: table.name });
+                    setPendingDeleteTable(table.name);
                   }}
                   role="button"
                   aria-label={`Delete ${table.name}`}
