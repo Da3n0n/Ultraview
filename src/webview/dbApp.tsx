@@ -389,6 +389,12 @@ function App() {
     });
   };
 
+  const commitCellEdit = () => {
+    if (!editingCell) return;
+    saveCellEdit();
+    setEditingCell(null);
+  };
+
   const deleteRow = (rowIndex: number) => {
     if (!activeTableName) return;
     const rowId = tableRowIds[rowIndex];
@@ -533,22 +539,21 @@ function App() {
                       {isEditing ? (
                         <div className="db-inline-edit">
                           <input
-                            className="db-input"
+                            className="db-input db-inline-input"
                             value={editingValue}
                             onChange={(event) => setEditingValue(event.target.value)}
                             autoFocus
+                            onBlur={commitCellEdit}
                             onKeyDown={(event) => {
                               if (event.key === 'Enter') {
                                 event.preventDefault();
-                                saveCellEdit();
+                                commitCellEdit();
                               }
                               if (event.key === 'Escape') {
                                 setEditingCell(null);
                               }
                             }}
                           />
-                          <button className="db-button" onClick={saveCellEdit} disabled={savingAction}>Save</button>
-                          <button className="db-button" onClick={() => setEditingCell(null)} disabled={savingAction}>Cancel</button>
                         </div>
                       ) : (
                         formatValue(row[column])
@@ -865,17 +870,32 @@ function App() {
         .db-actions-cell {
           width: 1%;
           white-space: nowrap;
+          position: sticky;
+          right: 0;
+          background: var(--surface);
+          z-index: 2;
         }
         .db-cell-editable {
           cursor: text;
         }
         .db-inline-edit {
-          display: flex;
-          gap: 8px;
-          align-items: center;
+          width: 100%;
         }
         .db-inline-input {
           min-width: 120px;
+          width: 100%;
+        }
+        .db-cell-editable .db-input {
+          background: transparent;
+          border-color: transparent;
+          padding: 0;
+          border-radius: 0;
+        }
+        .db-cell-editable .db-input:focus {
+          padding: 8px 10px;
+          border-radius: 10px;
+          border-color: var(--border);
+          background: var(--surface);
         }
         .db-new-row .db-input {
           background: transparent;
