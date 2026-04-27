@@ -5,10 +5,10 @@ import * as vscode from 'vscode';
 const ENABLE_COMMAND = 'ultraview.enableTransparent';
 const DISABLE_COMMAND = 'ultraview.disableTransparent';
 const THEME_LABEL = 'Ultraview Transparent';
-const THEME_LABEL_DARK = 'Ultraview Transparent Dark';
 const STATE_PREVIOUS_THEME = 'ultraview.transparent.previousTheme';
 
 const PATCH_MARKER = 'ultraview-transparent-patched';
+const WINDOW_BACKGROUND_MARKER = `${PATCH_MARKER}-window-bg`;
 const HTML_MARKER = '<!-- ultraview-transparent-patched -->';
 const HTML_MARKER_END = '<!-- /ultraview-transparent-patched -->';
 const DEFAULT_OPACITY = 0.82;
@@ -228,14 +228,15 @@ function buildMainPatches(effect: EffectType): MainPatch[] {
     },
     {
       find: [
+        /\b([\w$]+)\.setBackgroundColor\(([\w$]+)\.colorInfo\.background\)/,
         /for\(const n of Kee\(\)\)if\(n\.id===t\)\{n\.setBackgroundColor\(r\.colorInfo\.background\);break\}/,
       ],
-      replace: `0/*${PATCH_MARKER}-antigravity-window-bg*/;`,
+      replace: `0/*${WINDOW_BACKGROUND_MARKER}:$1.setBackgroundColor($2.colorInfo.background)*/`,
       patched: [
-        new RegExp(`0\\s*/\\*${PATCH_MARKER}-antigravity-window-bg\\*/\\s*;`),
+        new RegExp(`0\\s*/\\*${WINDOW_BACKGROUND_MARKER}:[^*]+\\*/`),
       ],
       original: [
-        'for(const n of Kee())if(n.id===t){n.setBackgroundColor(r.colorInfo.background);break}',
+        'n.setBackgroundColor(r.colorInfo.background)',
       ],
       required: false,
     },
@@ -322,6 +323,16 @@ function unpatchMainJs(filePath: string): boolean {
 }
 
 function unpatchMainJsContent(content: string): string {
+  content = content.replace(
+    new RegExp(`0\\s*/\\*${PATCH_MARKER}-antigravity-window-bg\\*/\\s*;?`, 'g'),
+    'for(const n of Kee())if(n.id===t){n.setBackgroundColor(r.colorInfo.background);break}',
+  );
+
+  content = content.replace(
+    new RegExp(`0\\s*/\\*${WINDOW_BACKGROUND_MARKER}:([^*]+)\\*/`, 'g'),
+    '$1',
+  );
+
   for (const effect of ['mica', 'acrylic', 'tabbed', 'auto', 'none'] as EffectType[]) {
     for (const patch of buildMainPatches(effect)) {
       for (const [index, patchedPattern] of patch.patched.entries()) {
