@@ -639,9 +639,10 @@ function renderApp(state: AppState, setState: (s: Partial<AppState>) => void): v
   document.querySelectorAll('.drawing-tab').forEach(item => {
     item.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
-      if (target.classList.contains('delete-btn')) {
+      const deleteBtn = target.closest('.delete-btn');
+      if (deleteBtn) {
         e.stopPropagation();
-        const id = target.getAttribute('data-id');
+        const id = (deleteBtn as HTMLElement).getAttribute('data-id');
         if (id && confirm('Delete this drawing?')) {
           getVscode().postMessage({ type: 'deleteDrawing', id });
         }
