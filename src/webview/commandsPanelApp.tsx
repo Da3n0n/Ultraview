@@ -359,26 +359,7 @@ function App() {
         }
       `}</style>
 
-            <div className="toolbar">
-                <button
-                    className="toolbar-button"
-                    onClick={() => getVscode()?.postMessage({ type: 'refresh' })}
-                >
-                    Refresh
-                </button>
-                <input
-                    className="search"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search commands, folders, frameworks..."
-                />
-                <button
-                    className="toolbar-button"
-                    onClick={() => getVscode()?.postMessage({ type: 'openPanel' })}
-                >
-                    Open
-                </button>
-            </div>
+
 
             <div className="content">
                 {!loaded && <div className="empty">Scanning project commands...</div>}

@@ -38,21 +38,6 @@ export function buildDokployHtml(isPanel: boolean): string {
     display: flex;
     flex-direction: column;
   }
-  #toolbar {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--bg) 92%, transparent);
-  }
-  .toolbar-actions {
-    display: flex;
-    gap: 8px;
-    flex: 0 0 auto;
-  }
   .btn {
     border: 1px solid var(--border);
     background: var(--surface-3);
@@ -519,8 +504,7 @@ export function buildDokployHtml(isPanel: boolean): string {
     flex-wrap: wrap;
     gap: 6px;
   }
-  .domain-link,
-  .domain-empty {
+  .domain-link {
     min-height: 24px;
     display: inline-flex;
     align-items: center;
@@ -529,8 +513,6 @@ export function buildDokployHtml(isPanel: boolean): string {
     border: 1px solid var(--border);
     background: color-mix(in srgb, var(--surface-3) 92%, transparent);
     font-size: 10px;
-  }
-  .domain-link {
     color: var(--text);
     text-decoration: none;
   }
@@ -538,15 +520,35 @@ export function buildDokployHtml(isPanel: boolean): string {
     border-color: var(--focus);
     background: var(--vscode-toolbar-hoverBackground, var(--surface-3));
   }
-  .domain-empty {
-    color: var(--muted);
-  }
   .meta-line {
     color: var(--muted);
     font-size: 10px;
   }
+  #footer-actions {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+  }
+  .footer-btn {
+    width: 100%;
+    border: 1px solid var(--border);
+    background: var(--surface-3);
+    color: var(--text);
+    border-radius: 8px;
+    min-height: 34px;
+    padding: 0 11px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    transition: background .14s ease, border-color .14s ease, transform .14s ease;
+  }
+  .footer-btn:hover {
+    background: var(--vscode-toolbar-hoverBackground, var(--surface-3));
+    border-color: var(--focus);
+  }
   @media (max-width: 640px) {
-    #toolbar,
     .profile-top,
     .profile-compact,
     .auth-card,
@@ -555,12 +557,10 @@ export function buildDokployHtml(isPanel: boolean): string {
       flex-direction: column;
       align-items: stretch;
     }
-    .toolbar-actions,
     .profile-actions,
     .profile-summary.compact {
       width: 100%;
     }
-    .toolbar-actions .btn,
     .profile-actions .btn,
     .auth-card .btn,
     .error-card .btn {
@@ -573,12 +573,8 @@ export function buildDokployHtml(isPanel: boolean): string {
 </style>
 </head>
 <body>
-<div id="toolbar">
-  <div class="toolbar-actions">
-    <button class="btn primary" id="btn-add">Add Profile</button>
-  </div>
-</div>
 <div id="content"></div>
+<div id="footer-actions"></div>
 
 <script>
 (function(){
@@ -592,6 +588,8 @@ let expandedProjectIds = viewState && typeof viewState.expandedProjectIds === 'o
 let state = { url: '', profiles: [], activeProfileId: '', mode: ${isPanel ? `'panel'` : `'sidebar'`} };
 
 const contentEl = document.getElementById('content');
+const footerEl = document.getElementById('footer-actions');
+footerEl.innerHTML = '<button class="footer-btn" id="btn-add">Add Profile</button>';
 document.getElementById('btn-add').addEventListener('click', function(){
   vscode.postMessage({ type: 'addProfile' });
 });
@@ -793,19 +791,19 @@ function renderProfileBody(profile, cache, services, hasToken, isRefreshing, isA
     const isProjectExpanded = !!expandedProjectIds[projectKey];
     const serviceCards = project.services.map(function(service) {
       const domains = Array.isArray(service.domains) ? service.domains : [];
-      const canOpenDb = service &&
-        service.type === 'database' &&
+      const isDatabase = service && service.type === 'database';
+      const canOpenDb = isDatabase &&
         typeof service.serviceKind === 'string' &&
         service.serviceKind.toLowerCase().includes('postgres');
       const linkedHtml = service && service.hasSavedConnection
         ? '<span class="summary-pill db-linked">Connected</span>'
         : '';
-      const domainHtml = domains.length
+      const domainHtml = (!isDatabase && domains.length)
         ? domains.map(function(domain) {
             const href = buildDomainHref(domain);
             return '<a class="domain-link" data-action="open-domain" data-id="' + escAttr(profile.id) + '" data-url="' + escAttr(href) + '" href="' + escAttr(href) + '">' + escHtml(domain) + '</a>';
           }).join('')
-        : '<span class="domain-empty">No domains linked</span>';
+        : '';
       const actionHtml = canOpenDb
         ? '<div class="service-actions"><button class="btn" data-action="open-service-db" data-id="' + escAttr(profile.id) + '" data-service-id="' + escAttr(service.id) + '">Open DB</button></div>'
         : '';
@@ -822,7 +820,7 @@ function renderProfileBody(profile, cache, services, hasToken, isRefreshing, isA
               '<span class="status-pill ' + escAttr(service.statusTone || 'muted') + '">' + escHtml(service.status || 'Unknown') + '</span>' +
             '</div>' +
           '</div>' +
-          '<div class="domain-list">' + domainHtml + '</div>' +
+          (domainHtml ? '<div class="domain-list">' + domainHtml + '</div>' : '') +
           actionHtml +
           (service.updatedAt ? '<div class="meta-line">Updated ' + escHtml(formatTime(service.updatedAt)) + '</div>' : '') +
         '</div>';
