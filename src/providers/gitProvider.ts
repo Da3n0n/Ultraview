@@ -741,50 +741,227 @@ export class GitProvider implements vscode.WebviewViewProvider {
         const uri = await vscode.window.showOpenDialog({
             canSelectFolders: true,
             canSelectFiles: false,
-            openLabel: 'Select folder for project',
+            openLabel: 'Select local folder',
         });
-        if (uri && uri[0]) {
-            const folder = uri[0].fsPath;
-            const name = await vscode.window.showInputBox({
-                prompt: 'Project name',
-                value: nameFromPath(folder),
-            });
-            if (name !== undefined) {
-                const projectName = name || nameFromPath(folder);
-                const run = createGitRunner(folder, 8000);
-                let accountId: string | undefined;
-                let repoUrl: string | undefined;
-                try {
-                    await run('git rev-parse --is-inside-work-tree');
-                    repoUrl = await getRemoteUrl(folder);
-                    if (repoUrl) {
-                        const urlLower = repoUrl.toLowerCase();
-                        let targetProvider: GitProviderType | undefined;
-                        if (urlLower.includes('github.com')) targetProvider = 'github';
-                        else if (urlLower.includes('gitlab.com'))
-                            targetProvider = 'gitlab';
-                        else if (urlLower.includes('dev.azure.com'))
-                            targetProvider = 'azure';
-                        if (targetProvider) {
-                            const accountsList = this.accounts.listAccounts();
-                            const matched = accountsList.find(
-                                (a) => a.provider === targetProvider
-                            );
-                            if (matched) accountId = matched.id;
-                        }
-                    }
-                } catch {
-                    // Not a git repo, add as plain project
+        if (!uri || !uri[0]) return;
+        const folder = uri[0].fsPath;
+
+        const nameInput = await vscode.window.showInputBox({
+            prompt: 'Project name',
+            value: nameFromPath(folder),
+        });
+        if (nameInput === undefined) return;
+        const projectName = nameInput.trim() || nameFromPath(folder);
+
+        const run = createGitRunner(folder, 15000);
+        const nodePath = require('path') as typeof import('path');
+        const nodeFs = require('fs') as typeof import('fs');
+
+        // ── Check if it's already a git repo ─────────────────────────────────
+        let isGitRepo = false;
+        let repoUrl: string | undefined;
+        let accountId: string | undefined;
+
+        try {
+            await run('git rev-parse --is-inside-work-tree');
+            isGitRepo = true;
+            repoUrl = await getRemoteUrl(folder);
+            if (repoUrl) {
+                const urlLower = repoUrl.toLowerCase();
+                let targetProvider: GitProviderType | undefined;
+                if (urlLower.includes('github.com')) targetProvider = 'github';
+                else if (urlLower.includes('gitlab.com')) targetProvider = 'gitlab';
+                else if (urlLower.includes('dev.azure.com')) targetProvider = 'azure';
+                if (targetProvider) {
+                    const matched = this.accounts.listAccounts().find((a) => a.provider === targetProvider);
+                    if (matched) accountId = matched.id;
                 }
-                this.manager.addProject({
-                    name: projectName,
-                    path: folder,
-                    accountId,
-                    repoUrl,
-                });
-                this.postState();
             }
+        } catch {
+            // Not a git repo yet
         }
+
+        if (isGitRepo) {
+            // Already a git repo — just register it
+            this.manager.addProject({ name: projectName, path: folder, accountId, repoUrl });
+            this.postState();
+            vscode.window.showInformationMessage(`✓ Added "${projectName}" to Project Manager.`);
+            return;
+        }
+
+        // ── No git repo — offer to create one on GitHub/GitLab ───────────────
+        const accounts = this.accounts.listAccounts().filter(
+            (a) => a.provider === 'github' || a.provider === 'gitlab'
+        );
+
+        const createPick = await vscode.window.showQuickPick(
+            [
+                {
+                    label: '$(cloud-upload) Create GitHub/GitLab repo and push',
+                    description: 'Initialize git, create remote repo and push in one step',
+                    action: 'create' as const,
+                },
+                {
+                    label: '$(add) Add locally only',
+                    description: 'Just add the folder to the project list without git',
+                    action: 'local' as const,
+                },
+            ],
+            { placeHolder: 'This folder has no git repo yet — what would you like to do?' }
+        );
+        if (!createPick) return;
+
+        if (createPick.action === 'local') {
+            this.manager.addProject({ name: projectName, path: folder });
+            this.postState();
+            return;
+        }
+
+        // ── Create remote repo flow ───────────────────────────────────────────
+        if (accounts.length === 0) {
+            vscode.window.showErrorMessage('No GitHub or GitLab account found. Add an account first.');
+            return;
+        }
+
+        // Pick account (skip picker if only one)
+        let chosenAccountId: string;
+        if (accounts.length === 1) {
+            chosenAccountId = accounts[0].id;
+        } else {
+            const accountPick = await vscode.window.showQuickPick(
+                accounts.map((a) => ({
+                    label: `$(person) ${a.username}`,
+                    description: `${a.provider}`,
+                    id: a.id,
+                })),
+                { placeHolder: 'Select account to create the repo under' }
+            );
+            if (!accountPick) return;
+            chosenAccountId = (accountPick as any).id;
+        }
+
+        const accWithToken = await this.accounts.getAccountWithToken(chosenAccountId);
+        if (!accWithToken?.token) {
+            vscode.window.showErrorMessage(`Account has no token. Please authenticate first.`);
+            return;
+        }
+
+        // Repo name (default = folder name)
+        const repoName = await vscode.window.showInputBox({
+            prompt: 'Repository name on ' + accWithToken.provider,
+            value: projectName.replace(/\s+/g, '-'),
+            validateInput: (v) => (v?.trim() ? undefined : 'Required'),
+        });
+        if (!repoName) return;
+        const safeRepoName = repoName.trim().replace(/\s+/g, '-');
+
+        const visibilityPick = await vscode.window.showQuickPick(
+            [
+                { label: '$(lock) Private', description: 'Only you can see this', isPrivate: true },
+                { label: '$(unlock) Public', description: 'Anyone can see this', isPrivate: false },
+            ],
+            { placeHolder: 'Repository visibility' }
+        );
+        if (!visibilityPick) return;
+        const isPrivate = (visibilityPick as any).isPrivate as boolean;
+
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Setting up "${safeRepoName}"…`, cancellable: false },
+            async (progress) => {
+                try {
+                    progress.report({ message: 'Creating remote repo…' });
+
+                    let cloneUrl = '';
+                    if (accWithToken.provider === 'github') {
+                        const res = await fetch('https://api.github.com/user/repos', {
+                            method: 'POST',
+                            headers: {
+                                Authorization: `Bearer ${accWithToken.token}`,
+                                'User-Agent': 'Ultraview-VSCode',
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ name: safeRepoName, private: isPrivate, auto_init: false }),
+                        });
+                        if (!res.ok) {
+                            const e = (await res.json()) as any;
+                            throw new Error(e.message || `GitHub API ${res.status}`);
+                        }
+                        cloneUrl = ((await res.json()) as any).clone_url;
+                    } else {
+                        const res = await fetch('https://gitlab.com/api/v4/projects', {
+                            method: 'POST',
+                            headers: {
+                                Authorization: `Bearer ${accWithToken.token}`,
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                name: safeRepoName,
+                                path: safeRepoName,
+                                visibility: isPrivate ? 'private' : 'public',
+                            }),
+                        });
+                        if (!res.ok) {
+                            const e = (await res.json()) as any;
+                            throw new Error(Array.isArray(e.message) ? e.message.join(', ') : e.message || `GitLab API ${res.status}`);
+                        }
+                        cloneUrl = ((await res.json()) as any).http_url_to_repo;
+                    }
+
+                    progress.report({ message: 'Initializing git…' });
+
+                    await run('git init');
+                    await run('git checkout -b main').catch(() => run('git checkout -b master'));
+
+                    const noReplyHost = accWithToken.provider === 'github' ? 'users.noreply.github.com' : 'users.noreply.gitlab.com';
+                    const noReplyPrefix = accWithToken.providerUserId
+                        ? `${accWithToken.providerUserId}+${accWithToken.username}`
+                        : accWithToken.username;
+                    const userEmail = accWithToken.email || `${noReplyPrefix}@${noReplyHost}`;
+                    await run(`git config user.name "${accWithToken.username}"`);
+                    await run(`git config user.email "${userEmail}"`);
+
+                    // Create .gitignore for common noise if none exists
+                    const gitignorePath = nodePath.join(folder, '.gitignore');
+                    if (!nodeFs.existsSync(gitignorePath)) {
+                        nodeFs.writeFileSync(gitignorePath, 'node_modules/\n.env\ndist/\n');
+                    }
+
+                    progress.report({ message: 'Staging files…' });
+                    await run('git add .');
+                    await run('git commit -m "Initial commit"');
+
+                    progress.report({ message: 'Pushing to remote…' });
+                    const credUrl = cloneUrl.replace('https://', `https://${accWithToken.username}:${accWithToken.token}@`);
+                    await run(`git remote add origin "${credUrl}"`);
+                    await run('git push -u origin HEAD');
+
+                    // Register in project manager
+                    this.manager.addProject({
+                        name: projectName,
+                        path: folder,
+                        accountId: chosenAccountId,
+                        repoUrl: cloneUrl,
+                        lastOpened: Date.now(),
+                    });
+                    this.accounts.setLocalAccount(folder, chosenAccountId);
+                    await applyLocalAccount(folder, accWithToken, accWithToken.token!);
+                    this.postState();
+
+                    const open = await vscode.window.showInformationMessage(
+                        `✓ "${safeRepoName}" created and pushed to ${accWithToken.provider}`,
+                        'Open Folder',
+                        'Open in New Window'
+                    );
+                    if (open === 'Open Folder') {
+                        vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder));
+                    } else if (open === 'Open in New Window') {
+                        vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folder), { forceNewWindow: true });
+                    }
+                } catch (err: any) {
+                    vscode.window.showErrorMessage(`Failed to set up repo: ${err.message}`);
+                }
+            }
+        );
     }
 
     resolveWebviewView(webviewView: vscode.WebviewView) {
