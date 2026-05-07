@@ -255,7 +255,13 @@
                 }
             }
         },
-        "viewsContainers": {
+            "panel": [
+                {
+                    "id": "ultraview-commands",
+                    "title": "Commands",
+                    "icon": "images/commands.svg"
+                }
+            ],
             "activitybar": [
                 {
                     "id": "ultraview-graph",
