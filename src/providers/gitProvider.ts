@@ -11,8 +11,6 @@ import { GitProfile, GitProvider as GitProviderType, AuthMethod } from '../git/t
 import { applyLocalAccount, clearLocalAccount, getRemoteUrl } from '../git/gitCredentials';
 import { SharedStore } from '../sync/sharedStore';
 
-const execAsync = util.promisify(childProcess.exec);
-
 interface GitStatus {
     isGitRepo: boolean;
     localChanges: number; // uncommitted + staged
@@ -24,13 +22,65 @@ interface GitStatus {
 type GitConflictStrategy = 'ours' | 'theirs';
 type GitCommandRunner = (cmd: string) => Promise<{ stdout: string; stderr: string }>;
 
+/**
+ * Split a "git <subcommand> [args...]" string into an args array suitable for
+ * execFile, handling double- and single-quoted segments so quoted paths with
+ * spaces are passed as a single argument without the quotes.
+ */
+function parseGitArgs(cmd: string): string[] {
+    const rest = cmd.startsWith('git ') ? cmd.slice(4) : cmd;
+    const args: string[] = [];
+    let current = '';
+    let inQuote = false;
+    let quoteChar = '';
+    for (const ch of rest) {
+        if (inQuote) {
+            if (ch === quoteChar) {
+                inQuote = false;
+            } else {
+                current += ch;
+            }
+        } else if (ch === '"' || ch === "'") {
+            inQuote = true;
+            quoteChar = ch;
+        } else if (ch === ' ') {
+            if (current) {
+                args.push(current);
+                current = '';
+            }
+        } else {
+            current += ch;
+        }
+    }
+    if (current) args.push(current);
+    return args;
+}
+
+/**
+ * Creates a git command runner that uses execFile (no shell) to avoid the
+ * Windows cmd.exe command-line length limit (8191 chars). Arguments are
+ * passed directly to the git process, which is also safer against injection.
+ */
 function createGitRunner(projectPath: string, timeout: number = 30000): GitCommandRunner {
     return (cmd: string) =>
-        execAsync(cmd, {
-            cwd: projectPath,
-            env: process.env,
-            timeout,
-            maxBuffer: 1024 * 1024,
+        new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+            childProcess.execFile(
+                'git',
+                parseGitArgs(cmd),
+                { cwd: projectPath, env: process.env, timeout, maxBuffer: 10 * 1024 * 1024 },
+                (error, stdout, stderr) => {
+                    const out = Buffer.isBuffer(stdout) ? stdout.toString('utf8') : (stdout ?? '');
+                    const err = Buffer.isBuffer(stderr) ? stderr.toString('utf8') : (stderr ?? '');
+                    if (error) {
+                        const e = error as any;
+                        e.stdout = out;
+                        e.stderr = err;
+                        reject(e);
+                    } else {
+                        resolve({ stdout: out, stderr: err });
+                    }
+                }
+            );
         });
 }
 
@@ -190,8 +240,7 @@ async function mergeRemoteBranch(
 
 async function getProjectGitStatus(projectPath: string): Promise<GitStatus> {
     const empty: GitStatus = { isGitRepo: false, localChanges: 0, ahead: 0, behind: 0, branch: '' };
-    const run = (cmd: string) =>
-        execAsync(cmd, { cwd: projectPath, env: process.env, timeout: 8000 });
+    const run = createGitRunner(projectPath, 8000);
 
     try {
         // Check if dir exists and is a git repo
@@ -657,8 +706,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             });
             if (name !== undefined) {
                 const projectName = name || nameFromPath(folder);
-                const run = (cmd: string) =>
-                    execAsync(cmd, { cwd: folder, env: process.env, timeout: 8000 });
+                const run = createGitRunner(folder, 8000);
                 let accountId: string | undefined;
                 let repoUrl: string | undefined;
                 try {
@@ -1385,8 +1433,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
                         });
                         if (name !== undefined) {
                             const projectName = name || nameFromPath(folder);
-                            const run = (cmd: string) =>
-                                execAsync(cmd, { cwd: folder, env: process.env, timeout: 8000 });
+                            const run = createGitRunner(folder, 8000);
                             let accountId: string | undefined;
                             let repoUrl: string | undefined;
                             try {
