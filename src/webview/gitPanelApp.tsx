@@ -57,15 +57,15 @@ function App() {
                 setLoaded(true);
 
                 // Update non-status state
-                setState({
+                setState((prev) => ({
                     projects: msg.projects,
                     activeRepo: msg.activeRepo,
                     activeRepoName: msg.activeRepoName,
                     accounts: msg.accounts,
                     activeAccountId: msg.activeAccountId,
                     activeProjectId: msg.activeProjectId,
-                    hasBackupBucket: msg.hasBackupBucket ?? false,
-                });
+                    hasBackupBucket: msg.hasBackupBucket ?? prev.hasBackupBucket,
+                }));
 
                 const incomingStatuses = msg.gitStatuses ?? {};
                 const hasStatuses = Object.keys(incomingStatuses).length > 0;

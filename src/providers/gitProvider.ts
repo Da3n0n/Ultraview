@@ -1378,6 +1378,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             authStatus: this.accounts.getAccountAuthStatus(acc),
         }));
         const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
+        const hasBackupBucket = !!(await getS3Credentials(this.context));
         const project = projects.find((p) => p.id === projectId);
         if (!project) return;
         const localStatus = await getProjectLocalStatus(project.path, this._cachedGitStatuses[project.id]);
@@ -1392,6 +1393,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             activeProjectId: activeProject?.id || null,
             gitStatuses: { [project.id]: localStatus },
             onlyProjectId: projectId,
+            hasBackupBucket,
         });
     }
 
@@ -1413,6 +1415,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             authStatus: this.accounts.getAccountAuthStatus(acc),
         }));
         const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
+        const hasBackupBucket = !!(await getS3Credentials(this.context));
         const gitStatuses: Record<string, GitStatus> = {};
         const project = projects.find((p) => p.id === projectId);
         if (project) {
@@ -1428,6 +1431,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             activeProjectId: activeProject?.id || null,
             gitStatuses,
             onlyProjectId: projectId,
+            hasBackupBucket,
         });
     }
 
@@ -1721,6 +1725,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             }));
 
             const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
+            const hasBackupBucket = !!(await getS3Credentials(context));
 
             const buildMsg = (gitStatuses: Record<string, GitStatus>) => ({
                 type: 'state',
@@ -1731,6 +1736,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 activeAccountId: activeAccountId || null,
                 activeProjectId: activeProject?.id || null,
                 gitStatuses,
+                hasBackupBucket,
             });
 
             // Send state immediately so the list updates instantly
