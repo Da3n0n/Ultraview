@@ -178,10 +178,10 @@ export class S3BackupProvider implements vscode.WebviewViewProvider {
                                     ...statusEntry,
                                     status: 'success',
                                     lastBackupKey: result.key,
-                                    lastBackupSize: result.size,
+                                    lastBackupSize: result.totalSize,
                                 };
                                 projectStatuses.set(project.id, updated);
-                                webview.postMessage({ type: 'progress', projectId: project.id, status: 'success', lastBackupKey: result.key, lastBackupSize: result.size });
+                                webview.postMessage({ type: 'progress', projectId: project.id, status: 'success', lastBackupKey: result.key, lastBackupSize: result.totalSize });
                                 vscode.window.showInformationMessage(`✓ Backed up ${project.name} to ${creds.bucket}/${result.key}`);
                             } catch (e: any) {
                                 const errMsg = e?.message ?? 'Backup failed';
@@ -224,9 +224,9 @@ export class S3BackupProvider implements vscode.WebviewViewProvider {
                                 progress.report({ message: `(${done + 1}/${allProjects.length}) ${project.name}` });
                                 try {
                                     const result = await backupProject(project.name, project.path, creds, (m) => progress.report({ message: m }));
-                                    const updated: ProjectBackupState = { ...statusEntry, status: 'success', lastBackupKey: result.key, lastBackupSize: result.size };
+                                    const updated: ProjectBackupState = { ...statusEntry, status: 'success', lastBackupKey: result.key, lastBackupSize: result.totalSize };
                                     projectStatuses.set(project.id, updated);
-                                    webview.postMessage({ type: 'progress', projectId: project.id, status: 'success', lastBackupKey: result.key, lastBackupSize: result.size });
+                                    webview.postMessage({ type: 'progress', projectId: project.id, status: 'success', lastBackupKey: result.key, lastBackupSize: result.totalSize });
                                 } catch (e: any) {
                                     const errMsg = e?.message ?? 'Backup failed';
                                     const updated: ProjectBackupState = { ...statusEntry, status: 'error', error: errMsg };
