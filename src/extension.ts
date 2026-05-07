@@ -347,6 +347,7 @@ export async function activate(context: vscode.ExtensionContext) {
         }),
         vscode.commands.registerCommand('ultraview.configureS3Backup', async () => {
             await configureS3BackupCredentials(context);
+            gitProvider.postState();
         }),
         vscode.commands.registerCommand('ultraview.s3BackupProjectById', async (projectId: string) => {
             const { getS3Credentials, backupProject } = await import('./s3backup');

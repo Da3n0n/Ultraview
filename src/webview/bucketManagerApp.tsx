@@ -314,9 +314,8 @@ function App() {
           --input-border: var(--vscode-input-border, rgba(128,128,128,.3));
         }
         * { box-sizing:border-box; margin:0; padding:0; }
-        .bm-app { display:flex; flex-direction:column; height:100vh; background:var(--vscode-editor-background,#1e1e1e); color:var(--text); font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
-        .toolbar { display:flex; gap:8px; padding:10px; border-bottom:1px solid var(--border); background:rgba(0,0,0,.08); backdrop-filter:blur(8px); align-items:center; flex-wrap:wrap; }
-        .toolbar-title { font-weight:700; font-size:12px; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; flex:1; min-width:0; }
+        .bm-app { display:flex; flex-direction:column; height:100vh; background:var(--vscode-sideBar-background, var(--vscode-editor-background,#1e1e1e)); color:var(--text); font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+        .toolbar { display:flex; gap:8px; padding:10px; border-bottom:1px solid var(--border); background:rgba(0,0,0,.08); backdrop-filter:blur(8px); align-items:center; justify-content:flex-end; flex-wrap:wrap; }
         .content { flex:1; overflow:auto; padding:12px; display:grid; gap:14px; align-content:start; }
         .section { display:grid; gap:8px; }
         .section-header { display:flex; justify-content:space-between; align-items:center; gap:8px; }
@@ -373,7 +372,6 @@ function App() {
       `}</style>
 
             <div className="toolbar">
-                <span className="toolbar-title">Bucket Manager</span>
                 <button className="mini-button" onClick={() => post({ type: 'refresh' })} title="Refresh">↻</button>
                 <button
                     className="button primary"
@@ -398,10 +396,6 @@ function App() {
 
                     {/* Buckets section */}
                     <section className="section">
-                        <div className="section-header">
-                            <div className="section-title">Buckets</div>
-                        </div>
-
                         {buckets.length === 0 && !showForm ? (
                             <div className="empty">
                                 No buckets yet.
