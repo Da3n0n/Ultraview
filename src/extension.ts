@@ -27,6 +27,7 @@ import { applyLocalAccount } from './git/gitCredentials';
 import { DrawingProvider } from './drawings/drawingProvider';
 import { DrawingManager } from './drawings/drawingManager';
 import { S3BackupProvider, configureS3BackupCredentials } from './providers/s3BackupProvider';
+import { BucketManagerProvider } from './providers/bucketManagerProvider';
 
 let customComments: CustomComments;
 let sharedStore: SharedStore;
@@ -122,6 +123,11 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.registerWebviewViewProvider(
             S3BackupProvider.viewId,
             new S3BackupProvider(context, sharedStore),
+            { webviewOptions: { retainContextWhenHidden: true } }
+        ),
+        vscode.window.registerWebviewViewProvider(
+            BucketManagerProvider.viewId,
+            new BucketManagerProvider(context),
             { webviewOptions: { retainContextWhenHidden: true } }
         ),
         vscode.commands.registerCommand('ultraview.openCodeGraph', () => {
@@ -335,6 +341,9 @@ export async function activate(context: vscode.ExtensionContext) {
         }),
         vscode.commands.registerCommand('ultraview.openS3Backup', () => {
             S3BackupProvider.openAsPanel(context, sharedStore);
+        }),
+        vscode.commands.registerCommand('ultraview.openBucketManager', () => {
+            BucketManagerProvider.openAsPanel(context);
         }),
         vscode.commands.registerCommand('ultraview.configureS3Backup', async () => {
             await configureS3BackupCredentials(context);
