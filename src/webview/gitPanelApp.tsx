@@ -24,6 +24,7 @@ const emptyState: PanelState = {
     accounts: [],
     activeAccountId: null,
     activeProjectId: null,
+    hasBackupBucket: false,
 };
 
 function authTone(status?: string): string {
@@ -63,6 +64,7 @@ function App() {
                     accounts: msg.accounts,
                     activeAccountId: msg.activeAccountId,
                     activeProjectId: msg.activeProjectId,
+                    hasBackupBucket: msg.hasBackupBucket ?? false,
                 });
 
                 const incomingStatuses = msg.gitStatuses ?? {};
@@ -431,17 +433,31 @@ function App() {
                             >
                                 &#x21BB;
                             </button>
-                            <button
-                                className="button"
-                                title="Open S3 Backup panel"
-                                onClick={() =>
-                                    getVscode()?.postMessage({
-                                        type: 'openS3Backup' satisfies GitPanelOutboundMessage['type'],
-                                    })
-                                }
-                            >
-                                ☁
-                            </button>
+                            {state.hasBackupBucket ? (
+                                <button
+                                    className="button"
+                                    title="Backup all projects to S3"
+                                    onClick={() =>
+                                        getVscode()?.postMessage({
+                                            type: 'backupAll' satisfies GitPanelOutboundMessage['type'],
+                                        })
+                                    }
+                                >
+                                    ☁ Backup All
+                                </button>
+                            ) : (
+                                <button
+                                    className="button"
+                                    title="Connect a backup bucket"
+                                    onClick={() =>
+                                        getVscode()?.postMessage({
+                                            type: 'openS3Backup' satisfies GitPanelOutboundMessage['type'],
+                                        })
+                                    }
+                                >
+                                    ☁ Connect Backup
+                                </button>
+                            )}
                             <button
                                 className="button"
                                 onClick={() =>
