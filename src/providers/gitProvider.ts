@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import * as childProcess from 'child_process';
 import * as util from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { buildGitHtml } from '../git/gitUi';
 import { GitProjects } from '../git/gitProjects';
 import { GitAccounts } from '../git/gitAccounts';
@@ -41,6 +44,25 @@ function formatGitError(err: any): string {
 
 function strategyLabel(strategy: GitConflictStrategy): 'local' | 'remote' {
     return strategy === 'ours' ? 'local' : 'remote';
+}
+
+/** Remove a stale index.lock file so git commands are not blocked. */
+function clearIndexLock(projectPath: string): void {
+    const lockFile = path.join(projectPath, '.git', 'index.lock');
+    try {
+        if (fs.existsSync(lockFile)) {
+            fs.unlinkSync(lockFile);
+        }
+    } catch {
+        /* ignore – lock may be legitimately held */
+    }
+}
+
+/** Write commit message to a temp file and return its path. */
+function writeCommitMsgFile(msg: string): string {
+    const tmpFile = path.join(os.tmpdir(), `uv-commit-${Date.now()}.txt`);
+    fs.writeFileSync(tmpFile, msg, 'utf8');
+    return tmpFile;
 }
 
 async function listUnmergedFiles(run: GitCommandRunner): Promise<string[]> {
@@ -267,12 +289,30 @@ async function gitPull(projectPath: string): Promise<string> {
 }
 
 async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<boolean> {
+    // Clear any stale index lock before starting
+    clearIndexLock(projectPath);
+
     const run = createGitRunner(projectPath);
-    const { stdout: statusOut } = await run('git status --porcelain');
+
+    let statusOut: string;
+    try {
+        const result = await run('git status --porcelain');
+        statusOut = result.stdout;
+    } catch (err: any) {
+        // If index.lock caused the failure, clear it and retry once
+        if (/index\.lock|another git process/i.test(err?.stderr ?? err?.message ?? '')) {
+            clearIndexLock(projectPath);
+            const result = await run('git status --porcelain');
+            statusOut = result.stdout;
+        } else {
+            throw err;
+        }
+    }
+
     if (!statusOut.trim()) {
         return false;
     }
-    await run('git add -A');
+
     // Extract filenames for commit message (always include them)
     const files = statusOut
         .trim()
@@ -287,6 +327,7 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
     if (files.length === 0) {
         return false;
     }
+
     let msg = commitMsg;
     if (!msg) {
         msg =
@@ -296,7 +337,28 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
         // Append filenames even when custom message is provided
         msg = `${msg}\n\nFiles changed:\n` + files.map((f) => `- ${f}`).join('\n');
     }
-    await run(`git commit -m "${msg.replace(/"/g, '\\"')}"`);
+
+    // Stage changes; retry once after clearing lock if blocked
+    try {
+        await run('git add -A');
+    } catch (err: any) {
+        if (/index\.lock|another git process/i.test(err?.stderr ?? err?.message ?? '')) {
+            clearIndexLock(projectPath);
+            await run('git add -A');
+        } else {
+            throw err;
+        }
+    }
+
+    // Write commit message to a temp file to avoid shell-escaping issues with
+    // multi-line messages on Windows
+    const tmpFile = writeCommitMsgFile(msg);
+    try {
+        await run(`git commit -F "${tmpFile.replace(/\\/g, '/')}"`);
+    } finally {
+        try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    }
+
     return true;
 }
 
@@ -383,8 +445,34 @@ async function aggressiveRecovery(projectPath: string): Promise<string> {
     }
 }
 
+/**
+ * Returns paths of all registered git submodules within a repo.
+ * Falls back to an empty list if the repo has no submodules or git isn't available.
+ */
+async function findSubmodulePaths(projectPath: string): Promise<string[]> {
+    const run = createGitRunner(projectPath, 10000);
+    try {
+        const { stdout } = await run('git submodule status --recursive');
+        if (!stdout.trim()) return [];
+        return stdout
+            .trim()
+            .split(/\r?\n/)
+            .map((line) => {
+                // Format: [ +-U]<sha1> <relative-path> [(<describe>)]
+                const match = line.trim().match(/^[+\-U ]?\S+\s+(\S+)/);
+                return match ? path.join(projectPath, match[1]) : null;
+            })
+            .filter((p): p is string => p !== null);
+    } catch {
+        return [];
+    }
+}
+
 async function gitSync(projectPath: string, commitMsg?: string): Promise<string> {
     const run = createGitRunner(projectPath);
+    // Step 0: Clear any stale lock file before doing anything
+    clearIndexLock(projectPath);
+
     const branch = await getCurrentBranch(projectPath);
 
     // Step 1: Recover from any interrupted git state first
@@ -455,16 +543,32 @@ async function gitSync(projectPath: string, commitMsg?: string): Promise<string>
     }
 
     // Return result based on what happened
+    let mainResult: string;
     if (committed && (ahead > 0 || behind > 0 || diverged)) {
-        return 'Synced changes';
+        mainResult = 'Synced changes';
     } else if (committed) {
-        return 'Changes pushed';
+        mainResult = 'Changes pushed';
     } else if (behind > 0 || diverged) {
-        return 'Updated from remote';
+        mainResult = 'Updated from remote';
     } else if (ahead > 0) {
-        return 'Already up to date';
+        mainResult = 'Already up to date';
+    } else {
+        mainResult = 'Sync complete';
     }
-    return 'Sync complete';
+
+    // Sync all registered submodules using the same logic
+    const submodulePaths = await findSubmodulePaths(projectPath);
+    for (const subPath of submodulePaths) {
+        try {
+            // Ensure the submodule working tree is checked out before syncing
+            await createGitRunner(projectPath, 20000)(`git submodule update --init -- "${subPath.replace(/\\/g, '/')}"`);
+            await gitSync(subPath, commitMsg);
+        } catch {
+            /* a failing submodule should not abort the main sync */
+        }
+    }
+
+    return mainResult;
 }
 
 export class GitProvider implements vscode.WebviewViewProvider {
