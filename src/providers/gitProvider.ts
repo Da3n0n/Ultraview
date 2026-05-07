@@ -718,6 +718,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
     private store: SharedStore;
     /** Last-known git statuses — used to populate the UI instantly before async fetch */
     private _cachedGitStatuses: Record<string, GitStatus> = {};
+    /** File system watcher for the active workspace folder (fast local change detection) */
+    private _fsWatcher?: vscode.FileSystemWatcher;
+    /** Debounce timer for the file system watcher */
+    private _fsWatcherDebounce?: NodeJS.Timeout;
     constructor(context: vscode.ExtensionContext, store: SharedStore) {
         this.context = context;
         this.store = store;
@@ -802,6 +806,11 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 this.postState();
             }
         });
+
+        // Watch the active workspace folder for file changes and update the open project instantly.
+        this._setupFsWatcher();
+        // Re-create watcher if the workspace changes (folder added/removed).
+        vscode.workspace.onDidChangeWorkspaceFolders(() => this._setupFsWatcher());
 
         webviewView.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
@@ -1113,6 +1122,75 @@ export class GitProvider implements vscode.WebviewViewProvider {
         );
         this._cachedGitStatuses = { ...this._cachedGitStatuses, ...remoteStatuses };
         if (this.view) this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
+    }
+
+    /** Set up (or re-create) a file system watcher on the active workspace folder.
+     *  When any file changes, the open project's local status is refreshed immediately. */
+    private _setupFsWatcher(): void {
+        // Dispose any previous watcher
+        if (this._fsWatcher) {
+            this._fsWatcher.dispose();
+            this._fsWatcher = undefined;
+        }
+        const activeFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!activeFolder) return;
+
+        // Watch everything except .git internals to avoid noise
+        this._fsWatcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(activeFolder, '**'),
+            false, false, false
+        );
+
+        const onFileEvent = () => {
+            // Debounce: wait 400 ms of quiet before firing so rapid saves don't flood
+            if (this._fsWatcherDebounce) clearTimeout(this._fsWatcherDebounce);
+            this._fsWatcherDebounce = setTimeout(() => {
+                const activeRepo = activeFolder.uri.fsPath;
+                const project = this.manager.getProjectByPath(activeRepo);
+                if (project) {
+                    this._postLocalProjectState(project.id);
+                }
+            }, 400);
+        };
+
+        this._fsWatcher.onDidCreate(onFileEvent);
+        this._fsWatcher.onDidChange(onFileEvent);
+        this._fsWatcher.onDidDelete(onFileEvent);
+    }
+
+    /** Fast local-only update for a single project (no git fetch — just branch + localChanges). */
+    public async _postLocalProjectState(projectId: string): Promise<void> {
+        if (!this.view) return;
+        const projects = this.manager
+            .listProjects()
+            .slice()
+            .sort((a, b) => (b.lastOpened ?? 0) - (a.lastOpened ?? 0));
+        const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+        const accounts = this.accounts.listAccounts();
+        const activeProject = projects.find((p) => p.path === activeRepo);
+        const activeAccountId =
+            activeProject?.accountId ||
+            (activeRepo ? this.accounts.getLocalAccount(activeRepo)?.id : undefined);
+        const accountsWithStatus = accounts.map((acc) => ({
+            ...acc,
+            authStatus: this.accounts.getAccountAuthStatus(acc),
+        }));
+        const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
+        const project = projects.find((p) => p.id === projectId);
+        if (!project) return;
+        const localStatus = await getProjectLocalStatus(project.path, this._cachedGitStatuses[project.id]);
+        this._cachedGitStatuses = { ...this._cachedGitStatuses, [project.id]: localStatus };
+        this.view.webview.postMessage({
+            type: 'state',
+            projects,
+            activeRepo,
+            activeRepoName,
+            accounts: accountsWithStatus,
+            activeAccountId: activeAccountId || null,
+            activeProjectId: activeProject?.id || null,
+            gitStatuses: { [project.id]: localStatus },
+            onlyProjectId: projectId,
+        });
     }
 
     /** Post state for a single project only (for targeted UI update) */
