@@ -138,12 +138,14 @@ function FileBrowser({
     state,
     onNavigate,
     onDownload,
+    onDownloadFolder,
     onUpload,
     onRefresh,
 }: {
     state: BrowserState;
     onNavigate: (prefix: string) => void;
     onDownload: (key: string) => void;
+    onDownloadFolder: (prefix: string) => void;
     onUpload: () => void;
     onRefresh: () => void;
 }) {
@@ -206,6 +208,13 @@ function FileBrowser({
                             <span className="file-icon">📁</span>
                             <span className="file-name">{f.name}</span>
                             <span className="file-meta">–</span>
+                            <button
+                                className="mini-button dl-btn"
+                                title="Download folder"
+                                onClick={(e) => { e.stopPropagation(); onDownloadFolder(f.key); }}
+                            >
+                                ↓
+                            </button>
                         </div>
                     ))}
                     {state.files.map((f) => (
@@ -477,6 +486,7 @@ function App() {
                                 state={browser}
                                 onNavigate={(prefix) => triggerList(activeBucketId, prefix)}
                                 onDownload={(key) => post({ type: 'downloadFile', id: activeBucketId, key })}
+                                onDownloadFolder={(prefix) => post({ type: 'downloadFolder', id: activeBucketId, prefix })}
                                 onUpload={() => post({ type: 'uploadFiles', id: activeBucketId, prefix: browser.prefix })}
                                 onRefresh={() => triggerList(activeBucketId, browser.prefix)}
                             />

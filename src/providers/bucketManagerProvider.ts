@@ -9,6 +9,7 @@ import {
     testBucketConnection,
     listContents,
     downloadObject,
+    downloadFolder,
     uploadObject,
     toProfile,
 } from '../bucketManager';
@@ -153,6 +154,47 @@ export class BucketManagerProvider implements vscode.WebviewViewProvider {
                                 }
                             } catch (e: any) {
                                 vscode.window.showErrorMessage(`Download failed: ${e?.message ?? e}`);
+                            }
+                        }
+                    );
+                    break;
+                }
+
+                case 'downloadFolder': {
+                    const buckets = await getBuckets(context);
+                    const config = buckets.find((b) => b.id === msg.id);
+                    if (!config) return;
+
+                    const folderName = msg.prefix.replace(/\/$/, '').split('/').pop() ?? 'download';
+                    const destUris = await vscode.window.showOpenDialog({
+                        canSelectFiles: false,
+                        canSelectFolders: true,
+                        canSelectMany: false,
+                        openLabel: 'Download Here',
+                        title: `Choose destination for "${folderName}"`,
+                    });
+                    if (!destUris?.length) return;
+                    const destDir = path.join(destUris[0].fsPath, folderName);
+
+                    await vscode.window.withProgress(
+                        { location: vscode.ProgressLocation.Notification, title: `Downloading "${folderName}"`, cancellable: false },
+                        async (progress) => {
+                            try {
+                                const { fileCount } = await downloadFolder(
+                                    config,
+                                    msg.prefix,
+                                    destDir,
+                                    (m) => progress.report({ message: m })
+                                );
+                                const open = await vscode.window.showInformationMessage(
+                                    `Downloaded ${fileCount} file(s) to ${destDir}`,
+                                    'Open Folder'
+                                );
+                                if (open === 'Open Folder') {
+                                    vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(destDir));
+                                }
+                            } catch (e: any) {
+                                vscode.window.showErrorMessage(`Folder download failed: ${e?.message ?? e}`);
                             }
                         }
                     );
