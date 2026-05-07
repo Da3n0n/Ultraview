@@ -291,6 +291,11 @@
                     "id": "ultraview-s3backup",
                     "title": "S3 Backup",
                     "icon": "$(cloud-upload)"
+                },
+                {
+                    "id": "ultraview-bucketmanager",
+                    "title": "Bucket Manager",
+                    "icon": "$(database)"
                 }
             ]
         },
@@ -349,6 +354,14 @@
                     "id": "ultraview.s3backup",
                     "name": "S3 Backup",
                     "icon": "$(cloud-upload)"
+                }
+            ],
+            "ultraview-bucketmanager": [
+                {
+                    "type": "webview",
+                    "id": "ultraview.bucketManager",
+                    "name": "Bucket Manager",
+                    "icon": "$(database)"
                 }
             ]
         },
@@ -478,6 +491,11 @@
                 "command": "ultraview.configureS3Backup",
                 "title": "Ultraview: Configure S3 Backup Credentials",
                 "icon": "$(gear)"
+            },
+            {
+                "command": "ultraview.openBucketManager",
+                "title": "Ultraview: Open Bucket Manager as Editor",
+                "icon": "$(database)"
             }
         ],
         "keybindings": [
