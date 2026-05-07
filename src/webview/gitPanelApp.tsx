@@ -433,6 +433,17 @@ function App() {
                             </button>
                             <button
                                 className="button"
+                                title="Open S3 Backup panel"
+                                onClick={() =>
+                                    getVscode()?.postMessage({
+                                        type: 'openS3Backup' satisfies GitPanelOutboundMessage['type'],
+                                    })
+                                }
+                            >
+                                ☁
+                            </button>
+                            <button
+                                className="button"
                                 onClick={() =>
                                     getVscode()?.postMessage({
                                         type: 'addRepo' satisfies GitPanelOutboundMessage['type'],
@@ -501,6 +512,18 @@ function App() {
                                                     }
                                                 >
                                                     Remove
+                                                </button>
+                                                <button
+                                                    className="mini-button"
+                                                    title="Backup to S3"
+                                                    onClick={() =>
+                                                        getVscode()?.postMessage({
+                                                            type: 's3BackupProject',
+                                                            id: project.id,
+                                                        } satisfies GitPanelOutboundMessage)
+                                                    }
+                                                >
+                                                    ☁ Backup
                                                 </button>
                                             </div>
                                         </div>

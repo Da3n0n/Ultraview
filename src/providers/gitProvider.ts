@@ -871,6 +871,21 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     vscode.commands.executeCommand('ultraview.openGitProjects');
                     break;
                 }
+                case 'openS3Backup': {
+                    vscode.commands.executeCommand('ultraview.openS3Backup');
+                    break;
+                }
+                case 's3BackupProject': {
+                    const project = this.manager.listProjects().find((p) => p.id === msg.id);
+                    if (project) {
+                        vscode.commands.executeCommand('ultraview.openS3Backup');
+                        // Small delay so the panel opens before the backup triggers
+                        setTimeout(() => {
+                            vscode.commands.executeCommand('ultraview.s3BackupProjectById', msg.id);
+                        }, 800);
+                    }
+                    break;
+                }
                 case 'delete': {
                     const id = msg.id;
                     this.manager.removeProject(id);
