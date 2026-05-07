@@ -40,5 +40,4 @@ export type BucketManagerOutboundMessage =
     | { type: 'testBucket'; id: string }
     | { type: 'listBucket'; id: string; prefix: string }
     | { type: 'downloadFile'; id: string; key: string }
-    | { type: 'downloadFolder'; id: string; prefix: string }
     | { type: 'uploadFiles'; id: string; prefix: string };
