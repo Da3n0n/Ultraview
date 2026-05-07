@@ -678,6 +678,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
     private manager: GitProjects;
     private accounts: GitAccounts;
     private store: SharedStore;
+    /** Last-known git statuses — used to populate the UI instantly before async fetch */
+    private _cachedGitStatuses: Record<string, GitStatus> = {};
     constructor(context: vscode.ExtensionContext, store: SharedStore) {
         this.context = context;
         this.store = store;
@@ -754,6 +756,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
         // Hot-reload when another IDE writes the shared sync file
         this.store.on('changed', () => this.postState());
+
+        // When the panel becomes visible again (e.g. user switches sidebar tabs),
+        // immediately push cached statuses so badges are visible without waiting.
+        webviewView.onDidChangeVisibility(() => {
+            if (webviewView.visible) {
+                this.postState();
+            }
+        });
 
         webviewView.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
@@ -1043,10 +1053,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
             gitStatuses,
         });
 
-        // Send state immediately so the list updates instantly
-        this.view.webview.postMessage(buildMsg({}));
+        // Send cached statuses immediately so badges are visible right away
+        this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
 
-        // Then fetch git statuses in background and send again
+        // Then fetch fresh git statuses in background and send again
         const gitStatuses: Record<string, GitStatus> = {};
         await Promise.allSettled(
             projects.map(async (p) => {
@@ -1054,7 +1064,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
             })
         );
 
-        this.view.webview.postMessage(buildMsg(gitStatuses));
+        // Merge into cache (keep data for projects that weren't re-fetched)
+        this._cachedGitStatuses = { ...this._cachedGitStatuses, ...gitStatuses };
+
+        this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
     }
 
     /** Post state for a single project only (for targeted UI update) */

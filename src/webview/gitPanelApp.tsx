@@ -96,9 +96,19 @@ function App() {
                     setCheckingIds(new Set());
                     setPendingProjects({});
                 } else {
-                    // Flash message (empty statuses) — background fetch starting
-                    // Keep existing statuses; just mark all as checking
-                    setCheckingIds(new Set(msg.projects.map((p) => p.id)));
+                    // Flash message (empty statuses) — background fetch starting.
+                    // Only mark projects that have no cached status yet as "checking".
+                    // Known projects keep their existing badges visible.
+                    setCheckingIds((currentChecking) => {
+                        const next = new Set(currentChecking);
+                        // Add only projects we have no data for yet
+                        msg.projects.forEach((p) => {
+                            if (!knownGitRepos.current.has(p.id)) {
+                                next.add(p.id);
+                            }
+                        });
+                        return next;
+                    });
                 }
 
                 return;
