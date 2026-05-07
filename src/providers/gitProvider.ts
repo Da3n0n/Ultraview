@@ -238,6 +238,44 @@ async function mergeRemoteBranch(
     }
 }
 
+/**
+ * Fast local-only status check (no network fetch). Returns branch + local changes.
+ * Carries forward ahead/behind from a previous full check so buttons stay visible.
+ */
+async function getProjectLocalStatus(
+    projectPath: string,
+    prevStatus?: GitStatus
+): Promise<GitStatus> {
+    const empty: GitStatus = { isGitRepo: false, localChanges: 0, ahead: 0, behind: 0, branch: '' };
+    const run = createGitRunner(projectPath, 5000);
+
+    try {
+        await run('git rev-parse --is-inside-work-tree');
+    } catch {
+        return empty;
+    }
+
+    const status: GitStatus = {
+        isGitRepo: true,
+        localChanges: 0,
+        ahead: prevStatus?.ahead ?? 0,
+        behind: prevStatus?.behind ?? 0,
+        branch: prevStatus?.branch ?? '',
+    };
+
+    try {
+        const { stdout: branchOut } = await run('git branch --show-current');
+        status.branch = branchOut.trim();
+    } catch { /* detached HEAD */ }
+
+    try {
+        const { stdout: statusOut } = await run('git status --porcelain');
+        status.localChanges = statusOut.trim() ? statusOut.trim().split('\n').length : 0;
+    } catch { /* ignore */ }
+
+    return status;
+}
+
 async function getProjectGitStatus(projectPath: string): Promise<GitStatus> {
     const empty: GitStatus = { isGitRepo: false, localChanges: 0, ahead: 0, behind: 0, branch: '' };
     const run = createGitRunner(projectPath, 8000);
