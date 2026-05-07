@@ -1023,6 +1023,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                                 `Pull failed for ${project.name}: ${err.message}`
                             );
                         }
+                        // Notify other IDEs that a git operation completed
+                        this.store.write({ lastSyncAt: Date.now() });
                         await this._postSingleProjectState(project.id);
                     }
                     break;
@@ -1038,6 +1040,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                                 `Push failed for ${project.name}: ${err.message}`
                             );
                         }
+                        // Notify other IDEs that a git operation completed
+                        this.store.write({ lastSyncAt: Date.now() });
                         await this._postSingleProjectState(project.id);
                     }
                     break;
@@ -1055,6 +1059,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                                 `Sync failed for ${project.name}: ${err.message}`
                             );
                         }
+                        // Notify other IDEs that a git operation completed
+                        this.store.write({ lastSyncAt: Date.now() });
                         await this._postSingleProjectState(project.id);
                     }
                     break;

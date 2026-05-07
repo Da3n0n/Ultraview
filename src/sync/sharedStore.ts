@@ -23,6 +23,8 @@ export interface SyncData {
     profiles: SyncProfile[];
     localAccounts: { workspaceUri: string; accountId: string }[];
     drawings: SyncDrawing[];
+    /** Timestamp of the last git sync/push/pull — used to notify other IDEs */
+    lastSyncAt?: number;
 }
 
 /** Mirrors GitAccount but tokens are NEVER written to disk — they stay in context.secrets */
@@ -81,6 +83,7 @@ const EMPTY_DATA: SyncData = {
     profiles: [],
     localAccounts: [],
     drawings: [],
+    lastSyncAt: undefined,
 };
 
 // ─── SharedStore ──────────────────────────────────────────────────────────────
