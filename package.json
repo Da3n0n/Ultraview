@@ -3,7 +3,7 @@
     "icon": "images/icon.png",
     "displayName": "Ultraview “ All in One VS Code Extension",
     "description": "All-in-one VS Code extension: database viewer, markdown editor, interactive code graph, per-project Git account manager with auto credentials, and seamless cross-IDE sync — zero setup.",
-    "version": "0.2.380",
+    "version": "0.2.381",
     "publisher": "Da3n0n",
     "engines": {
         "vscode": "^1.85.0"
@@ -290,11 +290,6 @@
                     "icon": "images/drawings.svg"
                 },
                 {
-                    "id": "ultraview-s3backup",
-                    "title": "S3 Backup",
-                    "icon": "$(cloud-upload)"
-                },
-                {
                     "id": "ultraview-bucketmanager",
                     "title": "Bucket Manager",
                     "icon": "$(database)"
@@ -348,14 +343,6 @@
                     "id": "ultraview.drawings",
                     "name": "Drawings",
                     "icon": "images/drawings.svg"
-                }
-            ],
-            "ultraview-s3backup": [
-                {
-                    "type": "webview",
-                    "id": "ultraview.s3backup",
-                    "name": "S3 Backup",
-                    "icon": "$(cloud-upload)"
                 }
             ],
             "ultraview-bucketmanager": [
@@ -483,11 +470,6 @@
                 "command": "ultraview.openDokployPanel",
                 "title": "Ultraview: Open Dokploy as Editor",
                 "icon": "$(browser)"
-            },
-            {
-                "command": "ultraview.openS3Backup",
-                "title": "Ultraview: Open S3 Backup as Editor",
-                "icon": "$(cloud-upload)"
             },
             {
                 "command": "ultraview.configureS3Backup",

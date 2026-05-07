@@ -26,7 +26,7 @@ import { openUrlInVsCodeBrowser } from './utils/browser';
 import { applyLocalAccount } from './git/gitCredentials';
 import { DrawingProvider } from './drawings/drawingProvider';
 import { DrawingManager } from './drawings/drawingManager';
-import { S3BackupProvider, configureS3BackupCredentials } from './providers/s3BackupProvider';
+import { configureS3BackupCredentials } from './providers/s3BackupProvider';
 import { BucketManagerProvider } from './providers/bucketManagerProvider';
 
 let customComments: CustomComments;
@@ -118,11 +118,6 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.registerWebviewViewProvider(
             DrawingProvider.viewId,
             drawingProvider,
-            { webviewOptions: { retainContextWhenHidden: true } }
-        ),
-        vscode.window.registerWebviewViewProvider(
-            S3BackupProvider.viewId,
-            new S3BackupProvider(context, sharedStore),
             { webviewOptions: { retainContextWhenHidden: true } }
         ),
         vscode.window.registerWebviewViewProvider(
@@ -339,9 +334,6 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('ultraview.openDokployPanel', () => {
             DokployProvider.openAsPanel(context);
         }),
-        vscode.commands.registerCommand('ultraview.openS3Backup', () => {
-            S3BackupProvider.openAsPanel(context, sharedStore);
-        }),
         vscode.commands.registerCommand('ultraview.openBucketManager', () => {
             BucketManagerProvider.openAsPanel(context);
         }),
@@ -371,7 +363,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 async (progress) => {
                     try {
                         const result = await backupProject(project.name, project.path, creds, (m) => progress.report({ message: m }));
-                        vscode.window.showInformationMessage(`✓ Backed up ${project.name} → ${creds.bucket}/${result.key}`);
+                        vscode.window.showInformationMessage(`✓ Backed up ${project.name} (${result.fileCount} files) to ${creds.bucket}`);
                     } catch (e: any) {
                         vscode.window.showErrorMessage(`S3 backup failed for ${project.name}: ${e?.message ?? e}`);
                     }

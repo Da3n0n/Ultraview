@@ -62,7 +62,6 @@ const webviewConfig = {
     commandsPanel: './src/webview/commandsPanelApp.tsx',
     portsPanel: './src/webview/portsPanelApp.tsx',
     drawings: './src/webview/drawingsApp.tsx',
-    s3Backup: './src/webview/s3BackupApp.tsx',
     bucketManager: './src/webview/bucketManagerApp.tsx'
   },
   output: {
