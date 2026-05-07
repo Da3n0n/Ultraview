@@ -1053,21 +1053,28 @@ export class GitProvider implements vscode.WebviewViewProvider {
             gitStatuses,
         });
 
-        // Send cached statuses immediately so badges are visible right away
+        // Pass 1: send cached statuses immediately — badges visible right away
         this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
 
-        // Then fetch fresh git statuses in background and send again
-        const gitStatuses: Record<string, GitStatus> = {};
+        // Pass 2: fast local-only check (no network fetch) — updates localChanges badge quickly
+        const localStatuses: Record<string, GitStatus> = {};
         await Promise.allSettled(
             projects.map(async (p) => {
-                gitStatuses[p.id] = await getProjectGitStatus(p.path);
+                localStatuses[p.id] = await getProjectLocalStatus(p.path, this._cachedGitStatuses[p.id]);
             })
         );
+        this._cachedGitStatuses = { ...this._cachedGitStatuses, ...localStatuses };
+        if (this.view) this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
 
-        // Merge into cache (keep data for projects that weren't re-fetched)
-        this._cachedGitStatuses = { ...this._cachedGitStatuses, ...gitStatuses };
-
-        this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
+        // Pass 3: full check with git fetch — updates ahead/behind (slow, network)
+        const remoteStatuses: Record<string, GitStatus> = {};
+        await Promise.allSettled(
+            projects.map(async (p) => {
+                remoteStatuses[p.id] = await getProjectGitStatus(p.path);
+            })
+        );
+        this._cachedGitStatuses = { ...this._cachedGitStatuses, ...remoteStatuses };
+        if (this.view) this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
     }
 
     /** Post state for a single project only (for targeted UI update) */
