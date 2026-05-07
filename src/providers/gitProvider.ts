@@ -468,96 +468,136 @@ async function findSubmodulePaths(projectPath: string): Promise<string[]> {
     }
 }
 
+/**
+ * Quickly checks whether a directory is a git repository root.
+ */
+async function isGitRepo(dirPath: string): Promise<boolean> {
+    const run = createGitRunner(dirPath, 5000);
+    try {
+        await run('git rev-parse --is-inside-work-tree');
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Scans one level of subdirectories under projectPath looking for independent
+ * git repos (directories with a .git entry that are NOT already in excludePaths).
+ * Skips hidden dirs and node_modules.
+ */
+function findNestedRepoPaths(projectPath: string, excludePaths: Set<string> = new Set()): string[] {
+    const results: string[] = [];
+    try {
+        const entries = fs.readdirSync(projectPath, { withFileTypes: true });
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+            const childPath = path.join(projectPath, entry.name);
+            if (excludePaths.has(childPath)) continue;
+            const gitEntry = path.join(childPath, '.git');
+            if (fs.existsSync(gitEntry)) {
+                results.push(childPath);
+            }
+        }
+    } catch {
+        /* ignore permission errors */
+    }
+    return results;
+}
+
 async function gitSync(projectPath: string, commitMsg?: string): Promise<string> {
-    const run = createGitRunner(projectPath);
     // Step 0: Clear any stale lock file before doing anything
     clearIndexLock(projectPath);
 
-    const branch = await getCurrentBranch(projectPath);
+    const rootIsRepo = await isGitRepo(projectPath);
+    let mainResult = 'Sync complete';
 
-    // Step 1: Recover from any interrupted git state first
-    await recoverInterruptedGitState(projectPath, 'ours');
+    if (rootIsRepo) {
+        const run = createGitRunner(projectPath);
+        const branch = await getCurrentBranch(projectPath);
 
-    // Step 2: Commit any local changes
-    const committed = await gitCommitLocal(projectPath, commitMsg);
+        // Step 1: Recover from any interrupted git state first
+        await recoverInterruptedGitState(projectPath, 'ours');
 
-    // Step 3: Check relationship with remote
-    const { ahead, behind, diverged } = await getSyncDirection(projectPath);
+        // Step 2: Commit any local changes
+        const committed = await gitCommitLocal(projectPath, commitMsg);
 
-    // Step 4: Handle based on relationship
-    try {
-        if (diverged) {
-            // Both users made commits - use ours strategy (local wins conflicts)
-            // This ensures user's changes are preserved
-            try {
-                const { stdout, stderr } = await run(
-                    `git merge -X ours origin/${branch} --no-edit`
-                );
-                const output = trimGitOutput(stdout, stderr);
-                // If merge did nothing useful, try pull instead
-                if (/already up to date/i.test(output) || output.includes('up-to-date')) {
+        // Step 3: Check relationship with remote
+        const { ahead, behind, diverged } = await getSyncDirection(projectPath);
+
+        // Step 4: Handle based on relationship
+        try {
+            if (diverged) {
+                // Both users made commits - use ours strategy (local wins conflicts)
+                // This ensures user's changes are preserved
+                try {
+                    const { stdout, stderr } = await run(
+                        `git merge -X ours origin/${branch} --no-edit`
+                    );
+                    const output = trimGitOutput(stdout, stderr);
+                    // If merge did nothing useful, try pull instead
+                    if (/already up to date/i.test(output) || output.includes('up-to-date')) {
+                        await run(`git pull --no-edit -X ours origin ${branch}`);
+                    }
+                } catch {
+                    // Merge failed - try pull with ours strategy
                     await run(`git pull --no-edit -X ours origin ${branch}`);
                 }
-            } catch {
-                // Merge failed - try pull with ours strategy
+            } else if (behind > 0) {
+                // We're behind remote - pull and merge
                 await run(`git pull --no-edit -X ours origin ${branch}`);
             }
-        } else if (behind > 0) {
-            // We're behind remote - pull and merge
-            await run(`git pull --no-edit -X ours origin ${branch}`);
-        }
-        // If ahead only, no merge needed - just push
-    } catch (err: any) {
-        // Something went wrong - try aggressive recovery
-        const recoveryResult = await aggressiveRecovery(projectPath);
-        if (recoveryResult === 'recovered') {
-            // Re-commit local changes after recovery
-            const { stdout: statusOut } = await run('git status --porcelain');
-            if (statusOut.trim()) {
-                await run('git add -A');
-                const files = statusOut.trim().split('\n').length;
-                await run(
-                    `git commit -m "Recovery commit: ${files} changed file${files !== 1 ? 's' : ''}"`
-                );
+            // If ahead only, no merge needed - just push
+        } catch (err: any) {
+            // Something went wrong - try aggressive recovery
+            const recoveryResult = await aggressiveRecovery(projectPath);
+            if (recoveryResult === 'recovered') {
+                // Re-commit local changes after recovery
+                const { stdout: statusOut } = await run('git status --porcelain');
+                if (statusOut.trim()) {
+                    await run('git add -A');
+                    const files = statusOut.trim().split('\n').length;
+                    await run(
+                        `git commit -m "Recovery commit: ${files} changed file${files !== 1 ? 's' : ''}"`
+                    );
+                }
+                // Now merge remote
+                await run(`git pull --no-edit -X ours origin ${branch}`);
+            } else {
+                throw new Error('Sync failed - please resolve manually');
             }
-            // Now merge remote
-            await run(`git pull --no-edit -X ours origin ${branch}`);
-        } else {
-            throw new Error('Sync failed - please resolve manually');
         }
-    }
 
-    // Step 5: Push result
-    try {
-        await run(`git push -u origin ${branch}`);
-    } catch (err: any) {
-        // Push failed - might be because remote advanced
-        if (/rejected/i.test(err.stderr) || /non-fast-forward/i.test(err.stderr)) {
-            // Pull latest and merge, then push
-            await run('git fetch --quiet origin');
-            await run(`git merge -X ours origin/${branch} --no-edit`);
+        // Step 5: Push result
+        try {
             await run(`git push -u origin ${branch}`);
-        } else {
-            throw err;
+        } catch (err: any) {
+            // Push failed - might be because remote advanced
+            if (/rejected/i.test(err.stderr) || /non-fast-forward/i.test(err.stderr)) {
+                // Pull latest and merge, then push
+                await run('git fetch --quiet origin');
+                await run(`git merge -X ours origin/${branch} --no-edit`);
+                await run(`git push -u origin ${branch}`);
+            } else {
+                throw err;
+            }
         }
-    }
 
-    // Return result based on what happened
-    let mainResult: string;
-    if (committed && (ahead > 0 || behind > 0 || diverged)) {
-        mainResult = 'Synced changes';
-    } else if (committed) {
-        mainResult = 'Changes pushed';
-    } else if (behind > 0 || diverged) {
-        mainResult = 'Updated from remote';
-    } else if (ahead > 0) {
-        mainResult = 'Already up to date';
-    } else {
-        mainResult = 'Sync complete';
+        if (committed && (ahead > 0 || behind > 0 || diverged)) {
+            mainResult = 'Synced changes';
+        } else if (committed) {
+            mainResult = 'Changes pushed';
+        } else if (behind > 0 || diverged) {
+            mainResult = 'Updated from remote';
+        } else if (ahead > 0) {
+            mainResult = 'Already up to date';
+        }
     }
 
     // Sync all registered submodules using the same logic
     const submodulePaths = await findSubmodulePaths(projectPath);
+    const submoduleSet = new Set(submodulePaths);
     for (const subPath of submodulePaths) {
         try {
             // Ensure the submodule working tree is checked out before syncing
@@ -565,6 +605,17 @@ async function gitSync(projectPath: string, commitMsg?: string): Promise<string>
             await gitSync(subPath, commitMsg);
         } catch {
             /* a failing submodule should not abort the main sync */
+        }
+    }
+
+    // Also sync any independent nested repos (monorepo pattern where child dirs
+    // are their own repos, not registered submodules)
+    const nestedRepoPaths = findNestedRepoPaths(projectPath, submoduleSet);
+    for (const nestedPath of nestedRepoPaths) {
+        try {
+            await gitSync(nestedPath, commitMsg);
+        } catch {
+            /* a failing nested repo should not abort the overall sync */
         }
     }
 
