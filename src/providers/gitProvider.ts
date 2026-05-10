@@ -42,6 +42,10 @@ async function runExclusiveProjectGitOp<T>(projectPath: string, op: () => Promis
     }
 }
 
+function notifyGitOpDone(webview: vscode.Webview | undefined, projectId: string): void {
+    webview?.postMessage({ type: 'gitOpDone', projectId });
+}
+
 /**
  * Split a "git <subcommand> [args...]" string into an args array suitable for
  * execFile, handling double- and single-quoted segments so quoted paths with
@@ -1269,6 +1273,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Pull failed for ${project.name}: ${err.message}`
                             );
+                        } finally {
+                            notifyGitOpDone(this.view?.webview, project.id);
                         }
                         // Notify other IDEs that a git operation completed
                         this.store.write({ lastSyncAt: Date.now() });
@@ -1288,6 +1294,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Push failed for ${project.name}: ${err.message}`
                             );
+                        } finally {
+                            notifyGitOpDone(this.view?.webview, project.id);
                         }
                         // Notify other IDEs that a git operation completed
                         this.store.write({ lastSyncAt: Date.now() });
@@ -1309,6 +1317,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Sync failed for ${project.name}: ${err.message}`
                             );
+                        } finally {
+                            notifyGitOpDone(this.view?.webview, project.id);
                         }
                         // Notify other IDEs that a git operation completed
                         this.store.write({ lastSyncAt: Date.now() });
@@ -2251,6 +2261,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Pull failed for ${project.name}: ${err.message}`
                             );
+                        } finally {
+                            notifyGitOpDone(panel.webview, project.id);
                         }
                         postPanelState();
                     }
@@ -2268,6 +2280,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Push failed for ${project.name}: ${err.message}`
                             );
+                        } finally {
+                            notifyGitOpDone(panel.webview, project.id);
                         }
                         postPanelState();
                     }
@@ -2287,6 +2301,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Sync failed for ${project.name}: ${err.message}`
                             );
+                        } finally {
+                            notifyGitOpDone(panel.webview, project.id);
                         }
                         postPanelState();
                     }

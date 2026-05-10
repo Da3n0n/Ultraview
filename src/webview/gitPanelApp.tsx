@@ -53,6 +53,15 @@ function App() {
             const msg = event.data;
             if (!msg) return;
 
+            if (msg.type === 'gitOpDone') {
+                setPendingProjects((current) => {
+                    const next = { ...current };
+                    delete next[msg.projectId];
+                    return next;
+                });
+                return;
+            }
+
             if (msg.type === 'state') {
                 setLoaded(true);
 
@@ -81,11 +90,6 @@ function App() {
                     setCheckingIds((current) => {
                         const next = new Set(current);
                         next.delete(msg.onlyProjectId!);
-                        return next;
-                    });
-                    setPendingProjects((current) => {
-                        const next = { ...current };
-                        delete next[msg.onlyProjectId!];
                         return next;
                     });
                 } else if (hasStatuses) {
@@ -141,6 +145,7 @@ function App() {
     const pendingCount = useMemo(() => Object.keys(pendingProjects).length, [pendingProjects]);
 
     const runProjectCommand = (type: 'gitPull' | 'gitPush' | 'gitSync', id: string) => {
+        if (pendingProjects[id]) return;
         setPendingProjects((current) => ({ ...current, [id]: true }));
         getVscode()?.postMessage({ type, id } satisfies GitPanelOutboundMessage);
     };

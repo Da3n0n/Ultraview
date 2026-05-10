@@ -28,6 +28,7 @@ export interface GitPanelStateMessage {
 
 export type GitPanelInboundMessage =
   | GitPanelStateMessage
+  | { type: 'gitOpDone'; projectId: string }
   | { type: 'projectAdded' | 'projectRemoved' | 'accountAdded' | 'accountRemoved' | 'accountUpdated' | 'sshKeyGenerated' };
 
 export type GitPanelOutboundMessage =
