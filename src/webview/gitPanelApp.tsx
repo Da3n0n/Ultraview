@@ -27,10 +27,10 @@ const emptyState: PanelState = {
     hasBackupBucket: false,
 };
 
-function authTone(status?: string): string {
-    if (status === 'expired') return '#ff6b6b';
-    if (status === 'warning') return '#ffd166';
-    return '#6ee7b7';
+function authToneClass(status?: string): string {
+    if (status === 'expired') return 'status-dot-expired';
+    if (status === 'warning') return 'status-dot-warning';
+    return 'status-dot-valid';
 }
 
 function App() {
@@ -96,7 +96,6 @@ function App() {
                     });
                     // Mark all projects as no longer checking
                     setCheckingIds(new Set());
-                    setPendingProjects({});
                 } else {
                     // Flash message (empty statuses) — background fetch starting.
                     // Only mark projects that have no cached status yet as "checking".
@@ -127,17 +126,19 @@ function App() {
         const activeProjectId = state.activeProjectId;
         if (!activeProjectId) return;
         const interval = window.setInterval(() => {
+            if (Object.keys(pendingProjects).length > 0) return;
             getVscode()?.postMessage({
                 type: 'refreshProjects' satisfies GitPanelOutboundMessage['type'],
             });
         }, 30000);
         return () => window.clearInterval(interval);
-    }, [state.activeProjectId]);
+    }, [state.activeProjectId, pendingProjects]);
 
     const activeAccount = useMemo(
         () => state.accounts.find((account) => account.id === state.activeAccountId) ?? null,
         [state.accounts, state.activeAccountId]
     );
+    const pendingCount = useMemo(() => Object.keys(pendingProjects).length, [pendingProjects]);
 
     const runProjectCommand = (type: 'gitPull' | 'gitPush' | 'gitSync', id: string) => {
         setPendingProjects((current) => ({ ...current, [id]: true }));
@@ -196,13 +197,6 @@ function App() {
                 chips.push(
                     <span key="synced" className="git-chip synced">
                         ✓ synced
-                    </span>
-                );
-            }
-            if (isChecking) {
-                chips.push(
-                    <span key="rechecking" className="git-chip checking" style={{ opacity: 0.6 }}>
-                        ↻
                     </span>
                 );
             }
@@ -297,13 +291,17 @@ function App() {
         .mini-button.pull { background:rgba(96,165,250,.12); border-color:rgba(96,165,250,.28); color:#60a5fa; }
         .mini-button.sync { background:rgba(192,132,252,.12); border-color:rgba(192,132,252,.28); color:#c084fc; }
         .status-dot { width:9px; height:9px; border-radius:999px; flex-shrink:0; margin-top:4px; }
+        .status-dot-valid { background:#6ee7b7; }
+        .status-dot-warning { background:#ffd166; }
+        .status-dot-expired { background:#ff6b6b; }
         .account-row-top { display:flex; gap:8px; align-items:flex-start; }
         .statusbar { display:flex; gap:12px; padding:7px 12px; font-size:10px; color:var(--muted); border-top:1px solid var(--border); background:rgba(0,0,0,.08); }
         .empty { padding:18px 10px; color:var(--muted); text-align:center; border:1px dashed var(--border); border-radius:12px; }
+        .empty-loading { margin:12px; }
       `}</style>
 
             {!loaded && (
-                <div className="empty" style={{ margin: 12 }}>
+                <div className="empty empty-loading">
                     Loading project manager...
                 </div>
             )}
@@ -358,8 +356,7 @@ function App() {
                                     >
                                         <div className="account-row-top">
                                             <span
-                                                className="status-dot"
-                                                style={{ background: authTone(account.authStatus) }}
+                                                className={`status-dot ${authToneClass(account.authStatus)}`}
                                             />
                                             <div className="account-meta">
                                                 <div className="account-name">
@@ -425,6 +422,7 @@ function App() {
                             <button
                                 className="button"
                                 title="Refresh"
+                                disabled={pendingCount > 0}
                                 onClick={() =>
                                     getVscode()?.postMessage({
                                         type: 'refreshProjects' satisfies GitPanelOutboundMessage['type'],
@@ -557,6 +555,7 @@ function App() {
                 <span>
                     {state.projects.length} project{state.projects.length === 1 ? '' : 's'}
                 </span>
+                <span>Working: {pendingCount}</span>
             </div>
         </div>
     );

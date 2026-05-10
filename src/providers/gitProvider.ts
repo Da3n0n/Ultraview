@@ -22,6 +22,25 @@ interface GitStatus {
 
 type GitConflictStrategy = 'ours' | 'theirs';
 type GitCommandRunner = (cmd: string) => Promise<{ stdout: string; stderr: string }>;
+const projectGitOpLocks = new Set<string>();
+
+function projectLockKey(projectPath: string): string {
+    const resolved = path.resolve(projectPath);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+async function runExclusiveProjectGitOp<T>(projectPath: string, op: () => Promise<T>): Promise<T> {
+    const key = projectLockKey(projectPath);
+    if (projectGitOpLocks.has(key)) {
+        throw new Error('A git operation is already running for this project. Please wait.');
+    }
+    projectGitOpLocks.add(key);
+    try {
+        return await op();
+    } finally {
+        projectGitOpLocks.delete(key);
+    }
+}
 
 /**
  * Split a "git <subcommand> [args...]" string into an args array suitable for
@@ -1242,7 +1261,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = this.manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            const result = await gitPull(project.path);
+                            const result = await runExclusiveProjectGitOp(project.path, () =>
+                                gitPull(project.path)
+                            );
                             vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
                         } catch (err: any) {
                             vscode.window.showErrorMessage(
@@ -1259,7 +1280,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = this.manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            const result = await gitPush(project.path, msg.commitMsg);
+                            const result = await runExclusiveProjectGitOp(project.path, () =>
+                                gitPush(project.path, msg.commitMsg)
+                            );
                             vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
                         } catch (err: any) {
                             vscode.window.showErrorMessage(
@@ -1276,7 +1299,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = this.manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            const result = await gitSync(project.path, msg.commitMsg);
+                            const result = await runExclusiveProjectGitOp(project.path, () =>
+                                gitSync(project.path, msg.commitMsg)
+                            );
                             vscode.window.showInformationMessage(
                                 `✓ ${project.name}: Sync complete`
                             );
@@ -2218,7 +2243,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            const result = await gitPull(project.path);
+                            const result = await runExclusiveProjectGitOp(project.path, () =>
+                                gitPull(project.path)
+                            );
                             vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
                         } catch (err: any) {
                             vscode.window.showErrorMessage(
@@ -2233,7 +2260,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            const result = await gitPush(project.path, msg.commitMsg);
+                            const result = await runExclusiveProjectGitOp(project.path, () =>
+                                gitPush(project.path, msg.commitMsg)
+                            );
                             vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
                         } catch (err: any) {
                             vscode.window.showErrorMessage(
@@ -2248,7 +2277,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            const result = await gitSync(project.path, msg.commitMsg);
+                            const result = await runExclusiveProjectGitOp(project.path, () =>
+                                gitSync(project.path, msg.commitMsg)
+                            );
                             vscode.window.showInformationMessage(
                                 `✓ ${project.name}: Sync complete`
                             );
