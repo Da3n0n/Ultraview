@@ -348,6 +348,17 @@ async function getCurrentBranch(projectPath: string): Promise<string> {
     } catch {
         /* detached HEAD */
     }
+    // If HEAD is detached, prefer the configured upstream branch for this commit.
+    try {
+        const { stdout } = await run('git rev-parse --abbrev-ref --symbolic-full-name @{upstream}');
+        const upstreamRef = stdout.trim(); // e.g. origin/master
+        const match = upstreamRef.match(/^[^/]+\/(.+)$/);
+        if (match && match[1]) {
+            return match[1];
+        }
+    } catch {
+        /* no upstream */
+    }
     // Fallback: check what remote HEAD points to
     try {
         const { stdout } = await run('git symbolic-ref refs/remotes/origin/HEAD');
@@ -356,7 +367,29 @@ async function getCurrentBranch(projectPath: string): Promise<string> {
     } catch {
         /* ignore */
     }
-    return 'main'; // last-resort default
+
+    // If local origin/HEAD is unavailable, ask the remote directly.
+    try {
+        const { stdout } = await run('git ls-remote --symref origin HEAD');
+        const match = stdout.match(/ref:\s+refs\/heads\/([^\s]+)\s+HEAD/);
+        if (match && match[1]) {
+            return match[1];
+        }
+    } catch {
+        /* ignore */
+    }
+
+    // Final fallback: prefer whichever common default branch actually exists.
+    for (const fallback of ['main', 'master']) {
+        try {
+            await run(`git show-ref --verify --quiet refs/remotes/origin/${fallback}`);
+            return fallback;
+        } catch {
+            /* try next */
+        }
+    }
+
+    return 'main'; // absolute last-resort default
 }
 
 async function gitPull(projectPath: string): Promise<string> {
