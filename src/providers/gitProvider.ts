@@ -738,121 +738,156 @@ function findNestedRepoPaths(projectPath: string, excludePaths: Set<string> = ne
     return results;
 }
 
-async function gitSync(projectPath: string, commitMsg?: string): Promise<string> {
-    // Step 0: Clear any stale lock file before doing anything
+/**
+ * Sync a single git repo. Never throws on recoverable conditions.
+ *
+ * @param projectPath  Absolute path to the repo root.
+ * @param commitMsg    Optional commit message prefix.
+ * @param remoteUrl    If provided and no remote is configured, this URL is
+ *                     added as `origin` automatically before syncing.
+ *                     If omitted and no remote exists, throws { code: 'NO_REMOTE' }.
+ *
+ * Handles automatically:
+ *  - Detached HEAD             → reattaches to correct branch (resolveOrAttachHead)
+ *  - Stale index.lock          → cleared before any operation
+ *  - Interrupted merge/rebase  → aborted & recovered first
+ *  - No remote (with remoteUrl)→ remote added silently, then synced
+ *  - No remote (no remoteUrl)  → throws { code: 'NO_REMOTE' } for caller to handle
+ *  - Diverged history          → local-wins merge (-X ours) + aggressive fallback
+ *  - Push rejected             → pull-then-retry once
+ *  - Push fails for other reason → retried after re-pull; throws if still failing
+ *  - Offline / temp network err→ push errors surfaced so caller can notify user
+ */
+async function gitSync(projectPath: string, commitMsg?: string, remoteUrl?: string): Promise<string> {
+    // ── sanity checks ────────────────────────────────────────────────────────
     clearIndexLock(projectPath);
+    if (!(await isGitRepo(projectPath))) return 'Sync complete';
 
-    const rootIsRepo = await isGitRepo(projectPath);
-    let mainResult = 'Sync complete';
+    const run = createGitRunner(projectPath);
 
-    if (rootIsRepo) {
-        const run = createGitRunner(projectPath);
-        const branch = await getCurrentBranch(projectPath);
+    // ── auto-reattach detached HEAD ──────────────────────────────────────────
+    const branch = await resolveOrAttachHead(projectPath);
 
-        // Step 1: Recover from any interrupted git state first
-        await recoverInterruptedGitState(projectPath, 'ours');
+    // ── recover from interrupted git state ──────────────────────────────────
+    await recoverInterruptedGitState(projectPath, 'ours');
 
-        // Step 2: Commit any local changes
-        const committed = await gitCommitLocal(projectPath, commitMsg);
+    // ── commit local changes ─────────────────────────────────────────────────
+    const committed = await gitCommitLocal(projectPath, commitMsg);
 
-        // Step 3: Check relationship with remote
-        const { ahead, behind, diverged } = await getSyncDirection(projectPath);
-
-        // Step 4: Handle based on relationship
-        try {
-            if (diverged) {
-                // Both users made commits - use ours strategy (local wins conflicts)
-                // This ensures user's changes are preserved
-                try {
-                    const { stdout, stderr } = await run(
-                        `git merge -X ours origin/${branch} --no-edit`
-                    );
-                    const output = trimGitOutput(stdout, stderr);
-                    // If merge did nothing useful, try pull instead
-                    if (/already up to date/i.test(output) || output.includes('up-to-date')) {
-                        await run(`git pull --no-edit -X ours origin ${branch}`);
-                    }
-                } catch {
-                    // Merge failed - try pull with ours strategy
-                    await run(`git pull --no-edit -X ours origin ${branch}`);
-                }
-            } else if (behind > 0) {
-                // We're behind remote - pull and merge
-                await run(`git pull --no-edit -X ours origin ${branch}`);
-            }
-            // If ahead only, no merge needed - just push
-        } catch (err: any) {
-            // Something went wrong - try aggressive recovery
-            const recoveryResult = await aggressiveRecovery(projectPath);
-            if (recoveryResult === 'recovered') {
-                // Re-commit local changes after recovery
-                const { stdout: statusOut } = await run('git status --porcelain');
-                if (statusOut.trim()) {
-                    await run('git add -A');
-                    const files = statusOut.trim().split('\n').length;
-                    await run(
-                        `git commit -m "Recovery commit: ${files} changed file${files !== 1 ? 's' : ''}"`
-                    );
-                }
-                // Now merge remote
-                await run(`git pull --no-edit -X ours origin ${branch}`);
-            } else {
-                throw new Error('Sync failed - please resolve manually');
-            }
-        }
-
-        // Step 5: Push result
-        try {
-            await run(`git push -u origin ${branch}`);
-        } catch (err: any) {
-            // Push failed - might be because remote advanced
-            if (/rejected/i.test(err.stderr) || /non-fast-forward/i.test(err.stderr)) {
-                // Pull latest with ours strategy (handles any branch name correctly),
-                // then push. Using pull instead of fetch+merge avoids "not something
-                // we can merge" when the remote tracking ref is absent or misnamed.
-                await run(`git pull --no-edit -X ours origin ${branch}`);
-                await run(`git push -u origin ${branch}`);
-            } else {
-                throw err;
-            }
-        }
-
-        if (committed && (ahead > 0 || behind > 0 || diverged)) {
-            mainResult = 'Synced changes';
-        } else if (committed) {
-            mainResult = 'Changes pushed';
-        } else if (behind > 0 || diverged) {
-            mainResult = 'Updated from remote';
-        } else if (ahead > 0) {
-            mainResult = 'Already up to date';
+    // ── ensure a remote exists ───────────────────────────────────────────────
+    const remoteExists = await hasRemote(projectPath);
+    if (!remoteExists) {
+        if (remoteUrl) {
+            // Auto-add the remote from the stored project repoUrl
+            await run(`git remote add origin "${remoteUrl.replace(/"/g, '')}"`);
+        } else {
+            // Caller must prompt the user — never silently commit-only
+            throw { code: 'NO_REMOTE' };
         }
     }
 
-    // Sync all registered submodules using the same logic
+    // ── fetch + compute divergence ───────────────────────────────────────────
+    let ahead = 0;
+    let behind = 0;
+    let diverged = false;
+    try {
+        const dir = await getSyncDirection(projectPath);
+        ahead = dir.ahead;
+        behind = dir.behind;
+        diverged = dir.diverged;
+    } catch {
+        // getSyncDirection already swallows most errors; if it still throws
+        // (e.g. no remote branch yet after adding a fresh remote) carry on
+        // — we'll just push below.
+    }
+
+    // ── merge remote changes if needed ──────────────────────────────────────
+    try {
+        if (diverged) {
+            try {
+                const { stdout, stderr } = await run(
+                    `git merge -X ours origin/${branch} --no-edit`
+                );
+                const output = trimGitOutput(stdout, stderr);
+                if (/already up to date/i.test(output)) {
+                    await run(`git pull --no-edit -X ours origin ${branch}`);
+                }
+            } catch {
+                // merge failed — try pull with ours strategy
+                await run(`git pull --no-edit -X ours origin ${branch}`);
+            }
+        } else if (behind > 0) {
+            await run(`git pull --no-edit -X ours origin ${branch}`);
+        }
+    } catch {
+        // Pull/merge failed — aggressive recovery, then continue to push
+        const recovered = await aggressiveRecovery(projectPath);
+        if (recovered === 'recovered') {
+            try {
+                const { stdout: statusOut } = await run('git status --porcelain');
+                if (statusOut.trim()) {
+                    await run('git add -A');
+                    const count = statusOut.trim().split('\n').length;
+                    const tmpFile = writeCommitMsgFile(
+                        `Recovery commit: ${count} changed file${count !== 1 ? 's' : ''}`
+                    );
+                    try {
+                        await run(`git commit -F "${tmpFile.replace(/\\/g, '/')}"`);
+                    } finally {
+                        try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+                    }
+                }
+                await run(`git pull --no-edit -X ours origin ${branch}`);
+            } catch { /* carry on to push regardless */ }
+        }
+    }
+
+    // ── push ─────────────────────────────────────────────────────────────────
+    try {
+        await run(`git push -u origin ${branch}`);
+    } catch (pushErr: any) {
+        const stderr = pushErr?.stderr ?? '';
+        if (/rejected|non-fast-forward/i.test(stderr)) {
+            // Remote advanced while we were working — pull then retry
+            await run(`git pull --no-edit -X ours origin ${branch}`);
+            await run(`git push -u origin ${branch}`);
+        } else {
+            throw pushErr;
+        }
+    }
+
+    // ── result summary ───────────────────────────────────────────────────────
+    if (committed && (behind > 0 || diverged)) return 'Synced changes';
+    if (committed) return 'Changes pushed';
+    if (behind > 0 || diverged) return 'Updated from remote';
+    return 'Up to date';
+}
+
+/** Syncs one repo safely — swallows errors so the caller's loop continues. */
+async function gitSyncSafe(projectPath: string, commitMsg?: string, remoteUrl?: string): Promise<void> {
+    try { await gitSync(projectPath, commitMsg, remoteUrl); } catch { /* never abort parent */ }
+}
+
+/** Syncs the root repo plus all submodules and independent nested repos. */
+async function gitSyncAll(projectPath: string, commitMsg?: string, remoteUrl?: string): Promise<string> {
+    const result = await gitSync(projectPath, commitMsg, remoteUrl);
+
     const submodulePaths = await findSubmodulePaths(projectPath);
     const submoduleSet = new Set(submodulePaths);
     for (const subPath of submodulePaths) {
         try {
-            // Ensure the submodule working tree is checked out before syncing
-            await createGitRunner(projectPath, 20000)(`git submodule update --init -- "${subPath.replace(/\\/g, '/')}"`);
-            await gitSync(subPath, commitMsg);
-        } catch {
-            /* a failing submodule should not abort the main sync */
-        }
+            await createGitRunner(projectPath, 20000)(
+                `git submodule update --init -- "${subPath.replace(/\\/g, '/')}"`
+            );
+        } catch { /* ignore init failures */ }
+        await gitSyncSafe(subPath, commitMsg);
     }
 
-    // Also sync any independent nested repos (monorepo pattern where child dirs
-    // are their own repos, not registered submodules)
-    const nestedRepoPaths = findNestedRepoPaths(projectPath, submoduleSet);
-    for (const nestedPath of nestedRepoPaths) {
-        try {
-            await gitSync(nestedPath, commitMsg);
-        } catch {
-            /* a failing nested repo should not abort the overall sync */
-        }
+    for (const nestedPath of findNestedRepoPaths(projectPath, submoduleSet)) {
+        await gitSyncSafe(nestedPath, commitMsg);
     }
 
-    return mainResult;
+    return result;
 }
 
 export class GitProvider implements vscode.WebviewViewProvider {
@@ -1403,18 +1438,27 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = this.manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            await runExclusiveProjectGitOp(project.path, () =>
-                                gitSync(project.path, msg.commitMsg)
-                            );
+                            await runExclusiveProjectGitOp(project.path, async () => {
+                                try {
+                                    await gitSyncAll(project.path, msg.commitMsg, project.repoUrl);
+                                } catch (err: any) {
+                                    if (err?.code !== 'NO_REMOTE') throw err;
+                                    // No remote configured — prompt user to connect one
+                                    const picked = await this._promptAndAddRemote(
+                                        project.path, project.id
+                                    );
+                                    if (picked) {
+                                        // Retry sync now that remote is set up
+                                        await gitSyncAll(project.path, msg.commitMsg, picked);
+                                    }
+                                }
+                            });
                         } catch {
-                            /* sync errors are handled internally; never surface to user */
+                            /* handled above */
                         } finally {
                             notifyGitOpDone(this.view?.webview, project.id);
                         }
-                        // Notify other IDEs that a git operation completed
                         this.store.write({ lastSyncAt: Date.now() });
-                        // Fast local update first so badge reflects sync result immediately,
-                        // then full network update to get accurate ahead/behind counts.
                         await this._postLocalProjectState(project.id);
                         await this._postSingleProjectState(project.id);
                     }
@@ -1642,7 +1686,108 @@ export class GitProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    /** Re-authenticate an existing OAuth account (refresh token). */
+    /**
+     * Prompts the user to connect a remote to a local repo that has none.
+     * Options (via VS Code quick-pick, no extra UI):
+     *   1. Pick an existing repo from their connected Git account
+     *   2. Enter a remote URL manually
+     *
+     * On success, adds `origin` to the local git repo, saves `repoUrl` on
+     * the project record, and returns the URL for the caller to retry sync.
+     * Returns undefined if the user cancels.
+     */
+    public async _promptAndAddRemote(
+        projectPath: string,
+        projectId: string
+    ): Promise<string | undefined> {
+        // Build options list
+        const items: vscode.QuickPickItem[] = [
+            {
+                label: '$(repo) Pick from my account repos',
+                description: 'Connect an existing GitHub/GitLab repo as the remote',
+            },
+            {
+                label: '$(link) Enter remote URL',
+                description: 'Paste any git remote URL (HTTPS or SSH)',
+            },
+        ];
+
+        const choice = await vscode.window.showQuickPick(items, {
+            placeHolder: `"${path.basename(projectPath)}" has no remote — connect it to a git service`,
+            ignoreFocusOut: true,
+        });
+
+        if (!choice) return undefined;
+
+        let remoteUrl: string | undefined;
+
+        if (choice.label.includes('Pick from')) {
+            // Fetch repo list from the active account (same as _handleAddRepo does)
+            const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+            const activeAcc = activeRepo
+                ? this.accounts.getLocalAccount(activeRepo)
+                : this.accounts.listAccounts()[0];
+            if (!activeAcc) {
+                vscode.window.showErrorMessage('No active Git account — add one first.');
+                return undefined;
+            }
+            const accWithToken = await this.accounts.getAccountWithToken(activeAcc.id);
+            if (!accWithToken?.token) {
+                vscode.window.showErrorMessage(`${activeAcc.username} has no token — authenticate first.`);
+                return undefined;
+            }
+
+            let repos: { name: string; url: string }[] = [];
+            try {
+                if (activeAcc.provider === 'github') {
+                    const res = await fetch(
+                        'https://api.github.com/user/repos?per_page=100&sort=updated',
+                        { headers: { Authorization: `Bearer ${accWithToken.token}`, 'User-Agent': 'Ultraview-VSCode' } }
+                    );
+                    if (res.ok) {
+                        const data = (await res.json()) as any[];
+                        repos = data.map((r) => ({ name: r.full_name, url: r.ssh_url || r.clone_url }));
+                    }
+                } else if (activeAcc.provider === 'gitlab') {
+                    const res = await fetch(
+                        'https://gitlab.com/api/v4/projects?membership=true&simple=true&per_page=100',
+                        { headers: { Authorization: `Bearer ${accWithToken.token}` } }
+                    );
+                    if (res.ok) {
+                        const data = (await res.json()) as any[];
+                        repos = data.map((r) => ({ name: r.path_with_namespace, url: r.ssh_url_to_repo || r.http_url_to_repo }));
+                    }
+                }
+            } catch { /* fall through to manual entry */ }
+
+            if (repos.length === 0) {
+                vscode.window.showWarningMessage('Could not fetch repo list — enter URL manually.');
+                return undefined;
+            }
+
+            const picked = await vscode.window.showQuickPick(
+                repos.map((r) => ({ label: r.name, description: r.url, url: r.url })),
+                { placeHolder: 'Select the remote repo to connect', ignoreFocusOut: true }
+            );
+            remoteUrl = (picked as any)?.url;
+        } else {
+            // Manual URL entry
+            remoteUrl = await vscode.window.showInputBox({
+                prompt: 'Enter the git remote URL (HTTPS or SSH)',
+                placeHolder: 'https://github.com/you/repo.git  or  git@github.com:you/repo.git',
+                ignoreFocusOut: true,
+                validateInput: (v) => v.trim() ? undefined : 'URL is required',
+            });
+        }
+
+        if (!remoteUrl) return undefined;
+
+        // Save repoUrl on project so future syncs use it automatically
+        this.manager.updateProject(projectId, { repoUrl: remoteUrl });
+
+        return remoteUrl;
+    }
+
     private async _reAuthOAuth(accountId: string, provider: GitProviderType): Promise<void> {
         const browserProviders: Record<string, string> = {
             github: 'github',
@@ -1946,6 +2091,64 @@ export class GitProvider implements vscode.WebviewViewProvider {
         // Hot-reload when another IDE writes the shared sync file
         store.on('changed', postPanelState);
         panel.onDidDispose(() => store.off('changed', postPanelState));
+
+        /** Prompts user to pick/enter a remote URL for a repo with no remote (panel context). */
+        const promptAndAddRemotePanel = async (
+            projectPath: string,
+            projectId: string
+        ): Promise<string | undefined> => {
+            const items: vscode.QuickPickItem[] = [
+                { label: '$(repo) Pick from my account repos', description: 'Connect an existing GitHub/GitLab repo' },
+                { label: '$(link) Enter remote URL', description: 'Paste any git remote URL (HTTPS or SSH)' },
+            ];
+            const choice = await vscode.window.showQuickPick(items, {
+                placeHolder: `"${path.basename(projectPath)}" has no remote — connect it to a git service`,
+                ignoreFocusOut: true,
+            });
+            if (!choice) return undefined;
+
+            let remoteUrl: string | undefined;
+
+            if (choice.label.includes('Pick from')) {
+                const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+                const activeAcc = activeRepo ? accounts.getLocalAccount(activeRepo) : accounts.listAccounts()[0];
+                if (!activeAcc) { vscode.window.showErrorMessage('No active Git account — add one first.'); return undefined; }
+                const accWithToken = await accounts.getAccountWithToken(activeAcc.id);
+                if (!accWithToken?.token) { vscode.window.showErrorMessage(`${activeAcc.username} has no token — authenticate first.`); return undefined; }
+
+                let repos: { name: string; url: string }[] = [];
+                try {
+                    if (activeAcc.provider === 'github') {
+                        const res = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated',
+                            { headers: { Authorization: `Bearer ${accWithToken.token}`, 'User-Agent': 'Ultraview-VSCode' } });
+                        if (res.ok) repos = ((await res.json()) as any[]).map((r) => ({ name: r.full_name, url: r.ssh_url || r.clone_url }));
+                    } else if (activeAcc.provider === 'gitlab') {
+                        const res = await fetch('https://gitlab.com/api/v4/projects?membership=true&simple=true&per_page=100',
+                            { headers: { Authorization: `Bearer ${accWithToken.token}` } });
+                        if (res.ok) repos = ((await res.json()) as any[]).map((r) => ({ name: r.path_with_namespace, url: r.ssh_url_to_repo || r.http_url_to_repo }));
+                    }
+                } catch { /* fall through */ }
+
+                if (!repos.length) { vscode.window.showWarningMessage('Could not fetch repo list — enter URL manually.'); return undefined; }
+
+                const picked = await vscode.window.showQuickPick(
+                    repos.map((r) => ({ label: r.name, description: r.url, url: r.url })),
+                    { placeHolder: 'Select the remote repo to connect', ignoreFocusOut: true }
+                );
+                remoteUrl = (picked as any)?.url;
+            } else {
+                remoteUrl = await vscode.window.showInputBox({
+                    prompt: 'Enter the git remote URL (HTTPS or SSH)',
+                    placeHolder: 'https://github.com/you/repo.git  or  git@github.com:you/repo.git',
+                    ignoreFocusOut: true,
+                    validateInput: (v) => v.trim() ? undefined : 'URL is required',
+                });
+            }
+
+            if (!remoteUrl) return undefined;
+            manager.updateProject(projectId, { repoUrl: remoteUrl });
+            return remoteUrl;
+        };
 
         panel.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
@@ -2413,11 +2616,21 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            await runExclusiveProjectGitOp(project.path, () =>
-                                gitSync(project.path, msg.commitMsg)
-                            );
+                            await runExclusiveProjectGitOp(project.path, async () => {
+                                try {
+                                    await gitSyncAll(project.path, msg.commitMsg, project.repoUrl);
+                                } catch (err: any) {
+                                    if (err?.code !== 'NO_REMOTE') throw err;
+                                    const picked = await promptAndAddRemotePanel(
+                                        project.path, project.id
+                                    );
+                                    if (picked) {
+                                        await gitSyncAll(project.path, msg.commitMsg, picked);
+                                    }
+                                }
+                            });
                         } catch {
-                            /* sync errors are handled internally; never surface to user */
+                            /* handled above */
                         } finally {
                             notifyGitOpDone(panel.webview, project.id);
                         }
