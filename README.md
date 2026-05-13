@@ -45,6 +45,10 @@ Automatically detect runnable commands across the whole workspace, including mon
 
 Easily manage and kill open ports and processes within a simple UI. Identify locked ports in use, free up resources, and kill ports instantly with a clean GUI.
 
+### **S3 Bucket Manager**
+
+Browse, upload, download, and manage your S3 buckets directly from VS Code. Configure AWS credentials once and backup files across all your projects with a single click.
+
 ### **Dokploy Sidebar**
 
 Open your Dokploy instance directly from a dedicated Ultraview sidebar icon, sign in from inside VS Code, and jump to a full editor browser view when you need more room.
