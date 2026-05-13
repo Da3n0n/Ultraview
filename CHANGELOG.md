@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.388] - 2026-05-13
+
+### Changed
+- Git provider code refactoring and cleanup
+
+[ff13380]
+
 ## [0.2.387] - 2026-05-13
 
 New project - comprehensive changelog created from git history.
