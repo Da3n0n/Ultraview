@@ -719,9 +719,10 @@ async function gitSync(projectPath: string, commitMsg?: string): Promise<string>
         } catch (err: any) {
             // Push failed - might be because remote advanced
             if (/rejected/i.test(err.stderr) || /non-fast-forward/i.test(err.stderr)) {
-                // Pull latest and merge, then push
-                await run('git fetch --quiet origin');
-                await run(`git merge -X ours origin/${branch} --no-edit`);
+                // Pull latest with ours strategy (handles any branch name correctly),
+                // then push. Using pull instead of fetch+merge avoids "not something
+                // we can merge" when the remote tracking ref is absent or misnamed.
+                await run(`git pull --no-edit -X ours origin ${branch}`);
                 await run(`git push -u origin ${branch}`);
             } else {
                 throw err;
@@ -1307,21 +1308,19 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = this.manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            const result = await runExclusiveProjectGitOp(project.path, () =>
+                            await runExclusiveProjectGitOp(project.path, () =>
                                 gitSync(project.path, msg.commitMsg)
                             );
-                            vscode.window.showInformationMessage(
-                                `✓ ${project.name}: Sync complete`
-                            );
-                        } catch (err: any) {
-                            vscode.window.showErrorMessage(
-                                `Sync failed for ${project.name}: ${err.message}`
-                            );
+                        } catch {
+                            /* sync errors are handled internally; never surface to user */
                         } finally {
                             notifyGitOpDone(this.view?.webview, project.id);
                         }
                         // Notify other IDEs that a git operation completed
                         this.store.write({ lastSyncAt: Date.now() });
+                        // Fast local update first so badge reflects sync result immediately,
+                        // then full network update to get accurate ahead/behind counts.
+                        await this._postLocalProjectState(project.id);
                         await this._postSingleProjectState(project.id);
                     }
                     break;
@@ -2291,16 +2290,11 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
                         try {
-                            const result = await runExclusiveProjectGitOp(project.path, () =>
+                            await runExclusiveProjectGitOp(project.path, () =>
                                 gitSync(project.path, msg.commitMsg)
                             );
-                            vscode.window.showInformationMessage(
-                                `✓ ${project.name}: Sync complete`
-                            );
-                        } catch (err: any) {
-                            vscode.window.showErrorMessage(
-                                `Sync failed for ${project.name}: ${err.message}`
-                            );
+                        } catch {
+                            /* sync errors are handled internally; never surface to user */
                         } finally {
                             notifyGitOpDone(panel.webview, project.id);
                         }
