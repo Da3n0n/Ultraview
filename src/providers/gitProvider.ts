@@ -415,6 +415,94 @@ async function getCurrentBranch(projectPath: string): Promise<string> {
     return 'main'; // absolute last-resort default
 }
 
+/**
+ * Detects whether HEAD is detached. If it is, figures out the correct branch
+ * (upstream → origin/HEAD → ls-remote → local branch check → 'main') and
+ * checks it out automatically so subsequent git operations work normally.
+ *
+ * Always returns the resolved branch name. Never throws.
+ */
+async function resolveOrAttachHead(projectPath: string): Promise<string> {
+    const run = createGitRunner(projectPath, 8000);
+
+    // Fast path: already on a named branch
+    try {
+        const { stdout } = await run('git branch --show-current');
+        const branch = stdout.trim();
+        if (branch) return branch;
+    } catch { /* detached or error — fall through */ }
+
+    // HEAD is detached — resolve the best target branch
+    let targetBranch = 'main';
+
+    // 1. Upstream of current detached HEAD
+    try {
+        const { stdout } = await run('git rev-parse --abbrev-ref --symbolic-full-name @{upstream}');
+        const match = stdout.trim().match(/^[^/]+\/(.+)$/);
+        if (match?.[1]) targetBranch = match[1];
+    } catch { /* no upstream */ }
+
+    if (targetBranch === 'main') {
+        // 2. Local origin/HEAD symref
+        try {
+            const { stdout } = await run('git symbolic-ref refs/remotes/origin/HEAD');
+            const ref = stdout.trim().replace(/^refs\/remotes\/origin\//, '');
+            if (ref) targetBranch = ref;
+        } catch { /* ignore */ }
+    }
+
+    if (targetBranch === 'main') {
+        // 3. Ask remote directly (requires network)
+        try {
+            const { stdout } = await run('git ls-remote --symref origin HEAD');
+            const match = stdout.match(/ref:\s+refs\/heads\/([^\s]+)\s+HEAD/);
+            if (match?.[1]) targetBranch = match[1];
+        } catch { /* offline or no remote */ }
+    }
+
+    if (targetBranch === 'main') {
+        // 4. Check whether master or main actually exists locally or on remote
+        for (const candidate of ['main', 'master']) {
+            let found = false;
+            try {
+                await run(`git show-ref --verify --quiet refs/remotes/origin/${candidate}`);
+                found = true;
+            } catch { /* try local */ }
+            if (!found) {
+                try {
+                    await run(`git show-ref --verify --quiet refs/heads/${candidate}`);
+                    found = true;
+                } catch { /* try next */ }
+            }
+            if (found) { targetBranch = candidate; break; }
+        }
+    }
+
+    // Checkout — create the local branch tracking origin if it doesn't exist yet
+    try {
+        await run(`git checkout ${targetBranch}`);
+    } catch {
+        try {
+            await run(`git checkout -b ${targetBranch} origin/${targetBranch}`);
+        } catch { /* best effort — carry on regardless */ }
+    }
+
+    return targetBranch;
+}
+
+/**
+ * Returns true if the repo has at least one configured remote.
+ */
+async function hasRemote(projectPath: string): Promise<boolean> {
+    const run = createGitRunner(projectPath, 5000);
+    try {
+        const { stdout } = await run('git remote');
+        return stdout.trim().length > 0;
+    } catch {
+        return false;
+    }
+}
+
 async function gitPull(projectPath: string): Promise<string> {
     const notes = await recoverInterruptedGitState(projectPath, 'theirs');
     const branch = await getCurrentBranch(projectPath);
@@ -776,6 +864,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
     private store: SharedStore;
     /** Last-known git statuses — used to populate the UI instantly before async fetch */
     private _cachedGitStatuses: Record<string, GitStatus> = {};
+    /** Cached S3 credential check result to avoid repeated keychain reads */
+    private _s3CredsCached: boolean | null = null;
+    private _s3CredsCachedAt = 0;
     /** File system watcher for the active workspace folder (fast local change detection) */
     private _fsWatcher?: vscode.FileSystemWatcher;
     /** Debounce timer for the file system watcher */
@@ -1052,7 +1143,11 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 case 'ready': {
                     // On ready, auto-apply credentials for the current project
                     await this._autoApplyOnOpen();
-                    await this._validateAllTokensBackground();
+                    // Fire token validation in the background — do NOT await before postState
+                    // so the webview renders immediately with cached data.
+                    this._validateAllTokensBackground().then(() => {
+                        if (this.view) this.postState();
+                    });
                     // Bump lastOpened for the currently active workspace so it rises to top of list
                     const activeRepoOnReady =
                         vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
@@ -1332,6 +1427,23 @@ export class GitProvider implements vscode.WebviewViewProvider {
         this.postState();
     }
 
+    /** Returns whether an S3 backup bucket is configured, caching the result for 60 s. */
+    private async _hasBackupBucket(): Promise<boolean> {
+        const now = Date.now();
+        if (this._s3CredsCached !== null && now - this._s3CredsCachedAt < 60_000) {
+            return this._s3CredsCached;
+        }
+        this._s3CredsCached = !!(await getS3Credentials(this.context));
+        this._s3CredsCachedAt = now;
+        return this._s3CredsCached;
+    }
+
+    /** Invalidate the S3 creds cache (call whenever credentials are changed). */
+    private _invalidateS3Cache(): void {
+        this._s3CredsCached = null;
+        this._s3CredsCachedAt = 0;
+    }
+
     async postState() {
         if (!this.view) return;
         const projects = this.manager
@@ -1355,7 +1467,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
         const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
 
-        const hasBackupBucket = !!(await getS3Credentials(this.context));
+        // Use cached S3 cred check — avoids keychain reads on every refresh
+        const hasBackupBucket = await this._hasBackupBucket();
 
         const buildMsg = (gitStatuses: Record<string, GitStatus>) => ({
             type: 'state',
@@ -1382,15 +1495,24 @@ export class GitProvider implements vscode.WebviewViewProvider {
         this._cachedGitStatuses = { ...this._cachedGitStatuses, ...localStatuses };
         if (this.view) this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
 
-        // Pass 3: full check with git fetch — updates ahead/behind (slow, network)
+        // Pass 3: full check with git fetch — updates ahead/behind for all projects.
+        // Fetches are capped at 3 concurrent to avoid saturating the network/thread pool.
+        // No TTL skipping — every refresh gets fresh remote status so badges are always current.
+        const MAX_CONCURRENT = 3;
         const remoteStatuses: Record<string, GitStatus> = {};
-        await Promise.allSettled(
-            projects.map(async (p) => {
-                remoteStatuses[p.id] = await getProjectGitStatus(p.path);
-            })
-        );
-        this._cachedGitStatuses = { ...this._cachedGitStatuses, ...remoteStatuses };
-        if (this.view) this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
+        for (let i = 0; i < projects.length; i += MAX_CONCURRENT) {
+            const batch = projects.slice(i, i + MAX_CONCURRENT);
+            await Promise.allSettled(
+                batch.map(async (p) => {
+                    remoteStatuses[p.id] = await getProjectGitStatus(p.path);
+                })
+            );
+        }
+
+        if (Object.keys(remoteStatuses).length > 0) {
+            this._cachedGitStatuses = { ...this._cachedGitStatuses, ...remoteStatuses };
+            if (this.view) this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
+        }
     }
 
     /** Set up (or re-create) a file system watcher on the active workspace folder.
@@ -1404,9 +1526,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
         const activeFolder = vscode.workspace.workspaceFolders?.[0];
         if (!activeFolder) return;
 
-        // Watch everything except .git internals to avoid noise
+        // Watch source files only — exclude build artefacts and package dirs
+        // to avoid a massive event stream from npm install / build runs.
         this._fsWatcher = vscode.workspace.createFileSystemWatcher(
-            new vscode.RelativePattern(activeFolder, '**'),
+            new vscode.RelativePattern(activeFolder, '{**/*.ts,**/*.tsx,**/*.js,**/*.jsx,**/*.py,**/*.go,**/*.rs,**/*.java,**/*.cs,**/*.html,**/*.css,**/*.json,**/*.md,**/*.env}'),
             false, false, false
         );
 
@@ -1445,7 +1568,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             authStatus: this.accounts.getAccountAuthStatus(acc),
         }));
         const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
-        const hasBackupBucket = !!(await getS3Credentials(this.context));
+        const hasBackupBucket = await this._hasBackupBucket();
         const project = projects.find((p) => p.id === projectId);
         if (!project) return;
         const localStatus = await getProjectLocalStatus(project.path, this._cachedGitStatuses[project.id]);
@@ -1482,7 +1605,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
             authStatus: this.accounts.getAccountAuthStatus(acc),
         }));
         const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
-        const hasBackupBucket = !!(await getS3Credentials(this.context));
+        const hasBackupBucket = await this._hasBackupBucket();
         const gitStatuses: Record<string, GitStatus> = {};
         const project = projects.find((p) => p.id === projectId);
         if (project) {

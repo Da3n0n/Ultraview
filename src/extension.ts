@@ -51,7 +51,8 @@ export async function activate(context: vscode.ExtensionContext) {
             new SqliteProvider(context),
             {
                 supportsMultipleEditorsPerDocument: false,
-                webviewOptions: { retainContextWhenHidden: true },
+                // SQLite viewer loads data on-demand; no need to retain DOM when hidden
+                webviewOptions: { retainContextWhenHidden: false },
             }
         ),
         vscode.window.registerCustomEditorProvider(
@@ -59,7 +60,7 @@ export async function activate(context: vscode.ExtensionContext) {
             new DuckDbProvider(context),
             {
                 supportsMultipleEditorsPerDocument: false,
-                webviewOptions: { retainContextWhenHidden: true },
+                webviewOptions: { retainContextWhenHidden: false },
             }
         ),
         vscode.window.registerCustomEditorProvider(
@@ -67,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext) {
             new AccessProvider(context),
             {
                 supportsMultipleEditorsPerDocument: false,
-                webviewOptions: { retainContextWhenHidden: true },
+                webviewOptions: { retainContextWhenHidden: false },
             }
         ),
         vscode.window.registerCustomEditorProvider(
@@ -75,7 +76,7 @@ export async function activate(context: vscode.ExtensionContext) {
             new SqlDumpProvider(context),
             {
                 supportsMultipleEditorsPerDocument: false,
-                webviewOptions: { retainContextWhenHidden: true },
+                webviewOptions: { retainContextWhenHidden: false },
             }
         ),
         vscode.window.registerCustomEditorProvider(
@@ -88,18 +89,18 @@ export async function activate(context: vscode.ExtensionContext) {
         ),
         vscode.window.registerCustomEditorProvider('ultraview.svg', new SvgProvider(context), {
             supportsMultipleEditorsPerDocument: false,
-            webviewOptions: { retainContextWhenHidden: true },
+            webviewOptions: { retainContextWhenHidden: false },
         }),
         vscode.window.registerCustomEditorProvider('ultraview.index', new IndexProvider(context), {
             supportsMultipleEditorsPerDocument: false,
-            webviewOptions: { retainContextWhenHidden: true },
+            webviewOptions: { retainContextWhenHidden: false },
         }),
         vscode.window.registerCustomEditorProvider(
             'ultraview.model3d',
             new Model3dProvider(context),
             {
                 supportsMultipleEditorsPerDocument: false,
-                webviewOptions: { retainContextWhenHidden: true },
+                webviewOptions: { retainContextWhenHidden: false },
             }
         ),
         vscode.window.registerWebviewViewProvider(
