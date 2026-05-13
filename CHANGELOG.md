@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.392] - 2026-05-13
+
+All commits since [ff13380]...
+
+### Changed
+- Git provider code refactoring and cleanup
+- Enhanced Git account management implementation
+- Improved extension integration with Git provider
+
+[28ed794]
+
 ## [0.2.388] - 2026-05-13
 
 ### Changed
