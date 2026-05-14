@@ -1,4 +1,5 @@
 {
     "workbench.browser.dataStorage": "workspace",
-    "ultraview.dokploy.url": "https://admin.foundr.tech"
+    "ultraview.dokploy.url": "https://admin.foundr.tech",
+    "deepscan.ignoreConfirmWarning": true
 }
