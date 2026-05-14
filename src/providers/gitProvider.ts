@@ -899,6 +899,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
     private store: SharedStore;
     /** Last-known git statuses — used to populate the UI instantly before async fetch */
     private _cachedGitStatuses: Record<string, GitStatus> = {};
+    /** Monotonic guard so older async status refreshes cannot overwrite newer results */
+    private _statusRefreshSeq = 0;
     /** Cached S3 credential check result to avoid repeated keychain reads */
     private _s3CredsCached: boolean | null = null;
     private _s3CredsCachedAt = 0;
@@ -1404,12 +1406,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Pull failed for ${project.name}: ${err.message}`
                             );
-                        } finally {
-                            notifyGitOpDone(this.view?.webview, project.id);
                         }
                         // Notify other IDEs that a git operation completed
                         this.store.write({ lastSyncAt: Date.now() });
-                        await this._postSingleProjectState(project.id);
+                        try {
+                            await this._postSingleProjectState(project.id);
+                        } finally {
+                            notifyGitOpDone(this.view?.webview, project.id);
+                        }
                     }
                     break;
                 }
@@ -1425,12 +1429,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Push failed for ${project.name}: ${err.message}`
                             );
-                        } finally {
-                            notifyGitOpDone(this.view?.webview, project.id);
                         }
                         // Notify other IDEs that a git operation completed
                         this.store.write({ lastSyncAt: Date.now() });
-                        await this._postSingleProjectState(project.id);
+                        try {
+                            await this._postSingleProjectState(project.id);
+                        } finally {
+                            notifyGitOpDone(this.view?.webview, project.id);
+                        }
                     }
                     break;
                 }
@@ -1455,12 +1461,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             });
                         } catch {
                             /* handled above */
+                        }
+                        this.store.write({ lastSyncAt: Date.now() });
+                        try {
+                            await this._postLocalProjectState(project.id);
+                            await this._postSingleProjectState(project.id);
                         } finally {
                             notifyGitOpDone(this.view?.webview, project.id);
                         }
-                        this.store.write({ lastSyncAt: Date.now() });
-                        await this._postLocalProjectState(project.id);
-                        await this._postSingleProjectState(project.id);
                     }
                     break;
                 }
@@ -1490,6 +1498,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
     async postState() {
         if (!this.view) return;
+        const refreshSeq = ++this._statusRefreshSeq;
         const projects = this.manager
             .listProjects()
             .slice()
@@ -1536,6 +1545,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 localStatuses[p.id] = await getProjectLocalStatus(p.path, this._cachedGitStatuses[p.id]);
             })
         );
+        if (refreshSeq !== this._statusRefreshSeq || !this.view) return;
         this._cachedGitStatuses = { ...this._cachedGitStatuses, ...localStatuses };
         if (this.view) this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
 
@@ -1554,6 +1564,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
         }
 
         if (Object.keys(remoteStatuses).length > 0) {
+            if (refreshSeq !== this._statusRefreshSeq || !this.view) return;
             this._cachedGitStatuses = { ...this._cachedGitStatuses, ...remoteStatuses };
             if (this.view) this.view.webview.postMessage(buildMsg(this._cachedGitStatuses));
         }
@@ -1597,6 +1608,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
     /** Fast local-only update for a single project (no git fetch — just branch + localChanges). */
     public async _postLocalProjectState(projectId: string): Promise<void> {
         if (!this.view) return;
+        const refreshSeq = ++this._statusRefreshSeq;
         const projects = this.manager
             .listProjects()
             .slice()
@@ -1616,6 +1628,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
         const project = projects.find((p) => p.id === projectId);
         if (!project) return;
         const localStatus = await getProjectLocalStatus(project.path, this._cachedGitStatuses[project.id]);
+        if (refreshSeq !== this._statusRefreshSeq || !this.view) return;
         this._cachedGitStatuses = { ...this._cachedGitStatuses, [project.id]: localStatus };
         this.view.webview.postMessage({
             type: 'state',
@@ -1634,6 +1647,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
     /** Post state for a single project only (for targeted UI update) */
     public async _postSingleProjectState(projectId: string): Promise<void> {
         if (!this.view) return;
+        const refreshSeq = ++this._statusRefreshSeq;
         const projects = this.manager
             .listProjects()
             .slice()
@@ -1655,6 +1669,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
         if (project) {
             gitStatuses[project.id] = await getProjectGitStatus(project.path);
         }
+        if (refreshSeq !== this._statusRefreshSeq || !this.view) return;
+        this._cachedGitStatuses = { ...this._cachedGitStatuses, ...gitStatuses };
         this.view.webview.postMessage({
             type: 'state',
             projects,
@@ -2043,8 +2059,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
         const manager = new GitProjects(context, store);
         const accounts = new GitAccounts(context, store);
+        let panelStatusRefreshSeq = 0;
 
         const postPanelState = async () => {
+            const refreshSeq = ++panelStatusRefreshSeq;
             const projects = manager.listProjects();
             const activeRepo = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
             const accountList = accounts.listAccounts();
@@ -2085,6 +2103,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 })
             );
 
+            if (refreshSeq !== panelStatusRefreshSeq) return;
             panel.webview.postMessage(buildMsg(gitStatuses));
         };
 
@@ -2586,10 +2605,12 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Pull failed for ${project.name}: ${err.message}`
                             );
+                        }
+                        try {
+                            await postPanelState();
                         } finally {
                             notifyGitOpDone(panel.webview, project.id);
                         }
-                        postPanelState();
                     }
                     break;
                 }
@@ -2605,10 +2626,12 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             vscode.window.showErrorMessage(
                                 `Push failed for ${project.name}: ${err.message}`
                             );
+                        }
+                        try {
+                            await postPanelState();
                         } finally {
                             notifyGitOpDone(panel.webview, project.id);
                         }
-                        postPanelState();
                     }
                     break;
                 }
@@ -2631,10 +2654,12 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             });
                         } catch {
                             /* handled above */
+                        }
+                        try {
+                            await postPanelState();
                         } finally {
                             notifyGitOpDone(panel.webview, project.id);
                         }
-                        postPanelState();
                     }
                     break;
                 }
