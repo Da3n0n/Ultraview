@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.394] - 2026-05-15
+
+All commits since [28ed794]...
+
+### Changed
+- Enhanced Git account management implementation with improved credential handling
+- Git provider code refactoring and cleanup
+- Updated VS Code workspace settings
+
+[28ed794]
+
 ## [0.2.392] - 2026-05-13
 
 All commits since [ff13380]...
