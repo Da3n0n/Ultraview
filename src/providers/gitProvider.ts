@@ -1426,8 +1426,31 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             );
                             vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
                         } catch (err: any) {
+                            const errMsg = err.message || 'Unknown error';
+                            if (/workflow/i.test(errMsg) && /scope/i.test(errMsg) && project.accountId) {
+                                const acc = this.accounts.getAccount(project.accountId);
+                                if (acc && acc.authMethod === 'oauth' && acc.provider === 'github') {
+                                    vscode.window.showErrorMessage(
+                                        `Push failed: GitHub token lacks 'workflow' scope.`,
+                                        'Re-authenticate & Retry'
+                                    ).then(async (action) => {
+                                        if (action) {
+                                            await this._reAuthOAuth(acc.id, acc.provider);
+                                            try {
+                                                const result = await gitPush(project.path, msg.commitMsg);
+                                                vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
+                                                this.store.write({ lastSyncAt: Date.now() });
+                                                this.postState();
+                                            } catch (retryErr: any) {
+                                                vscode.window.showErrorMessage(`Retry failed: ${retryErr.message || 'Unknown error'}`);
+                                            }
+                                        }
+                                    });
+                                    return; // Don't show default error yet, notification handles it
+                                }
+                            }
                             vscode.window.showErrorMessage(
-                                `Push failed for ${project.name}: ${err.message}`
+                                `Push failed for ${project.name}: ${errMsg}`
                             );
                         }
                         // Notify other IDEs that a git operation completed
@@ -1446,7 +1469,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                         try {
                             await runExclusiveProjectGitOp(project.path, async () => {
                                 try {
-                                    await gitSyncAll(project.path, msg.commitMsg, project.repoUrl);
+                                    const result = await gitSyncAll(project.path, msg.commitMsg, project.repoUrl);
+                                    vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
                                 } catch (err: any) {
                                     if (err?.code !== 'NO_REMOTE') throw err;
                                     // No remote configured — prompt user to connect one
@@ -1455,12 +1479,38 @@ export class GitProvider implements vscode.WebviewViewProvider {
                                     );
                                     if (picked) {
                                         // Retry sync now that remote is set up
-                                        await gitSyncAll(project.path, msg.commitMsg, picked);
+                                        const result = await gitSyncAll(project.path, msg.commitMsg, picked);
+                                        vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
                                     }
                                 }
                             });
-                        } catch {
-                            /* handled above */
+                        } catch (err: any) {
+                            const errMsg = err.message || 'Unknown error';
+                            if (/workflow/i.test(errMsg) && /scope/i.test(errMsg) && project.accountId) {
+                                const acc = this.accounts.getAccount(project.accountId);
+                                if (acc && acc.authMethod === 'oauth' && acc.provider === 'github') {
+                                    vscode.window.showErrorMessage(
+                                        `Sync failed: GitHub token lacks 'workflow' scope.`,
+                                        'Re-authenticate & Retry'
+                                    ).then(async (action) => {
+                                        if (action) {
+                                            await this._reAuthOAuth(acc.id, acc.provider);
+                                            try {
+                                                const result = await gitSyncAll(project.path, msg.commitMsg, project.repoUrl);
+                                                vscode.window.showInformationMessage(`✓ ${project.name}: ${result}`);
+                                                this.store.write({ lastSyncAt: Date.now() });
+                                                this.postState();
+                                            } catch (retryErr: any) {
+                                                vscode.window.showErrorMessage(`Retry failed: ${retryErr.message || 'Unknown error'}`);
+                                            }
+                                        }
+                                    });
+                                    return; // Don't show default error yet, notification handles it
+                                }
+                            }
+                            vscode.window.showErrorMessage(
+                                `Sync failed for ${project.name}: ${errMsg}`
+                            );
                         }
                         this.store.write({ lastSyncAt: Date.now() });
                         try {
@@ -1812,7 +1862,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
         };
         const vsCodeProviderId = browserProviders[provider];
         const scopes: Record<string, string[]> = {
-            github: ['repo', 'read:user', 'user:email'],
+            github: ['repo', 'workflow', 'read:user', 'user:email'],
             gitlab: ['read_user', 'api'],
             microsoft: ['499b84ac-1321-427f-aa17-267ca6975798/.default'],
         };
@@ -1941,7 +1991,7 @@ export class GitProvider implements vscode.WebviewViewProvider {
         vsCodeProviderId: string
     ): Promise<void> {
         const scopes: Record<string, string[]> = {
-            github: ['repo', 'read:user', 'user:email'],
+            github: ['repo', 'workflow', 'read:user', 'user:email'],
             gitlab: ['read_user', 'api'],
             microsoft: ['499b84ac-1321-427f-aa17-267ca6975798/.default'],
         };
