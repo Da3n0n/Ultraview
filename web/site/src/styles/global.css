@@ -45,6 +45,9 @@ body {
     background:
         linear-gradient(rgba(246, 241, 232, 0.025) 1px, transparent 1px),
         linear-gradient(90deg, rgba(246, 241, 232, 0.025) 1px, transparent 1px),
+        radial-gradient(circle at 16% 10%, rgba(243, 178, 59, 0.12), transparent 28%),
+        radial-gradient(circle at 84% 22%, rgba(84, 214, 187, 0.1), transparent 30%),
+        radial-gradient(circle at 52% 82%, rgba(122, 167, 255, 0.08), transparent 34%),
         var(--bg-primary);
     background-size: 72px 72px;
     color: var(--text-primary);
@@ -60,10 +63,25 @@ body::before {
     inset: 0;
     pointer-events: none;
     background:
-        linear-gradient(120deg, rgba(243, 178, 59, 0.09), transparent 35%),
-        linear-gradient(300deg, rgba(84, 214, 187, 0.06), transparent 44%);
-    opacity: 0.8;
+        linear-gradient(120deg, rgba(243, 178, 59, 0.1), transparent 34%),
+        linear-gradient(300deg, rgba(84, 214, 187, 0.08), transparent 42%),
+        linear-gradient(180deg, rgba(9, 11, 13, 0) 0%, rgba(9, 11, 13, 0.76) 72%, #090b0d 100%);
+    opacity: 0.95;
     z-index: -2;
+}
+
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at 28% 34%, rgba(246, 241, 232, 0.08) 0 1px, transparent 1.5px),
+        radial-gradient(circle at 72% 18%, rgba(84, 214, 187, 0.12) 0 1px, transparent 1.5px),
+        radial-gradient(circle at 62% 74%, rgba(243, 178, 59, 0.1) 0 1px, transparent 1.5px);
+    background-size: 190px 190px, 260px 260px, 310px 310px;
+    opacity: 0.28;
+    z-index: -1;
 }
 
 .app {
@@ -498,7 +516,9 @@ body::before {
     padding: 34px 0;
     border-top: 1px solid var(--border-color);
     border-bottom: 1px solid var(--border-color);
-    background: rgba(16, 19, 22, 0.78);
+    background:
+        linear-gradient(90deg, rgba(243, 178, 59, 0.08), transparent 24%, transparent 76%, rgba(84, 214, 187, 0.08)),
+        rgba(9, 11, 13, 0.42);
 }
 
 .ides-label {
@@ -553,14 +573,48 @@ body::before {
 .features-section,
 .sync-section,
 .security-section {
+    position: relative;
     padding: 104px 0;
 }
 
 .tools-section,
 .git-section,
 .download-section {
+    position: relative;
     padding: 104px 0;
-    background: rgba(16, 19, 22, 0.68);
+    background:
+        linear-gradient(120deg, rgba(243, 178, 59, 0.055), transparent 34%),
+        linear-gradient(300deg, rgba(84, 214, 187, 0.055), transparent 44%),
+        rgba(9, 11, 13, 0.28);
+    border-top: 1px solid rgba(246, 241, 232, 0.07);
+    border-bottom: 1px solid rgba(246, 241, 232, 0.06);
+}
+
+.features-section::before,
+.sync-section::before,
+.security-section::before,
+.tools-section::before,
+.git-section::before,
+.download-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(135deg, transparent 0 48%, rgba(246, 241, 232, 0.035) 48% 48.35%, transparent 48.35%),
+        radial-gradient(circle at 12% 18%, rgba(243, 178, 59, 0.075), transparent 24%),
+        radial-gradient(circle at 88% 36%, rgba(84, 214, 187, 0.06), transparent 26%);
+    opacity: 0.9;
+}
+
+.features-section > .container,
+.tools-section > .container,
+.sync-section > .container,
+.git-section > .container,
+.security-section > .container,
+.download-section > .container {
+    position: relative;
+    z-index: 1;
 }
 
 .features-grid {
