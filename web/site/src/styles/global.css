@@ -294,7 +294,36 @@ body::after {
 .hero-actions {
     display: flex;
     gap: 14px;
-    margin-bottom: 46px;
+    margin-bottom: 18px;
+}
+
+.maker-badge {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 36px;
+    padding: 8px 12px;
+    margin-bottom: 34px;
+    border: 1px solid rgba(255, 94, 168, 0.24);
+    border-radius: var(--radius-sm);
+    background:
+        linear-gradient(120deg, rgba(122, 167, 255, 0.1), rgba(255, 94, 168, 0.08)),
+        rgba(246, 241, 232, 0.035);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.maker-badge a {
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+.maker-badge a:hover {
+    color: var(--accent-pink);
 }
 
 .hero-stats {

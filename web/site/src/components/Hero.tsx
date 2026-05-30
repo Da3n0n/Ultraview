@@ -21,6 +21,16 @@ function Hero() {
                             See the toolkit
                         </a>
                     </div>
+                    <div class="maker-badge">
+                        <span>Made by</span>
+                        <a href="https://dannan.pro" target="_blank" rel="noopener">
+                            Dannan
+                        </a>
+                        <span>at</span>
+                        <a href="https://vizualflow.com" target="_blank" rel="noopener">
+                            Vizualflow
+                        </a>
+                    </div>
                     <div class="hero-stats">
                         <div class="stat">
                             <span class="stat-number">10+</span>
