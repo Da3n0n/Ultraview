@@ -45,7 +45,17 @@ function Footer() {
                     </div>
                 </div>
                 <div class="footer-bottom">
-                    <p>&copy; 2026 Ultraview. Built by Da3n0n.</p>
+                    <p>
+                        &copy; 2026 Ultraview. Built by{' '}
+                        <a href="https://dannan.pro" target="_blank" rel="noopener">
+                            Dannan
+                        </a>{' '}
+                        @{' '}
+                        <a href="https://vizualflow.com" target="_blank" rel="noopener">
+                            Vizualflow
+                        </a>
+                        .
+                    </p>
                 </div>
             </div>
         </footer>

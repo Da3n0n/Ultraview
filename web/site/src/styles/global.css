@@ -7,11 +7,12 @@
     --text-primary: #f6f1e8;
     --text-secondary: #b9c0bd;
     --text-muted: #77807c;
-    --accent-primary: #f3b23b;
+    --accent-primary: #7aa7ff;
     --accent-secondary: #54d6bb;
-    --accent-tertiary: #ff6f59;
+    --accent-tertiary: #ff5ea8;
     --accent-blue: #7aa7ff;
-    --accent-gradient: linear-gradient(135deg, #f3b23b 0%, #54d6bb 48%, #7aa7ff 100%);
+    --accent-pink: #ff5ea8;
+    --accent-gradient: linear-gradient(135deg, #7aa7ff 0%, #54d6bb 46%, #ff5ea8 100%);
     --border-color: rgba(246, 241, 232, 0.1);
     --border-hover: rgba(246, 241, 232, 0.2);
     --shadow-sm: 0 8px 20px rgba(0, 0, 0, 0.22);
@@ -45,9 +46,9 @@ body {
     background:
         linear-gradient(rgba(246, 241, 232, 0.025) 1px, transparent 1px),
         linear-gradient(90deg, rgba(246, 241, 232, 0.025) 1px, transparent 1px),
-        radial-gradient(circle at 16% 10%, rgba(243, 178, 59, 0.12), transparent 28%),
+        radial-gradient(circle at 16% 10%, rgba(122, 167, 255, 0.14), transparent 28%),
         radial-gradient(circle at 84% 22%, rgba(84, 214, 187, 0.1), transparent 30%),
-        radial-gradient(circle at 52% 82%, rgba(122, 167, 255, 0.08), transparent 34%),
+        radial-gradient(circle at 52% 82%, rgba(255, 94, 168, 0.08), transparent 34%),
         var(--bg-primary);
     background-size: 72px 72px;
     color: var(--text-primary);
@@ -63,7 +64,7 @@ body::before {
     inset: 0;
     pointer-events: none;
     background:
-        linear-gradient(120deg, rgba(243, 178, 59, 0.1), transparent 34%),
+        linear-gradient(120deg, rgba(122, 167, 255, 0.11), transparent 34%),
         linear-gradient(300deg, rgba(84, 214, 187, 0.08), transparent 42%),
         linear-gradient(180deg, rgba(9, 11, 13, 0) 0%, rgba(9, 11, 13, 0.76) 72%, #090b0d 100%);
     opacity: 0.95;
@@ -78,7 +79,7 @@ body::after {
     background:
         radial-gradient(circle at 28% 34%, rgba(246, 241, 232, 0.08) 0 1px, transparent 1.5px),
         radial-gradient(circle at 72% 18%, rgba(84, 214, 187, 0.12) 0 1px, transparent 1.5px),
-        radial-gradient(circle at 62% 74%, rgba(243, 178, 59, 0.1) 0 1px, transparent 1.5px);
+        radial-gradient(circle at 62% 74%, rgba(255, 94, 168, 0.1) 0 1px, transparent 1.5px);
     background-size: 190px 190px, 260px 260px, 310px 310px;
     opacity: 0.28;
     z-index: -1;
@@ -132,8 +133,8 @@ body::after {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(243, 178, 59, 0.42);
-    background: #15120b;
+    border: 1px solid rgba(122, 167, 255, 0.42);
+    background: #0d1422;
     color: var(--accent-primary);
     border-radius: var(--radius-sm);
     font-size: 11px;
@@ -201,13 +202,13 @@ body::after {
 
 .btn-primary {
     background: var(--accent-primary);
-    color: #171007;
-    box-shadow: 0 12px 30px rgba(243, 178, 59, 0.25);
+    color: #07101f;
+    box-shadow: 0 12px 30px rgba(122, 167, 255, 0.25);
 }
 
 .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 18px 42px rgba(243, 178, 59, 0.32);
+    box-shadow: 0 18px 42px rgba(122, 167, 255, 0.32);
 }
 
 .btn-outline {
@@ -369,7 +370,7 @@ body::after {
     background: var(--accent-tertiary);
 }
 .dot.yellow {
-    background: var(--accent-primary);
+    background: var(--accent-blue);
 }
 .dot.green {
     background: var(--accent-secondary);
@@ -457,9 +458,9 @@ body::after {
     border: 1px solid rgba(84, 214, 187, 0.36);
 }
 .node-md {
-    background: rgba(243, 178, 59, 0.13);
-    color: #ffd88a;
-    border: 1px solid rgba(243, 178, 59, 0.34);
+    background: rgba(255, 94, 168, 0.12);
+    color: #ffb4d7;
+    border: 1px solid rgba(255, 94, 168, 0.34);
 }
 .node-js {
     background: rgba(122, 167, 255, 0.14);
@@ -506,7 +507,7 @@ body::after {
     position: absolute;
     inset: 0;
     background:
-        linear-gradient(115deg, transparent 0 50%, rgba(243, 178, 59, 0.06) 50% 50.5%, transparent 50.5%),
+        linear-gradient(115deg, transparent 0 50%, rgba(122, 167, 255, 0.07) 50% 50.5%, transparent 50.5%),
         linear-gradient(155deg, transparent 0 64%, rgba(84, 214, 187, 0.05) 64% 64.5%, transparent 64.5%);
     z-index: -1;
     pointer-events: none;
@@ -517,7 +518,7 @@ body::after {
     border-top: 1px solid var(--border-color);
     border-bottom: 1px solid var(--border-color);
     background:
-        linear-gradient(90deg, rgba(243, 178, 59, 0.08), transparent 24%, transparent 76%, rgba(84, 214, 187, 0.08)),
+        linear-gradient(90deg, rgba(122, 167, 255, 0.08), transparent 24%, transparent 76%, rgba(255, 94, 168, 0.075)),
         rgba(9, 11, 13, 0.42);
 }
 
@@ -583,7 +584,7 @@ body::after {
     position: relative;
     padding: 104px 0;
     background:
-        linear-gradient(120deg, rgba(243, 178, 59, 0.055), transparent 34%),
+        linear-gradient(120deg, rgba(122, 167, 255, 0.06), transparent 34%),
         linear-gradient(300deg, rgba(84, 214, 187, 0.055), transparent 44%),
         rgba(9, 11, 13, 0.28);
     border-top: 1px solid rgba(246, 241, 232, 0.07);
@@ -602,7 +603,7 @@ body::after {
     pointer-events: none;
     background:
         linear-gradient(135deg, transparent 0 48%, rgba(246, 241, 232, 0.035) 48% 48.35%, transparent 48.35%),
-        radial-gradient(circle at 12% 18%, rgba(243, 178, 59, 0.075), transparent 24%),
+        radial-gradient(circle at 12% 18%, rgba(122, 167, 255, 0.08), transparent 24%),
         radial-gradient(circle at 88% 36%, rgba(84, 214, 187, 0.06), transparent 26%);
     opacity: 0.9;
 }
@@ -667,9 +668,9 @@ body::after {
     height: 34px;
     padding: 0 10px;
     border-radius: var(--radius-sm);
-    background: rgba(243, 178, 59, 0.1);
-    border: 1px solid rgba(243, 178, 59, 0.26);
-    color: #ffd88a;
+    background: rgba(122, 167, 255, 0.11);
+    border: 1px solid rgba(122, 167, 255, 0.28);
+    color: #bcd0ff;
     font-size: 12px;
     font-weight: 900;
     margin-bottom: 18px;
@@ -821,7 +822,7 @@ body::after {
 .sync-ring::after {
     inset: 118px;
     border-style: solid;
-    border-color: rgba(243, 178, 59, 0.28);
+    border-color: rgba(255, 94, 168, 0.3);
     animation-direction: reverse;
     animation-duration: 12s;
 }
@@ -930,7 +931,7 @@ body::after {
 .packet-two {
     animation: packetEast 2.8s ease-in-out infinite 0.9s;
     background: var(--accent-primary);
-    box-shadow: 0 0 18px rgba(243, 178, 59, 0.7);
+    box-shadow: 0 0 18px rgba(122, 167, 255, 0.7);
 }
 .packet-three {
     animation: packetWest 2.8s ease-in-out infinite 1.8s;
@@ -954,7 +955,7 @@ body::after {
 }
 
 .git-feature:hover {
-    border-color: rgba(243, 178, 59, 0.35);
+    border-color: rgba(255, 94, 168, 0.35);
     transform: translateY(-4px);
 }
 
@@ -1091,6 +1092,17 @@ body::after {
 .footer-bottom p {
     color: var(--text-muted);
     font-size: 13px;
+}
+
+.footer-bottom a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 800;
+    transition: color var(--transition-fast);
+}
+
+.footer-bottom a:hover {
+    color: var(--accent-pink);
 }
 
 @keyframes revealUp {
