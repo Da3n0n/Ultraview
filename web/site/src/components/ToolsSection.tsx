@@ -1,28 +1,28 @@
 function ToolsSection() {
     const tools = [
         {
-            icon: '⚡',
+            icon: 'PORT',
             title: 'Ports & Processes',
             description:
-                'Manage and kill open ports and processes within a simple UI. Identify locked ports and free up resources instantly.',
+                'Spot locked ports, trace the process behind them, and free the workspace without leaving your editor.',
         },
         {
-            icon: '🗑️',
+            icon: 'DEL',
             title: 'Force Delete',
             description:
-                'Aggressively remove locked files and folders. Closes IDE handles, kills locking processes, retries deletion with background retry on Windows.',
+                'Remove stubborn files and folders with handle cleanup, process termination, and Windows-aware retries.',
         },
         {
-            icon: '🔗',
+            icon: 'URL',
             title: 'Open URL',
             description:
-                'Quickly open any URL or webpage in a built-in browser for a seamless documentation or preview experience.',
+                'Launch docs, previews, and web tools in a built-in browser that keeps context beside your code.',
         },
         {
-            icon: '🎨',
+            icon: 'TONE',
             title: 'Dynamic Theming',
             description:
-                'Every panel adapts to your active VS Code theme automatically — no restart needed. Dark or light, it just works.',
+                'Every panel inherits your active theme so the toolkit feels native in dark, light, and custom setups.',
         },
     ];
 
@@ -30,10 +30,10 @@ function ToolsSection() {
         <section class="tools-section" id="tools">
             <div class="container">
                 <div class="section-header">
-                    <h2 class="section-title">More Power Tools</h2>
+                    <h2 class="section-title">Utility, with taste.</h2>
                     <p class="section-subtitle">
-                        Ultraview doesn't stop at viewing. Manage ports, kill processes, force
-                        delete files, and open URLs — all from your IDE.
+                        Small workflow problems get first-class surfaces: ports, process cleanup,
+                        stubborn deletes, browser previews, and theme-aware panels.
                     </p>
                 </div>
                 <div class="tools-grid">

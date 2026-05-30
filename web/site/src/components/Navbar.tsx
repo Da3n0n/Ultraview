@@ -20,7 +20,7 @@ function Navbar() {
         <nav class={`navbar ${scrolled() ? 'scrolled' : ''}`} id="navbar">
             <div class="container nav-container">
                 <a href="#" class="logo">
-                    <span class="logo-icon">◆</span>
+                    <span class="logo-icon">UV</span>
                     <span class="logo-text">Ultraview</span>
                 </a>
                 <div class={`nav-links ${isOpen() ? 'open' : ''}`} id="navLinks">
@@ -31,10 +31,10 @@ function Navbar() {
                         Tools
                     </a>
                     <a href="#sync" onClick={() => setIsOpen(false)}>
-                        Cross-IDE Sync
+                        Sync
                     </a>
                     <a href="#git" onClick={() => setIsOpen(false)}>
-                        Git Manager
+                        Git
                     </a>
                     <a href="#download" class="btn btn-primary" onClick={() => setIsOpen(false)}>
                         Download

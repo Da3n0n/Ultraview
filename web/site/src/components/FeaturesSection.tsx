@@ -1,74 +1,74 @@
 function FeaturesSection() {
     const features = [
         {
-            icon: '🗄️',
+            icon: 'DB',
             title: 'Database Viewer',
             description:
-                'Open SQLite, DuckDB, Access, and SQL files with a clean, paginated table view. Query editor, structure view, and stats built in.',
+                'Open SQLite, DuckDB, Access, and SQL files with paginated tables, schema views, stats, and a real query editor.',
             list: [
                 'SQLite, DuckDB, Access, SQL dumps',
-                'Paginated data with column types',
+                'Column types and table stats',
                 'Full SQL query editor',
-                'Table structure & stats',
+                'Fast pagination for large files',
             ],
         },
         {
-            icon: '📝',
-            title: 'Markdown Editor',
+            icon: 'MD',
+            title: 'Markdown Studio',
             description:
-                'Full-featured WYSIWYG editor with Rich, Raw, and Split modes. Obsidian and GitHub styles with a rich toolbar.',
+                'Write in Rich, Raw, or Split modes with Obsidian and GitHub styling ready inside the editor.',
             list: [
-                'Rich, Raw, and Split view modes',
-                'Obsidian & GitHub styles',
-                'Full formatting toolbar',
-                'Live word/line/char counts',
+                'Rich, Raw, and Split modes',
+                'Obsidian and GitHub looks',
+                'Formatting toolbar',
+                'Word, line, and character counts',
             ],
         },
         {
-            icon: '🎨',
-            title: 'SVG Editor',
+            icon: 'VG',
+            title: 'SVG Workbench',
             description:
-                'Interactive preview with pan/zoom, syntax-highlighted code, Split mode, and an element inspector for real-time adjustments.',
+                'Edit vector assets with live preview, pan and zoom, syntax-highlighted source, and element inspection.',
             list: [
-                'Pan & zoom canvas',
-                'Syntax-highlighted code editor',
+                'Pan and zoom canvas',
+                'Syntax-highlighted code',
                 'Element inspector',
                 'Live split editing',
             ],
         },
         {
-            icon: '🔗',
+            icon: 'CG',
             title: 'Code Graph',
             description:
-                'Interactive node graph showing how your files, imports, and markdown links connect. Visualize your architecture like Obsidian, but for code.',
+                'Map imports, files, and markdown links into an interactive graph that makes your architecture visible.',
             list: [
                 '20+ file types supported',
-                'Import & export relationships',
+                'Import and export relationships',
                 'Adjustable physics',
-                'Customizable node colors',
+                'Custom node colors',
             ],
         },
         {
-            icon: '🚀',
+            icon: 'RUN',
             title: 'Command Runner',
             description:
-                'Automatically detect runnable commands across your workspace. NPM, Yarn, PNPM, Bun, Just, Task, and Make — all in one place.',
+                'Detect runnable commands across npm, yarn, pnpm, bun, just, task, and make in the right working directory.',
             list: [
-                'Auto-detects all runners',
-                'Monorepo support',
+                'Auto-detects common runners',
+                'Monorepo aware',
                 'Correct working directory',
                 'Live refresh on changes',
             ],
         },
         {
-            icon: '🌐',
+            icon: '3D',
             title: '3D Model Viewer',
             description:
-                'View 3D models (.glb, .gltf, .fbx, .obj, .stl, .usdz, .blend) directly inside your IDE. No external viewer needed.',
+                'Inspect GLB, GLTF, FBX, OBJ, STL, USDZ, Blend, and more without leaving your IDE.',
             list: [
-                '15+ 3D formats supported',
-                'Interactive pan & zoom',
-                'Built right into VS Code',
+                '15+ formats supported',
+                'Interactive pan and zoom',
+                'Built into VS Code-style editors',
             ],
         },
     ];
@@ -78,13 +78,13 @@ function FeaturesSection() {
             <div class="container">
                 <div class="section-header">
                     <h2 class="section-title">
-                        Everything You Need,
+                        Less tab-hopping.
                         <br />
-                        Built Right In
+                        More making.
                     </h2>
                     <p class="section-subtitle">
-                        Stop juggling extensions. Ultraview bundles every tool you use daily into
-                        one polished experience.
+                        The daily developer tools are packed into one deliberate interface, so the
+                        work stays close to the code.
                     </p>
                 </div>
                 <div class="features-grid">

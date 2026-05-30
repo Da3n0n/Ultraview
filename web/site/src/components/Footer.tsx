@@ -5,10 +5,10 @@ function Footer() {
                 <div class="footer-content">
                     <div class="footer-brand">
                         <a href="#" class="logo">
-                            <span class="logo-icon">◆</span>
+                            <span class="logo-icon">UV</span>
                             <span class="logo-text">Ultraview</span>
                         </a>
-                        <p>The all-in-one VS Code extension.</p>
+                        <p>A local-first command deck for code, data, assets, Git, and sync.</p>
                     </div>
                     <div class="footer-links">
                         <div class="footer-column">

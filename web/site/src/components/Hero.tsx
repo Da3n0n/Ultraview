@@ -3,50 +3,54 @@ function Hero() {
         <section class="hero">
             <div class="container hero-container">
                 <div class="hero-content">
-                    <div class="badge">Now with Cross-IDE Sync</div>
+                    <div class="badge">Cross-IDE workspace control</div>
                     <h1 class="hero-title">
-                        One Extension.
+                        One sharp command deck.
                         <br />
-                        <span class="gradient-text">Every Tool You Need.</span>
+                        <span class="gradient-text">Every IDE stays in rhythm.</span>
                     </h1>
                     <p class="hero-subtitle">
-                        Database viewer, Markdown editor, SVG editor, Code Graph, Git account
-                        manager, Command Runner, 3D model viewer, and more — all inside your IDE.
+                        Ultraview pulls databases, markdown, SVGs, Git accounts, ports, commands,
+                        and project context into one fast cockpit that follows you across editors.
                     </p>
                     <div class="hero-actions">
                         <a href="#download" class="btn btn-primary btn-lg">
-                            Install Free
+                            Install Ultraview
                         </a>
                         <a href="#features" class="btn btn-outline btn-lg">
-                            Explore Features
+                            See the toolkit
                         </a>
                     </div>
                     <div class="hero-stats">
                         <div class="stat">
                             <span class="stat-number">10+</span>
-                            <span class="stat-label">Built-in Tools</span>
+                            <span class="stat-label">Native panels</span>
                         </div>
                         <div class="stat">
                             <span class="stat-number">4</span>
-                            <span class="stat-label">IDEs Supported</span>
+                            <span class="stat-label">Editors synced</span>
                         </div>
                         <div class="stat">
-                            <span class="stat-number">0</span>
-                            <span class="stat-label">Setup Required</span>
+                            <span class="stat-number">300ms</span>
+                            <span class="stat-label">Local sync loop</span>
                         </div>
                     </div>
                 </div>
                 <div class="hero-visual">
-                    <div class="hero-card">
+                    <div class="hero-card product-window">
                         <div class="card-header">
                             <span class="dot red"></span>
                             <span class="dot yellow"></span>
                             <span class="dot green"></span>
-                            <span class="card-title">Ultraview — Code Graph</span>
+                            <span class="card-title">Ultraview / workspace pulse</span>
                         </div>
                         <div class="card-body">
+                            <div class="window-toolbar">
+                                <span>Git account: da3n0n/work</span>
+                                <span class="live-pill">Live</span>
+                            </div>
                             <div class="graph-preview">
-                                <div class="node node-ts" style="top: 20%; left: 25%;">
+                                <div class="node node-ts node-glow" style="top: 20%; left: 25%;">
                                     index.ts
                                 </div>
                                 <div class="node node-md" style="top: 50%; left: 15%;">
@@ -61,13 +65,14 @@ function Hero() {
                                 <div class="node node-ts" style="top: 70%; left: 80%;">
                                     config.ts
                                 </div>
-                                <svg class="edges" viewBox="0 0 400 300">
+                                <svg class="edges" viewBox="0 0 400 300" aria-hidden="true">
                                     <line x1="100" y1="60" x2="240" y2="90" class="edge" />
                                     <line x1="100" y1="60" x2="60" y2="150" class="edge" />
                                     <line x1="240" y1="90" x2="220" y2="195" class="edge" />
                                     <line x1="220" y1="195" x2="320" y2="210" class="edge" />
                                     <line x1="60" y1="150" x2="220" y2="195" class="edge" />
                                 </svg>
+                                <div class="graph-scan"></div>
                             </div>
                         </div>
                     </div>

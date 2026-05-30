@@ -1,40 +1,40 @@
 function GitSection() {
     const gitFeatures = [
         {
-            icon: '🔑',
+            icon: 'AUTH',
             title: 'Multiple Auth Methods',
             description:
-                'Browser OAuth, Personal Access Tokens, or SSH keys. Choose what works best for each account.',
+                'Browser OAuth, personal access tokens, and SSH keys can coexist across accounts and providers.',
         },
         {
-            icon: '📂',
+            icon: 'MAP',
             title: 'Per-Project Accounts',
             description:
-                'Every account is bound to a project. Open a project and credentials apply automatically. Two projects, two accounts, zero friction.',
+                'Bind each repo to the right identity once. Ultraview applies credentials automatically when you reopen it.',
         },
         {
-            icon: '📥',
+            icon: 'CLONE',
             title: 'Clone & Create Repos',
             description:
-                "Browse your account's repos and clone with one click. Create new repos with automatic init, commit, and push.",
+                'Browse account repos, clone with one click, or create new remotes with init, commit, and push handled.',
         },
         {
-            icon: '🔄',
+            icon: 'FORK',
             title: 'Fork-and-Own',
             description:
-                'Paste any git URL, name your copy, pick a folder — Ultraview clones, wipes history, makes a fresh commit under your identity, creates the remote, and pushes.',
+                'Paste a Git URL, name your copy, and let Ultraview clone, reset history, create a remote, and push under your identity.',
         },
         {
-            icon: '🟢',
+            icon: 'LIVE',
             title: 'Live Auth Status',
             description:
-                'Each account shows real token status. 401/403 marks expired immediately. One-click re-auth for OAuth accounts.',
+                'Token failures surface immediately, with one-click re-auth for OAuth accounts when credentials expire.',
         },
         {
-            icon: '📋',
+            icon: 'SORT',
             title: 'Smart Project Ordering',
             description:
-                "The project you're working on always floats to the top. Sorted by most-recently opened, across all your IDEs.",
+                'The project you are actually working on floats to the top across every editor Ultraview syncs.',
         },
     ];
 
@@ -42,15 +42,15 @@ function GitSection() {
         <section class="git-section" id="git">
             <div class="container">
                 <div class="section-header">
-                    <div class="badge">Git Account & Project Manager</div>
+                    <div class="badge">Git account and project manager</div>
                     <h2 class="section-title">
-                        Manage Multiple Git Accounts
+                        Bring every identity.
                         <br />
-                        Like a Pro
+                        Ship from the right one.
                     </h2>
                     <p class="section-subtitle">
-                        GitHub, GitLab, Azure DevOps — manage them all from a single sidebar.
-                        Per-project accounts with auto credentials.
+                        GitHub, GitLab, and Azure DevOps accounts sit in one sidebar, bound to the
+                        projects that need them.
                     </p>
                 </div>
                 <div class="git-features">

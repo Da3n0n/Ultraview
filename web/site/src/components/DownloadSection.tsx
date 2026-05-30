@@ -3,14 +3,15 @@ function DownloadSection() {
         <section class="download-section" id="download">
             <div class="container download-container">
                 <div class="download-content">
+                    <div class="badge">Ready when your workspace is</div>
                     <h2 class="section-title">
-                        Ready to Upgrade
+                        Give your IDE
                         <br />
-                        Your IDE?
+                        a serious upgrade.
                     </h2>
                     <p class="section-subtitle">
-                        Install Ultraview from the VS Code Marketplace. Works in VS Code, Cursor,
-                        Windsurf, and Antigravity.
+                        Install Ultraview from the VS Code Marketplace. It works in VS Code,
+                        Cursor, Windsurf, and Antigravity.
                     </p>
                     <div class="download-actions">
                         <a
@@ -27,7 +28,7 @@ function DownloadSection() {
                             target="_blank"
                             rel="noopener"
                         >
-                            View on GitHub
+                            View source
                         </a>
                     </div>
                     <p class="download-note">Free and open source. No account required.</p>
