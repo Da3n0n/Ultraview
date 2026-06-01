@@ -6,6 +6,7 @@ import ToolsSection from './components/ToolsSection';
 import SyncSection from './components/SyncSection';
 import GitSection from './components/GitSection';
 import SecuritySection from './components/SecuritySection';
+import DocsSection from './components/DocsSection';
 import DownloadSection from './components/DownloadSection';
 import Footer from './components/Footer';
 
@@ -20,6 +21,7 @@ function App() {
             <SyncSection />
             <GitSection />
             <SecuritySection />
+            <DocsSection />
             <DownloadSection />
             <Footer />
         </div>
