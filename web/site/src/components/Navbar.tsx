@@ -19,27 +19,27 @@ function Navbar() {
     return (
         <nav class={`navbar ${scrolled() ? 'scrolled' : ''}`} id="navbar">
             <div class="container nav-container">
-                <a href="#" class="logo">
+                <a href="/" class="logo">
                     <span class="logo-icon">UV</span>
                     <span class="logo-text">Ultraview</span>
                 </a>
                 <div class={`nav-links ${isOpen() ? 'open' : ''}`} id="navLinks">
-                    <a href="#features" onClick={() => setIsOpen(false)}>
+                    <a href="/#features" onClick={() => setIsOpen(false)}>
                         Features
                     </a>
-                    <a href="#tools" onClick={() => setIsOpen(false)}>
+                    <a href="/#tools" onClick={() => setIsOpen(false)}>
                         Tools
                     </a>
-                    <a href="#sync" onClick={() => setIsOpen(false)}>
+                    <a href="/#sync" onClick={() => setIsOpen(false)}>
                         Sync
                     </a>
-                    <a href="#git" onClick={() => setIsOpen(false)}>
+                    <a href="/#git" onClick={() => setIsOpen(false)}>
                         Git
                     </a>
-                    <a href="#docs" onClick={() => setIsOpen(false)}>
+                    <a href="/docs" onClick={() => setIsOpen(false)}>
                         Docs
                     </a>
-                    <a href="#download" class="btn btn-primary" onClick={() => setIsOpen(false)}>
+                    <a href="/#download" class="btn btn-primary" onClick={() => setIsOpen(false)}>
                         Download
                     </a>
                 </div>

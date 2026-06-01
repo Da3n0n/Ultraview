@@ -4,7 +4,7 @@ function Footer() {
             <div class="container">
                 <div class="footer-content">
                     <div class="footer-brand">
-                        <a href="#" class="logo">
+                        <a href="/" class="logo">
                             <span class="logo-icon">UV</span>
                             <span class="logo-text">Ultraview</span>
                         </a>
@@ -13,11 +13,11 @@ function Footer() {
                     <div class="footer-links">
                         <div class="footer-column">
                             <h4>Product</h4>
-                            <a href="#features">Features</a>
-                            <a href="#tools">Tools</a>
-                            <a href="#sync">Cross-IDE Sync</a>
-                            <a href="#git">Git Manager</a>
-                            <a href="#docs">Docs</a>
+                            <a href="/#features">Features</a>
+                            <a href="/#tools">Tools</a>
+                            <a href="/#sync">Cross-IDE Sync</a>
+                            <a href="/#git">Git Manager</a>
+                            <a href="/docs">Docs</a>
                         </div>
                         <div class="footer-column">
                             <h4>Resources</h4>

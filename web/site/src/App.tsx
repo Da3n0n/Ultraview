@@ -11,18 +11,25 @@ import DownloadSection from './components/DownloadSection';
 import Footer from './components/Footer';
 
 function App() {
+    const isDocsRoute = window.location.pathname === '/docs';
+
     return (
         <div class="app">
             <Navbar />
-            <Hero />
-            <IDEsSection />
-            <FeaturesSection />
-            <ToolsSection />
-            <SyncSection />
-            <GitSection />
-            <SecuritySection />
-            <DocsSection />
-            <DownloadSection />
+            {isDocsRoute ? (
+                <DocsSection />
+            ) : (
+                <>
+                    <Hero />
+                    <IDEsSection />
+                    <FeaturesSection />
+                    <ToolsSection />
+                    <SyncSection />
+                    <GitSection />
+                    <SecuritySection />
+                    <DownloadSection />
+                </>
+            )}
             <Footer />
         </div>
     );
