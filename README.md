@@ -164,6 +164,15 @@ The project list is sorted by most-recently opened — the project you open floa
 -   **Clicking Open** on a project from the list.
 -   **Adding the current project** — clicking `+ Add Current` sets its timestamp immediately so it appears first.
 
+### Quick Project Commands
+
+Every project row includes a compact `>_` command button next to **Open**, **Remove**, and **Backup**.
+
+-   **Run without opening**: Click `>_` to scan that saved project folder directly, even when it is not the current VS Code workspace.
+-   **QuickPick launcher**: Choose from the same detected runnable commands used by the Commands panel.
+-   **Correct project context**: Commands launch from the folder where they were discovered, so monorepos and nested apps still run from the right directory.
+-   **Parallel terminals**: Each selected command gets a fresh terminal, making it easy to run builds, dev servers, and checks side by side.
+
 ### Cloning from Your Account
 
 Click **\+ Add Repo** to see all repositories in your GitHub or GitLab account. Select one, pick a destination folder, and Ultraview clones it, registers it as a project, binds your account, and applies credentials automatically.
@@ -536,7 +545,9 @@ Click the **Run** button next to any command to execute it in a dedicated termin
 
 -   **Exact command preview**: Each row shows the full terminal command Ultraview will run, such as `pnpm run dev`, `bun run build`, or `task api:serve`.
 -   **Correct working directory**: Commands run from the folder they were discovered in, so nested workspace packages behave correctly.
--   **Per-command terminal title**: The created terminal includes the command name and folder label for clearer context.
+-   **One terminal per run**: Every click creates a fresh terminal, so commands like `build:canary` and `build:stable` can run in parallel.
+-   **Clear terminal titles**: Terminals are named as `last-dir / command`, such as `Ultraview / build:canary` or `api / dev`.
+-   **Project Manager launcher**: The Project Manager `>_` button opens the same command picker for any saved project, without opening that project in VS Code first.
 
 ### Filtering & Views
 

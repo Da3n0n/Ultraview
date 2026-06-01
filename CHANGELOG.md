@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.395] - 2026-06-01
+
+### Added
+- **Project Manager command launcher** - Added a compact `>_` button to each project row for scanning and running commands from any saved project without opening it as the active VS Code workspace
+- **Project command QuickPick** - Saved projects now use the same command scanner as the Commands panel and launch selected commands from the correct discovered working directory
+
+### Changed
+- **Parallel command terminals** - Command runs now create a fresh terminal for each click, allowing multiple builds, dev servers, and checks to run side by side
+- **Clear terminal naming** - Command terminals now use `last-dir / command` titles, such as `Ultraview / build:canary`, instead of a generic Ultraview-prefixed terminal name
+
 ## [0.2.394] - 2026-05-15
 
 All commits since [28ed794]...
