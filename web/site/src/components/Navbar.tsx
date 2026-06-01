@@ -36,6 +36,9 @@ function Navbar() {
                     <a href="#git" onClick={() => setIsOpen(false)}>
                         Git
                     </a>
+                    <a href="#docs" onClick={() => setIsOpen(false)}>
+                        Docs
+                    </a>
                     <a href="#download" class="btn btn-primary" onClick={() => setIsOpen(false)}>
                         Download
                     </a>

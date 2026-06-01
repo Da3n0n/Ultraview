@@ -600,7 +600,8 @@ body::after {
 
 .features-section,
 .sync-section,
-.security-section {
+.security-section,
+.docs-section {
     position: relative;
     padding: 104px 0;
     background:
@@ -626,6 +627,7 @@ body::after {
 .features-section::before,
 .sync-section::before,
 .security-section::before,
+.docs-section::before,
 .tools-section::before,
 .git-section::before,
 .download-section::before {
@@ -646,6 +648,7 @@ body::after {
 .sync-section > .container,
 .git-section > .container,
 .security-section > .container,
+.docs-section > .container,
 .download-section > .container {
     position: relative;
     z-index: 1;
@@ -1042,6 +1045,137 @@ body::after {
     font-size: 14px;
 }
 
+.docs-header {
+    margin-bottom: 42px;
+}
+
+.docs-layout {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+
+.docs-sidebar {
+    position: sticky;
+    top: 92px;
+    padding: 18px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: rgba(17, 22, 26, 0.86);
+    box-shadow: var(--shadow-sm);
+}
+
+.docs-sidebar-title {
+    margin-bottom: 12px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.docs-nav {
+    display: grid;
+    gap: 4px;
+}
+
+.docs-nav a {
+    display: block;
+    min-height: 34px;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 750;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.docs-nav a:hover {
+    background: rgba(84, 214, 187, 0.09);
+    color: var(--text-primary);
+}
+
+.docs-content {
+    display: grid;
+    gap: 14px;
+}
+
+.docs-panel {
+    scroll-margin-top: 102px;
+    padding: 28px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: rgba(17, 22, 26, 0.84);
+    box-shadow: inset 0 1px 0 rgba(246, 241, 232, 0.035);
+}
+
+.docs-panel-kicker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    color: var(--accent-secondary);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.docs-panel-kicker span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 28px;
+    border: 1px solid rgba(84, 214, 187, 0.28);
+    border-radius: var(--radius-sm);
+    background: rgba(84, 214, 187, 0.08);
+    color: #91f2df;
+}
+
+.docs-panel h3 {
+    margin-bottom: 10px;
+    font-size: 26px;
+    line-height: 1.12;
+    font-weight: 900;
+}
+
+.docs-panel p {
+    max-width: 780px;
+    margin-bottom: 18px;
+    color: var(--text-secondary);
+    font-size: 15px;
+}
+
+.docs-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+    list-style: none;
+}
+
+.docs-list li {
+    position: relative;
+    min-height: 52px;
+    padding: 13px 14px 13px 30px;
+    border: 1px solid rgba(246, 241, 232, 0.08);
+    border-radius: var(--radius-sm);
+    background: rgba(9, 11, 13, 0.28);
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.docs-list li::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: 14px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+}
+
 .check {
     color: #91f2df;
     font-weight: 900;
@@ -1335,6 +1469,7 @@ body::after {
     .sync-section,
     .git-section,
     .security-section,
+    .docs-section,
     .download-section {
         padding: 76px 0;
     }
@@ -1342,8 +1477,35 @@ body::after {
     .features-grid,
     .tools-grid,
     .git-features,
-    .security-grid {
+    .security-grid,
+    .docs-layout,
+    .docs-list {
         grid-template-columns: 1fr;
+    }
+
+    .docs-sidebar {
+        position: relative;
+        top: auto;
+        overflow-x: auto;
+        padding: 12px;
+    }
+
+    .docs-nav {
+        display: flex;
+        gap: 8px;
+        min-width: max-content;
+    }
+
+    .docs-nav a {
+        white-space: nowrap;
+    }
+
+    .docs-panel {
+        padding: 22px;
+    }
+
+    .docs-panel h3 {
+        font-size: 22px;
     }
 
     .feature-card,
