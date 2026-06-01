@@ -161,19 +161,22 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
 }
 
 async function runInTerminal(command: ProjectCommand): Promise<void> {
-  const termName = 'UltraView';
-  let terminal = vscode.window.terminals.find(
-    t => t.name === termName && t.exitStatus === undefined
-  );
-  if (!terminal) {
-    terminal = vscode.window.createTerminal({ name: termName });
-  }
-  terminal.show();
-  terminal.sendText(`cd "${command.cwd}"`);
+  const terminal = vscode.window.createTerminal({
+    name: getTerminalName(command),
+    cwd: command.cwd,
+  });
+
+  terminal.show(true);
   terminal.sendText(command.runCmd);
   recordCommandUsage(command);
   await CommandsProvider.refreshAllViews();
   void vscode.commands.executeCommand('ultraview.commands.focus');
+}
+
+function getTerminalName(command: ProjectCommand): string {
+  const dirLabel = path.basename(command.cwd) || command.folderLabel || command.workspaceLabel;
+  const commandLabel = command.name || command.runCmd;
+  return `${dirLabel} / ${commandLabel}`.slice(0, 80);
 }
 
 async function postCommands(webview: vscode.Webview): Promise<void> {
