@@ -512,6 +512,18 @@ function App() {
                                             <div className="project-actions">
                                                 <button
                                                     className="mini-button"
+                                                    title="Project commands"
+                                                    onClick={() =>
+                                                        getVscode()?.postMessage({
+                                                            type: 'projectCommands',
+                                                            id: project.id,
+                                                        } satisfies GitPanelOutboundMessage)
+                                                    }
+                                                >
+                                                    &gt;_
+                                                </button>
+                                                <button
+                                                    className="mini-button"
                                                     onClick={() =>
                                                         getVscode()?.postMessage({
                                                             type: 'open',

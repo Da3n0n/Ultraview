@@ -11,6 +11,7 @@ import { GitProfile, GitProvider as GitProviderType, AuthMethod } from '../git/t
 import { applyLocalAccount, clearLocalAccount, getRemoteUrl } from '../git/gitCredentials';
 import { SharedStore } from '../sync/sharedStore';
 import { getS3Credentials } from '../s3backup';
+import { ProjectCommand, scanCommands } from '../commands/commandScanner';
 
 interface GitStatus {
     isGitRepo: boolean;
@@ -44,6 +45,60 @@ async function runExclusiveProjectGitOp<T>(projectPath: string, op: () => Promis
 
 function notifyGitOpDone(webview: vscode.Webview | undefined, projectId: string): void {
     webview?.postMessage({ type: 'gitOpDone', projectId });
+}
+
+async function showProjectCommandPicker(projectPath: string, projectName: string): Promise<void> {
+    if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory()) {
+        vscode.window.showErrorMessage(`Project folder not found: ${projectPath}`);
+        return;
+    }
+
+    const commands = await scanCommands(projectPath);
+    if (!commands.length) {
+        vscode.window.showInformationMessage(`No runnable commands found for ${projectName}.`);
+        return;
+    }
+
+    const picked = await vscode.window.showQuickPick(
+        commands.map((command) => ({
+            label: `$(terminal) ${command.runCmd}`,
+            description: getRelativeCommandCwd(projectPath, command.cwd),
+            detail: command.description || command.displayName,
+            command,
+        })),
+        {
+            placeHolder: `Run a command from ${projectName}`,
+            matchOnDescription: true,
+            matchOnDetail: true,
+        }
+    );
+
+    if (!picked) {
+        return;
+    }
+
+    runScannedCommandInTerminal(picked.command);
+}
+
+function runScannedCommandInTerminal(command: ProjectCommand): void {
+    const terminal = vscode.window.createTerminal({
+        name: getScannedCommandTerminalName(command),
+        cwd: command.cwd,
+    });
+
+    terminal.show(true);
+    terminal.sendText(command.runCmd);
+}
+
+function getScannedCommandTerminalName(command: ProjectCommand): string {
+    const dirLabel = path.basename(command.cwd) || command.folderLabel || command.workspaceLabel;
+    const commandLabel = command.name || command.runCmd;
+    return `${dirLabel} / ${commandLabel}`.slice(0, 80);
+}
+
+function getRelativeCommandCwd(projectPath: string, commandCwd: string): string {
+    const relativePath = path.relative(projectPath, commandCwd);
+    return relativePath ? relativePath.split(path.sep).join('/') : '.';
 }
 
 /**
@@ -1253,6 +1308,13 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                 }
+                case 'projectCommands': {
+                    const project = this.manager.listProjects().find((p) => p.id === msg.id);
+                    if (project) {
+                        await showProjectCommandPicker(project.path, project.name);
+                    }
+                    break;
+                }
                 case 'delete': {
                     const id = msg.id;
                     this.manager.removeProject(id);
@@ -2300,6 +2362,17 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 }
                 case 'refresh': {
                     postPanelState();
+                    break;
+                }
+                case 'refreshProjects': {
+                    postPanelState();
+                    break;
+                }
+                case 'projectCommands': {
+                    const project = manager.listProjects().find((p) => p.id === msg.id);
+                    if (project) {
+                        await showProjectCommandPicker(project.path, project.name);
+                    }
                     break;
                 }
                 case 'delete': {

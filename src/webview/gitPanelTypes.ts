@@ -33,5 +33,5 @@ export type GitPanelInboundMessage =
 
 export type GitPanelOutboundMessage =
   | { type: 'ready' | 'refresh' | 'refreshProjects' | 'addProject' | 'addCurrentProject' | 'addRepo' | 'addAccount' | 'openPanel' | 'openS3Backup' | 'backupAll' }
-  | { type: 'open' | 'delete' | 'gitPull' | 'gitPush' | 'gitSync' | 's3BackupProject'; id: string }
+  | { type: 'open' | 'delete' | 'gitPull' | 'gitPush' | 'gitSync' | 's3BackupProject' | 'projectCommands'; id: string }
   | { type: 'switchAccount' | 'authOptions' | 'removeAccount' | 'reAuthAccount'; accountId: string };
