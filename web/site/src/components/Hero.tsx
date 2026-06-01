@@ -5,8 +5,6 @@ function Hero() {
                 <div class="hero-content">
                     <div class="badge">Cross-IDE workspace control</div>
                     <h1 class="hero-title">
-                        One sharp command deck.
-                        <br />
                         <span class="gradient-text">Every IDE stays in rhythm.</span>
                     </h1>
                     <p class="hero-subtitle">

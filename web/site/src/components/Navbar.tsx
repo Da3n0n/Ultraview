@@ -3,12 +3,32 @@ import { createSignal, onMount, onCleanup } from 'solid-js';
 function Navbar() {
     const [isOpen, setIsOpen] = createSignal(false);
     const [scrolled, setScrolled] = createSignal(false);
+    const [theme, setTheme] = createSignal<'dark' | 'light'>('dark');
 
     const handleScroll = () => {
         setScrolled(window.scrollY > 50);
     };
 
+    const applyTheme = (nextTheme: 'dark' | 'light') => {
+        document.documentElement.dataset.theme = nextTheme;
+        window.localStorage.setItem('ultraview-site-theme', nextTheme);
+        setTheme(nextTheme);
+    };
+
+    const toggleTheme = () => {
+        applyTheme(theme() === 'dark' ? 'light' : 'dark');
+    };
+
     onMount(() => {
+        const savedTheme = window.localStorage.getItem('ultraview-site-theme');
+        const preferredTheme =
+            savedTheme === 'dark' || savedTheme === 'light'
+                ? savedTheme
+                : window.matchMedia('(prefers-color-scheme: light)').matches
+                  ? 'light'
+                  : 'dark';
+
+        applyTheme(preferredTheme);
         window.addEventListener('scroll', handleScroll);
     });
 
@@ -38,6 +58,15 @@ function Navbar() {
                     <a href="/docs" onClick={() => setIsOpen(false)}>
                         Docs
                     </a>
+                    <button
+                        class="theme-toggle"
+                        type="button"
+                        aria-label={`Switch to ${theme() === 'dark' ? 'light' : 'dark'} mode`}
+                        title={`Switch to ${theme() === 'dark' ? 'light' : 'dark'} mode`}
+                        onClick={toggleTheme}
+                    >
+                        <span>{theme() === 'dark' ? 'L' : 'D'}</span>
+                    </button>
                     <a href="/#download" class="btn btn-primary" onClick={() => setIsOpen(false)}>
                         Download
                     </a>
