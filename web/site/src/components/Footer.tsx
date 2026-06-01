@@ -5,8 +5,7 @@ function Footer() {
                 <div class="footer-content">
                     <div class="footer-brand">
                         <a href="/" class="logo">
-                            <span class="logo-icon">UV</span>
-                            <span class="logo-text">Ultraview</span>
+                            <img class="logo-image" src="/ultraview-icon.png" alt="Ultraview" />
                         </a>
                         <p>A local-first command deck for code, data, assets, Git, and sync.</p>
                     </div>

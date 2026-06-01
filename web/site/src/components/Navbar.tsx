@@ -20,8 +20,7 @@ function Navbar() {
         <nav class={`navbar ${scrolled() ? 'scrolled' : ''}`} id="navbar">
             <div class="container nav-container">
                 <a href="/" class="logo">
-                    <span class="logo-icon">UV</span>
-                    <span class="logo-text">Ultraview</span>
+                    <img class="logo-image" src="/ultraview-icon.png" alt="Ultraview" />
                 </a>
                 <div class={`nav-links ${isOpen() ? 'open' : ''}`} id="navLinks">
                     <a href="/#features" onClick={() => setIsOpen(false)}>
