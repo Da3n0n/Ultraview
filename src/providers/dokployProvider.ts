@@ -39,6 +39,9 @@ interface DokployDatabaseConnectionHint {
     user?: string;
     password?: string;
     ssl?: boolean;
+    externalHost?: string;
+    externalPort?: number;
+    connectionCandidates?: DokployDatabaseConnectionHint[];
 }
 
 interface DokployServerMetricState {
@@ -137,6 +140,14 @@ function normalizeDokployUrl(rawValue: string): string {
     parsed.pathname = parsed.pathname.replace(/\/+$/, '');
     parsed.hash = '';
     return parsed.toString().replace(/\/$/, '');
+}
+
+function getDokployProfileHost(profile: DokployProfile): string | undefined {
+    try {
+        return new URL(profile.url).hostname || undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 function getTokenSecretKey(profileId: string): string {
@@ -356,6 +367,11 @@ function sanitizeDatabaseConnectionHint(value: unknown): DokployDatabaseConnecti
 
     const port = pickNumber(record, ['port']);
     const ssl = pickBoolean(record, ['ssl']);
+    const rawCandidates = Array.isArray(record.connectionCandidates)
+        ? record.connectionCandidates
+              .map((entry) => sanitizeDatabaseConnectionHint(entry))
+              .filter((entry): entry is DokployDatabaseConnectionHint => !!entry)
+        : undefined;
     const hint: DokployDatabaseConnectionHint = {
         host: pickString(record, ['host']),
         port,
@@ -363,9 +379,20 @@ function sanitizeDatabaseConnectionHint(value: unknown): DokployDatabaseConnecti
         user: pickString(record, ['user']),
         password: pickString(record, ['password']),
         ssl,
+        externalHost: pickString(record, ['externalHost']),
+        externalPort: pickNumber(record, ['externalPort']),
+        connectionCandidates: rawCandidates,
     };
 
-    return hint.host || hint.port || hint.database || hint.user || hint.password || hint.ssl !== undefined
+    return hint.host ||
+        hint.port ||
+        hint.database ||
+        hint.user ||
+        hint.password ||
+        hint.ssl !== undefined ||
+        hint.externalHost ||
+        hint.externalPort ||
+        hint.connectionCandidates?.length
         ? hint
         : undefined;
 }
@@ -732,9 +759,36 @@ function parsePostgresConnectionString(value: string): DokployDatabaseConnection
     }
 }
 
+function getDatabaseConnectionKey(value: DokployDatabaseConnectionHint): string {
+    return [
+        value.host || '',
+        value.port || '',
+        value.database || '',
+        value.user || '',
+        value.ssl ? 'ssl' : 'plain',
+    ].join('|');
+}
+
+function pushDatabaseConnectionCandidate(
+    candidates: DokployDatabaseConnectionHint[],
+    candidate: DokployDatabaseConnectionHint | undefined
+): void {
+    if (!candidate?.host) {
+        return;
+    }
+
+    const key = getDatabaseConnectionKey(candidate);
+    if (candidates.some((entry) => getDatabaseConnectionKey(entry) === key)) {
+        return;
+    }
+
+    candidates.push(candidate);
+}
+
 function extractPostgresConnectionHint(value: unknown): DokployDatabaseConnectionHint | undefined {
     const env = extractEnvVars(value);
     const records = flattenRecords(value);
+    const candidates: DokployDatabaseConnectionHint[] = [];
 
     const parseConnectionUrl = (): Partial<DokployDatabaseConnectionHint> => {
         const rawUrl =
@@ -759,16 +813,19 @@ function extractPostgresConnectionHint(value: unknown): DokployDatabaseConnectio
 
         try {
             const url = new URL(rawUrl);
-            return {
+            const parsed = {
                 host: url.hostname || undefined,
                 port: url.port ? Number(url.port) : undefined,
                 database: url.pathname.replace(/^\/+/, '') || undefined,
-                user: url.username || undefined,
+                user: url.username ? decodeURIComponent(url.username) : undefined,
+                password: url.password ? decodeURIComponent(url.password) : undefined,
                 ssl:
                     url.searchParams.get('sslmode') === 'require' ||
                     url.searchParams.get('ssl') === 'true' ||
                     undefined,
             };
+            pushDatabaseConnectionCandidate(candidates, parsed);
+            return parsed;
         } catch {
             return {};
         }
@@ -813,6 +870,53 @@ function extractPostgresConnectionHint(value: unknown): DokployDatabaseConnectio
         .map((entry) => (entry ? parsePostgresConnectionString(entry) : undefined))
         .find((entry) => !!entry);
 
+    pushDatabaseConnectionCandidate(candidates, hostFieldUrl);
+
+    records
+        .map((record) =>
+            pickString(record, [
+                'internalConnectionUrl',
+                'internalConnectionString',
+                'internalDatabaseUrl',
+                'externalConnectionUrl',
+                'externalConnectionString',
+                'externalDatabaseUrl',
+                'databaseUrl',
+                'connectionString',
+                'connectionUri',
+                'postgresUrl',
+                'postgresUri',
+            ])
+        )
+        .map((entry) => (entry ? parsePostgresConnectionString(entry) : undefined))
+        .forEach((entry) => pushDatabaseConnectionCandidate(candidates, entry));
+
+    const externalHost = records
+        .map((record) =>
+            pickString(record, [
+                'externalHost',
+                'publicHost',
+                'hostExternal',
+                'databaseExternalHost',
+                'serverHost',
+                'serverIp',
+                'ipAddress',
+            ])
+        )
+        .find((entry) => !!entry);
+    const externalPort = records
+        .map((record) =>
+            pickNumber(record, [
+                'externalPort',
+                'publicPort',
+                'publishedPort',
+                'hostPort',
+                'databaseExternalPort',
+                'postgresExternalPort',
+            ])
+        )
+        .find((entry) => entry !== undefined);
+
     const hint: DokployDatabaseConnectionHint = {
         host:
             hostFieldUrl?.host ||
@@ -846,9 +950,24 @@ function extractPostgresConnectionHint(value: unknown): DokployDatabaseConnectio
             fromUrl.ssl ??
             (env.PGSSLMODE ? env.PGSSLMODE.toLowerCase() === 'require' : undefined) ??
             directSsl,
+        externalHost,
+        externalPort,
     };
 
-    return hint.host || hint.port || hint.database || hint.user || hint.ssl !== undefined
+    pushDatabaseConnectionCandidate(candidates, hint);
+    pushDatabaseConnectionCandidate(candidates, {
+        host: externalHost,
+        port: externalPort,
+        database: hint.database,
+        user: hint.user,
+        ssl: hint.ssl,
+    });
+
+    if (candidates.length > 0) {
+        hint.connectionCandidates = candidates;
+    }
+
+    return hint.host || hint.port || hint.database || hint.user || hint.ssl !== undefined || candidates.length
         ? hint
         : undefined;
 }
@@ -1966,13 +2085,36 @@ export class DokployProvider implements vscode.WebviewViewProvider {
             }
         }
 
+        const connectionCandidates: DokployDatabaseConnectionHint[] = [
+            ...(savedConnection?.connectionCandidates || []),
+            ...(service.databaseConnection?.connectionCandidates || []),
+        ];
+        const profileHost = getDokployProfileHost(profile);
+        const externalHost = service.databaseConnection?.externalHost || profileHost;
+        const externalPort = service.databaseConnection?.externalPort;
+        if (externalHost && externalPort) {
+            pushDatabaseConnectionCandidate(connectionCandidates, {
+                host: externalHost,
+                port: externalPort,
+                database:
+                    savedConnection?.database ||
+                    service.databaseConnection?.database,
+                user:
+                    savedConnection?.user ||
+                    service.databaseConnection?.user,
+                password: savedConnection?.password || service.databaseConnection?.password,
+                ssl: savedConnection?.ssl ?? service.databaseConnection?.ssl,
+            });
+        }
+
         await PostgresProvider.openConnectionPanel(this.context, {
             host: savedConnection?.host || service.databaseConnection?.host,
             port: savedConnection?.port || service.databaseConnection?.port,
             database: savedConnection?.database || service.databaseConnection?.database,
             user: savedConnection?.user || service.databaseConnection?.user,
-            password: savedConnection?.password,
+            password: savedConnection?.password || service.databaseConnection?.password,
             ssl: savedConnection?.ssl ?? service.databaseConnection?.ssl,
+            connectionCandidates,
             label: `${profile.name} / ${service.projectName} / ${getPreferredDatabaseName(service.name, service.databaseConnection)}`,
         }, {
             onConnected: async (config) => {
@@ -1985,6 +2127,7 @@ export class DokployProvider implements vscode.WebviewViewProvider {
                         user: config.user,
                         password: config.password,
                         ssl: config.ssl,
+                        connectionCandidates,
                     } satisfies DokployDatabaseConnectionHint)
                 );
                 await DokployProvider.refreshAllViews();

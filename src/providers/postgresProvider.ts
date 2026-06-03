@@ -30,6 +30,7 @@ interface PostgresConnectionConfig {
     password: string;
     ssl?: boolean;
     label?: string;
+    connectionCandidates?: Array<Partial<PostgresConnectionConfig>>;
 }
 
 interface OpenPostgresPanelOptions {
@@ -256,7 +257,7 @@ async function resolveConnectionConfig(
         return undefined;
     }
 
-    return {
+    const config: PostgresConnectionConfig = {
         host: finalHint.host || host,
         port,
         database,
@@ -265,6 +266,21 @@ async function resolveConnectionConfig(
         ssl: finalHint.ssl,
         label: finalHint.label,
     };
+
+    if (Array.isArray(hint.connectionCandidates)) {
+        config.connectionCandidates = hint.connectionCandidates
+            .map((candidate) => normalizeConnectionHint(candidate))
+            .map((candidate) => ({
+                host: candidate.host,
+                port: candidate.port,
+                database: candidate.database,
+                user: candidate.user,
+                password: candidate.password,
+                ssl: candidate.ssl,
+            }));
+    }
+
+    return config;
 }
 
 async function queryRows<T extends object>(
@@ -357,6 +373,61 @@ async function loadSchema(client: PostgresClient): Promise<{
     };
 }
 
+function getConnectionKey(config: Partial<PostgresConnectionConfig>): string {
+    return [
+        config.host || '',
+        config.port || '',
+        config.database || '',
+        config.user || '',
+        config.ssl ? 'ssl' : 'plain',
+    ].join('|');
+}
+
+function buildConnectionAttempts(config: PostgresConnectionConfig): PostgresConnectionConfig[] {
+    const attempts: PostgresConnectionConfig[] = [];
+    const seen = new Set<string>();
+    const pushAttempt = (candidate: Partial<PostgresConnectionConfig>): void => {
+        const attempt: PostgresConnectionConfig = {
+            host: candidate.host || config.host,
+            port: candidate.port || config.port,
+            database: candidate.database || config.database,
+            user: candidate.user || config.user,
+            password: candidate.password || config.password,
+            ssl: candidate.ssl ?? config.ssl,
+            label: candidate.label || config.label,
+        };
+        const key = getConnectionKey(attempt);
+        if (!attempt.host || !attempt.port || !attempt.database || !attempt.user || seen.has(key)) {
+            return;
+        }
+
+        seen.add(key);
+        attempts.push(attempt);
+    };
+
+    pushAttempt(config);
+    for (const candidate of config.connectionCandidates || []) {
+        pushAttempt(candidate);
+    }
+
+    return attempts;
+}
+
+function createClientConfig(config: PostgresConnectionConfig): Record<string, unknown> {
+    return {
+        host: parsePostgresConnectionString(config.host)?.host || config.host,
+        port: config.port,
+        database: config.database,
+        user: config.user,
+        password: config.password,
+        ssl: config.ssl ? { rejectUnauthorized: false } : undefined,
+    };
+}
+
+function formatConnectionAttempt(config: PostgresConnectionConfig): string {
+    return `${config.host}:${config.port}/${config.database}`;
+}
+
 export class PostgresProvider {
     static async openConnectionPanel(
         context: vscode.ExtensionContext,
@@ -387,57 +458,76 @@ export class PostgresProvider {
             config.database
         );
 
-        const clientConfig = {
-            host: parsePostgresConnectionString(config.host)?.host || config.host,
-            port: config.port,
-            database: config.database,
-            user: config.user,
-            password: config.password,
-            ssl: config.ssl ? { rejectUnauthorized: false } : undefined,
-        };
-
-        const client = new Client(clientConfig);
+        const attempts = buildConnectionAttempts(config);
+        let client: PostgresClient | undefined;
+        let activeConfig = config;
         let connected = false;
 
-        const ensureConnected = async (): Promise<void> => {
+        const ensureConnected = async (): Promise<PostgresClient> => {
             if (!connected) {
-                await client.connect();
-                connected = true;
+                const errors: string[] = [];
+                for (const attempt of attempts) {
+                    const nextClient = new Client(createClientConfig(attempt));
+                    try {
+                        await nextClient.connect();
+                        client = nextClient;
+                        activeConfig = attempt;
+                        connected = true;
+                        if (attempt !== attempts[0]) {
+                            vscode.window.showInformationMessage(
+                                `Connected to PostgreSQL via ${formatConnectionAttempt(attempt)}.`
+                            );
+                        }
+                        break;
+                    } catch (error) {
+                        await nextClient.end().catch(() => undefined);
+                        const message = error instanceof Error ? error.message : String(error);
+                        errors.push(`${formatConnectionAttempt(attempt)}: ${message}`);
+                    }
+                }
+                if (!client || !connected) {
+                    throw new Error(`Could not connect to PostgreSQL. Tried ${errors.join(' | ')}`);
+                }
             }
+            const activeClient = client;
+            if (!activeClient) {
+                throw new Error('PostgreSQL client was not initialized.');
+            }
+            return activeClient;
         };
 
         panel.webview.onDidReceiveMessage(async (msg) => {
             try {
                 switch (msg.type) {
                     case 'ready': {
-                        await ensureConnected();
-                        const schemaState = await loadSchema(client);
+                        const activeClient = await ensureConnected();
+                        const schemaState = await loadSchema(activeClient);
 
                         panel.webview.postMessage({
                             type: 'schema',
                             tables: schemaState.tables,
                             dbSize: 0,
                             sourceLabel:
-                                config.label ||
-                                `${config.host}:${config.port}/${config.database}`,
+                                activeConfig.label ||
+                                `${activeConfig.host}:${activeConfig.port}/${activeConfig.database}`,
                             dbType: 'PostgreSQL',
-                            dbName: config.database,
+                            dbName: activeConfig.database,
                             canEditData: true,
                             canEditSchema: true,
                         });
-                        await options?.onConnected?.(config);
+                        await options?.onConnected?.(activeConfig);
                         break;
                     }
                     case 'getTableData': {
-                        await ensureConnected();
+                        const activeClient = await ensureConnected();
                         const pageSize = msg.pageSize ?? 200;
                         const offset = (msg.page ?? 0) * pageSize;
                         const tableRef = quoteTableReference(String(msg.table));
-                        const countResult = await client.query<{ count: string }>(
+                        const countResult = await activeClient.query<{ count: string }>(
                             `SELECT COUNT(*)::text AS count FROM ${tableRef}`
                         );
                         const rowCount = Number(countResult.rows[0]?.count ?? '0');
-                        const rowsResult = await client.query(
+                        const rowsResult = await activeClient.query(
                             `SELECT ctid::text AS "__uv_row_id", * FROM ${tableRef} LIMIT $1 OFFSET $2`,
                             [pageSize, offset]
                         );
@@ -462,8 +552,8 @@ export class PostgresProvider {
                         break;
                     }
                     case 'runQuery': {
-                        await ensureConnected();
-                        const result = await client.query(String(msg.sql));
+                        const activeClient = await ensureConnected();
+                        const result = await activeClient.query(String(msg.sql));
                         panel.webview.postMessage({
                             type: 'queryResult',
                             columns: result.fields.map((field) => field.name),
@@ -473,9 +563,9 @@ export class PostgresProvider {
                         break;
                     }
                     case 'updateCell': {
-                        await ensureConnected();
+                        const activeClient = await ensureConnected();
                         const tableRef = quoteTableReference(String(msg.table));
-                        await client.query(
+                        await activeClient.query(
                             `UPDATE ${tableRef} SET ${quoteIdentifier(String(msg.column))} = $1 WHERE ctid = $2::tid`,
                             [asNullableValue(msg.value), String(msg.rowId)]
                         );
@@ -483,15 +573,15 @@ export class PostgresProvider {
                         break;
                     }
                     case 'insertRow': {
-                        await ensureConnected();
+                        const activeClient = await ensureConnected();
                         const tableRef = quoteTableReference(String(msg.table));
                         const entries = Object.entries(msg.values || {});
                         if (entries.length === 0) {
-                            await client.query(`INSERT INTO ${tableRef} DEFAULT VALUES`);
+                            await activeClient.query(`INSERT INTO ${tableRef} DEFAULT VALUES`);
                         } else {
                             const columns = entries.map(([column]) => quoteIdentifier(column)).join(', ');
                             const placeholders = entries.map((_, index) => `$${index + 1}`).join(', ');
-                            await client.query(
+                            await activeClient.query(
                                 `INSERT INTO ${tableRef} (${columns}) VALUES (${placeholders})`,
                                 entries.map(([, value]) => asNullableValue(value))
                             );
@@ -500,9 +590,9 @@ export class PostgresProvider {
                         break;
                     }
                     case 'deleteRow': {
-                        await ensureConnected();
+                        const activeClient = await ensureConnected();
                         const tableRef = quoteTableReference(String(msg.table));
-                        await client.query(
+                        await activeClient.query(
                             `DELETE FROM ${tableRef} WHERE ctid = $1::tid`,
                             [String(msg.rowId)]
                         );
@@ -510,7 +600,7 @@ export class PostgresProvider {
                         break;
                     }
                     case 'createTable': {
-                        await ensureConnected();
+                        const activeClient = await ensureConnected();
                         const tableName = String(msg.tableName || '').trim();
                         const columns: Array<{
                             name: string;
@@ -538,15 +628,15 @@ export class PostgresProvider {
                             }
                             return parts.join(' ');
                         }).join(', ');
-                        await client.query(`CREATE TABLE ${quoteTableReference(tableName)} (${columnSql})`);
-                        const schemaState = await loadSchema(client);
+                        await activeClient.query(`CREATE TABLE ${quoteTableReference(tableName)} (${columnSql})`);
+                        const schemaState = await loadSchema(activeClient);
                         panel.webview.postMessage({
                             type: 'schema',
                             tables: schemaState.tables,
                             dbSize: 0,
-                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            sourceLabel: activeConfig.label || `${activeConfig.host}:${activeConfig.port}/${activeConfig.database}`,
                             dbType: 'PostgreSQL',
-                            dbName: config.database,
+                            dbName: activeConfig.database,
                             canEditData: true,
                             canEditSchema: true,
                         });
@@ -554,16 +644,16 @@ export class PostgresProvider {
                         break;
                     }
                     case 'deleteTable': {
-                        await ensureConnected();
-                        await client.query(`DROP TABLE ${quoteTableReference(String(msg.table))}`);
-                        const schemaState = await loadSchema(client);
+                        const activeClient = await ensureConnected();
+                        await activeClient.query(`DROP TABLE ${quoteTableReference(String(msg.table))}`);
+                        const schemaState = await loadSchema(activeClient);
                         panel.webview.postMessage({
                             type: 'schema',
                             tables: schemaState.tables,
                             dbSize: 0,
-                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            sourceLabel: activeConfig.label || `${activeConfig.host}:${activeConfig.port}/${activeConfig.database}`,
                             dbType: 'PostgreSQL',
-                            dbName: config.database,
+                            dbName: activeConfig.database,
                             canEditData: true,
                             canEditSchema: true,
                         });
@@ -571,7 +661,7 @@ export class PostgresProvider {
                         break;
                     }
                     case 'addColumn': {
-                        await ensureConnected();
+                        const activeClient = await ensureConnected();
                         const column = msg.column;
                         if (!column?.name || !column?.type) {
                             throw new Error('Column name and type are required.');
@@ -586,15 +676,15 @@ export class PostgresProvider {
                         if (column.defaultValue?.trim()) {
                             parts.push(`DEFAULT ${column.defaultValue.trim()}`);
                         }
-                        await client.query(parts.join(' '));
-                        const schemaState = await loadSchema(client);
+                        await activeClient.query(parts.join(' '));
+                        const schemaState = await loadSchema(activeClient);
                         panel.webview.postMessage({
                             type: 'schema',
                             tables: schemaState.tables,
                             dbSize: 0,
-                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            sourceLabel: activeConfig.label || `${activeConfig.host}:${activeConfig.port}/${activeConfig.database}`,
                             dbType: 'PostgreSQL',
-                            dbName: config.database,
+                            dbName: activeConfig.database,
                             canEditData: true,
                             canEditSchema: true,
                         });
@@ -602,18 +692,18 @@ export class PostgresProvider {
                         break;
                     }
                     case 'deleteColumn': {
-                        await ensureConnected();
-                        await client.query(
+                        const activeClient = await ensureConnected();
+                        await activeClient.query(
                             `ALTER TABLE ${quoteTableReference(String(msg.table))} DROP COLUMN ${quoteIdentifier(String(msg.column))}`
                         );
-                        const schemaState = await loadSchema(client);
+                        const schemaState = await loadSchema(activeClient);
                         panel.webview.postMessage({
                             type: 'schema',
                             tables: schemaState.tables,
                             dbSize: 0,
-                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            sourceLabel: activeConfig.label || `${activeConfig.host}:${activeConfig.port}/${activeConfig.database}`,
                             dbType: 'PostgreSQL',
-                            dbName: config.database,
+                            dbName: activeConfig.database,
                             canEditData: true,
                             canEditSchema: true,
                         });
@@ -621,7 +711,7 @@ export class PostgresProvider {
                         break;
                     }
                     case 'updateColumn': {
-                        await ensureConnected();
+                        const activeClient = await ensureConnected();
                         const tableRef = quoteTableReference(String(msg.table));
                         const next = msg.next;
                         if (!next?.name || !next?.type) {
@@ -629,34 +719,34 @@ export class PostgresProvider {
                         }
                         let currentName = String(msg.column);
                         if (currentName !== next.name) {
-                            await client.query(
+                            await activeClient.query(
                                 `ALTER TABLE ${tableRef} RENAME COLUMN ${quoteIdentifier(currentName)} TO ${quoteIdentifier(next.name)}`
                             );
                             currentName = next.name;
                         }
-                        await client.query(
+                        await activeClient.query(
                             `ALTER TABLE ${tableRef} ALTER COLUMN ${quoteIdentifier(currentName)} TYPE ${String(next.type).trim()}`
                         );
                         if (next.defaultValue?.trim()) {
-                            await client.query(
+                            await activeClient.query(
                                 `ALTER TABLE ${tableRef} ALTER COLUMN ${quoteIdentifier(currentName)} SET DEFAULT ${next.defaultValue.trim()}`
                             );
                         } else {
-                            await client.query(
+                            await activeClient.query(
                                 `ALTER TABLE ${tableRef} ALTER COLUMN ${quoteIdentifier(currentName)} DROP DEFAULT`
                             );
                         }
-                        await client.query(
+                        await activeClient.query(
                             `ALTER TABLE ${tableRef} ALTER COLUMN ${quoteIdentifier(currentName)} ${next.notnull ? 'SET' : 'DROP'} NOT NULL`
                         );
-                        const schemaState = await loadSchema(client);
+                        const schemaState = await loadSchema(activeClient);
                         panel.webview.postMessage({
                             type: 'schema',
                             tables: schemaState.tables,
                             dbSize: 0,
-                            sourceLabel: config.label || `${config.host}:${config.port}/${config.database}`,
+                            sourceLabel: activeConfig.label || `${activeConfig.host}:${activeConfig.port}/${activeConfig.database}`,
                             dbType: 'PostgreSQL',
-                            dbName: config.database,
+                            dbName: activeConfig.database,
                             canEditData: true,
                             canEditSchema: true,
                         });
@@ -673,7 +763,7 @@ export class PostgresProvider {
         });
 
         panel.onDidDispose(() => {
-            void client.end().catch(() => undefined);
+            void client?.end().catch(() => undefined);
         });
     }
 }
