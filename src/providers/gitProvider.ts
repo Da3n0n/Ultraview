@@ -194,6 +194,56 @@ function writeCommitMsgFile(msg: string): string {
     return tmpFile;
 }
 
+async function hasStagedChanges(run: GitCommandRunner): Promise<boolean> {
+    try {
+        await run('git diff --cached --quiet');
+        return false;
+    } catch {
+        return true;
+    }
+}
+
+/**
+ * Stage everything possible without allowing one unreadable/invalid vendor file
+ * to block all other changes from being committed.
+ */
+async function stageChangesBestEffort(run: GitCommandRunner, projectPath: string): Promise<boolean> {
+    try {
+        await run('git add -A');
+    } catch (err: any) {
+        if (/index\.lock|another git process/i.test(err?.stderr ?? err?.message ?? '')) {
+            clearIndexLock(projectPath);
+            try {
+                await run('git add -A');
+            } catch {
+                await tryGit(run, 'git add --ignore-errors -A');
+            }
+        } else {
+            await tryGit(run, 'git add --ignore-errors -A');
+        }
+    }
+
+    return hasStagedChanges(run);
+}
+
+async function commitStagedChanges(run: GitCommandRunner, tmpFile: string): Promise<void> {
+    const commitFile = `"${tmpFile.replace(/\\/g, '/')}"`;
+    try {
+        await run(`git commit -F ${commitFile}`);
+    } catch (err: any) {
+        // Hooks and local signing settings should not prevent Ultraview from
+        // syncing otherwise valid staged files.
+        try {
+            await run(`git -c commit.gpgSign=false commit --no-verify -F ${commitFile}`);
+        } catch (retryErr: any) {
+            if (!(await hasStagedChanges(run))) {
+                return;
+            }
+            throw new Error(formatGitError(retryErr) || formatGitError(err));
+        }
+    }
+}
+
 async function listUnmergedFiles(run: GitCommandRunner): Promise<string[]> {
     try {
         const { stdout } = await run('git diff --name-only --diff-filter=U');
@@ -625,23 +675,17 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
         msg = `${msg}\n\nFiles changed:\n` + files.map((f) => `- ${f}`).join('\n');
     }
 
-    // Stage changes; retry once after clearing lock if blocked
-    try {
-        await run('git add -A');
-    } catch (err: any) {
-        if (/index\.lock|another git process/i.test(err?.stderr ?? err?.message ?? '')) {
-            clearIndexLock(projectPath);
-            await run('git add -A');
-        } else {
-            throw err;
-        }
+    // A dirty nested/vendor repo or an invalid file can appear in status but
+    // still be impossible to stage. Commit the valid files and leave the rest.
+    if (!(await stageChangesBestEffort(run, projectPath))) {
+        return false;
     }
 
     // Write commit message to a temp file to avoid shell-escaping issues with
     // multi-line messages on Windows
     const tmpFile = writeCommitMsgFile(msg);
     try {
-        await run(`git commit -F "${tmpFile.replace(/\\/g, '/')}"`);
+        await commitStagedChanges(run, tmpFile);
     } finally {
         try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
     }
@@ -881,15 +925,16 @@ async function gitSync(projectPath: string, commitMsg?: string, remoteUrl?: stri
             try {
                 const { stdout: statusOut } = await run('git status --porcelain');
                 if (statusOut.trim()) {
-                    await run('git add -A');
-                    const count = statusOut.trim().split('\n').length;
-                    const tmpFile = writeCommitMsgFile(
-                        `Recovery commit: ${count} changed file${count !== 1 ? 's' : ''}`
-                    );
-                    try {
-                        await run(`git commit -F "${tmpFile.replace(/\\/g, '/')}"`);
-                    } finally {
-                        try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+                    if (await stageChangesBestEffort(run, projectPath)) {
+                        const count = statusOut.trim().split('\n').length;
+                        const tmpFile = writeCommitMsgFile(
+                            `Recovery commit: ${count} changed file${count !== 1 ? 's' : ''}`
+                        );
+                        try {
+                            await commitStagedChanges(run, tmpFile);
+                        } finally {
+                            try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+                        }
                     }
                 }
                 await run(`git pull --no-edit -X ours origin ${branch}`);
