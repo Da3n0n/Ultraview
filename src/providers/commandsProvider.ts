@@ -3,11 +3,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { buildCommandsHtml } from '../commands/commandsHtml';
 import { ProjectCommand, scanWorkspaceCommands } from '../commands/commandScanner';
+import { createCommandTerminal } from '../utils/commandTerminal';
 
 export class CommandsProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'ultraview.commands';
   private static readonly activeWebviews = new Set<vscode.Webview>();
   private view?: vscode.WebviewView;
+  private refreshTimer?: NodeJS.Timeout;
 
   constructor(private context: vscode.ExtensionContext) {
     this.registerRefreshWatchers();
@@ -146,11 +148,7 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
 
     for (const pattern of patterns) {
       const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-      const refresh = () => {
-        if (this.view?.visible) {
-          void this.postState();
-        }
-      };
+      const refresh = () => this.scheduleRefresh();
 
       watcher.onDidCreate(refresh, undefined, this.context.subscriptions);
       watcher.onDidChange(refresh, undefined, this.context.subscriptions);
@@ -158,19 +156,21 @@ export class CommandsProvider implements vscode.WebviewViewProvider {
       this.context.subscriptions.push(watcher);
     }
   }
+
+  private scheduleRefresh(): void {
+    if (!this.view?.visible) return;
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      void this.postState();
+    }, 750);
+  }
 }
 
 async function runInTerminal(command: ProjectCommand): Promise<void> {
-  const terminal = vscode.window.createTerminal({
-    name: getTerminalName(command),
-    cwd: command.cwd,
-  });
-
-  terminal.show(true);
-  terminal.sendText(command.runCmd);
+  await createCommandTerminal(getTerminalName(command), command.cwd, command.runCmd);
   recordCommandUsage(command);
   await CommandsProvider.refreshAllViews();
-  void vscode.commands.executeCommand('ultraview.commands.focus');
 }
 
 function getTerminalName(command: ProjectCommand): string {

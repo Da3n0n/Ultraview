@@ -12,6 +12,7 @@ import { applyLocalAccount, clearLocalAccount, getRemoteUrl } from '../git/gitCr
 import { SharedStore } from '../sync/sharedStore';
 import { getS3Credentials } from '../s3backup';
 import { ProjectCommand, scanCommands } from '../commands/commandScanner';
+import { createCommandTerminal } from '../utils/commandTerminal';
 
 interface GitStatus {
     isGitRepo: boolean;
@@ -77,17 +78,11 @@ async function showProjectCommandPicker(projectPath: string, projectName: string
         return;
     }
 
-    runScannedCommandInTerminal(picked.command);
+    await runScannedCommandInTerminal(picked.command);
 }
 
-function runScannedCommandInTerminal(command: ProjectCommand): void {
-    const terminal = vscode.window.createTerminal({
-        name: getScannedCommandTerminalName(command),
-        cwd: command.cwd,
-    });
-
-    terminal.show(true);
-    terminal.sendText(command.runCmd);
+async function runScannedCommandInTerminal(command: ProjectCommand): Promise<void> {
+    await createCommandTerminal(getScannedCommandTerminalName(command), command.cwd, command.runCmd);
 }
 
 function getScannedCommandTerminalName(command: ProjectCommand): string {
