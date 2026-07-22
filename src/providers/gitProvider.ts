@@ -690,33 +690,33 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
 
 /**
  * Detects a push failure caused by a GitHub OAuth token that lacks the
- * `workflow` scope, and recovers by rewriting all of HEAD's history to drop
- * `.github/workflows/` from the index — so the push can never trip the
- * server-side scope check again, regardless of how many commits ahead the
- * local branch is.
+ * `workflow` scope, and recovers so the push can never trip the server-side
+ * scope check again — regardless of how many commits ahead the local
+ * branch is, and across every future sync.
  *
- * Why a full history rewrite (and not just `git commit --amend`):
- *   The workflow file may have been added in any ancestor commit, not just
- *   HEAD. `git commit --amend` only rewrites the last commit, so a push with
- *   N commits ahead will still contain the workflow file in commits
- *   1..N-1 and the server will reject the whole push. `filter-branch` with
- *   `--index-filter` rewrites every commit in the branch's history.
+ * The recovery is permanent and self-healing:
+ *   1. Add `.github/workflows/` to the local `.gitignore` so `git add -A`
+ *      (used by the extension's auto-commit) never re-stages the workflow
+ *      file in any future commit. This is the critical fix — without it,
+ *      every subsequent sync would re-commit the orphaned file and the
+ *      push would fail again in a poison-pill loop.
+ *   2. Amend the last commit to drop the workflow file from HEAD (cheap).
+ *   3. Rewrite ALL of HEAD's history with `git filter-branch --index-filter`
+ *      so the workflow file is stripped from every commit being pushed —
+ *      not just HEAD, since the server checks every new commit for
+ *      workflow changes.
+ *   4. Push with `--force-with-lease` because history was rewritten
+ *      (commit hashes changed). Lease guards against concurrent pushes
+ *      that may have landed since the last fetch.
+ *   5. Clean up `filter-branch`'s backup refs so the repo stays tidy.
  *
- * Why `--index-filter` (not `--tree-filter`):
- *   The user's local `.github/workflows/` files on disk are preserved. The
- *   filter only changes the index/tree of each commit; the working tree is
- *   untouched. After the rewrite the files become "untracked" locally —
- *   the user can re-add them after re-authenticating, or just leave them.
- *
- * Why `--force-with-lease` after the rewrite:
- *   History was rewritten, so commit hashes changed. The remote must be
- *   force-pushed to match. `--force-with-lease` (not `--force`) is used so
- *   we never overwrite concurrent pushes from anyone else that may have
- *   landed since the last fetch inside `gitSync`.
+ * Local workflow files on disk survive all of this — `--index-filter` only
+ * touches the index, the working tree is untouched, and the .gitignore
+ * entry keeps them from being staged.
  *
  * Returns `true` if recovery was applied (caller should force-push),
- * `false` if no workflow files exist on disk and aren't in any commit's
- * history — meaning the original error was a real auth issue and the
+ * `false` if no workflow files exist on disk, aren't tracked, and aren't
+ * in history — meaning the original error was a real auth issue and the
  * caller should fall back to the re-authenticate prompt.
  */
 async function recoverFromWorkflowScope(
@@ -724,9 +724,9 @@ async function recoverFromWorkflowScope(
     run: GitCommandRunner
 ): Promise<boolean> {
     const wfDir = path.join(projectPath, '.github', 'workflows');
-    if (!fs.existsSync(wfDir)) return false;
 
-    // Any workflow files tracked in HEAD's index, or in any commit's history?
+    // Any workflow files on disk, tracked, or in history?
+    const hasOnDisk = fs.existsSync(wfDir);
     let hasTracked = false;
     let inHistory = false;
     try {
@@ -737,26 +737,44 @@ async function recoverFromWorkflowScope(
         const { stdout } = await run('git log --oneline -- .github/workflows/');
         inHistory = stdout.trim().length > 0;
     } catch { /* assume none */ }
-    if (!hasTracked && !inHistory) return false;
+    if (!hasOnDisk && !hasTracked && !inHistory) return false;
 
-    // Step 1: cheap amend for the common single-commit case. Safe even if
-    // the workflow files are in older commits — the filter-branch below
-    // will fix those.
+    // Step 1: add `.github/workflows/` to .gitignore so the extension's
+    // `git add -A` (and any manual `git add .`) never re-stages the file.
+    // This is the permanent fix that breaks the poison-pill loop. The entry
+    // is idempotent — we only append if it's not already present in any
+    // common spelling (with or without trailing slash, with leading spaces).
+    try {
+        const giPath = path.join(projectPath, '.gitignore');
+        let giContent = '';
+        try { giContent = fs.readFileSync(giPath, 'utf8'); } catch { /* no .gitignore yet */ }
+        const hasEntry = /^[ \t]*\.github[\\\/]workflows[\\\/]?[ \t]*$/m.test(giContent)
+            || /^[ \t]*\.github[\\\/]workflows[ \t]*$/m.test(giContent);
+        if (!hasEntry) {
+            const sep = giContent && !giContent.endsWith('\n') ? '\n' : '';
+            const addition =
+                `${sep}# Auto-ignored: GitHub OAuth token lacks workflow scope\n` +
+                `.github/workflows/\n`;
+            fs.writeFileSync(giPath, giContent + addition, 'utf8');
+        }
+    } catch { /* best-effort — still try history rewrite below */ }
+
+    // Step 2: cheap amend for the single-commit case.
     try {
         await run('git rm -r --cached --ignore-unmatch .github/workflows/');
         await run('git commit --amend --no-edit');
     } catch { /* no-op when there's nothing to amend */ }
 
-    // Step 2: rewrite ALL of HEAD's history to strip workflow files from
-    // every commit's index. `--index-filter` only touches the index, so
-    // the local workflow files on disk survive untouched.
+    // Step 3: rewrite ALL of HEAD's history. Required because the workflow
+    // file may be in any ancestor commit, not just HEAD, and the server
+    // rejects any push containing a workflow change.
     try {
         const filterRun = createGitRunner(projectPath, 300000); // 5 min
         await filterRun(
             'git filter-branch -f --index-filter ' +
             '"git rm -rf --cached --ignore-unmatch .github/workflows" HEAD'
         );
-        // Clean up the backup refs that filter-branch leaves in refs/original/
+        // Step 4: clean up backup refs filter-branch leaves in refs/original/
         try {
             await filterRun(
                 'git for-each-ref --format="%(refname)" refs/original/ | ' +

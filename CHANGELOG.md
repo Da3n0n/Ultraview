@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- **Sync no longer fails on `workflow` scope, even with many commits ahead** — When a project is ahead of remote and contains `.github/workflows/`, sync (and push) now auto-rewrites local history with `git filter-branch --index-filter` to strip `.github/workflows/` from every commit, then force-pushes (`--force-with-lease`) the rewritten history. Local workflow files on disk are preserved (untracked after the rewrite). The success notification tells the user to re-authenticate when they want to push workflow files properly. The re-authenticate prompt remains as a fallback for repos with no workflow files. Handles 1 commit ahead or 1000s ahead — same path, same result.
+- **Sync self-heals from the `workflow` scope poison-pill loop, permanently** — When a project is ahead of remote and contains `.github/workflows/`, sync (and push) now does four things in one shot:
+  1. Adds `.github/workflows/` to the local `.gitignore` so the extension's `git add -A` (and any manual `git add .`) never re-stages the orphaned workflow file again
+  2. Amends the last commit to drop the workflow file from HEAD
+  3. Rewrites all of HEAD's history with `git filter-branch --index-filter` to strip the workflow file from every commit
+  4. Force-pushes (`--force-with-lease`) the rewritten history
+- **Works for any number of commits ahead** (1 or 1000s — same path)
+- **Self-healing** — the `.gitignore` entry is the key fix: without it, the next sync would re-commit the orphaned file and the push would fail again in a loop. With it, sync works cleanly forever until the user re-authenticates
+- **Local files preserved** — `.github/workflows/` files on disk survive all of this (untracked after the rewrite)
+- **Backup branch safety** — the local `recoverFromWorkflowScope` doesn't create a backup branch (that's manual), but the original commit history is recoverable via the reflog for ~90 days by default
+- **Re-authenticate prompt remains as fallback** for repos that genuinely have no workflow files (the error was something else)
 
 ## [0.2.395] - 2026-06-01
 
