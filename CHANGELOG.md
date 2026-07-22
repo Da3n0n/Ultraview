@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- **Sync no longer fails on `workflow` scope** — When a project is ahead of remote and contains `.github/workflows/`, sync (and push) now auto-untracks the workflow files locally, amends the commit, and retries the push. The local files are preserved on disk, and the success notification tells the user to re-authenticate when they want to push workflow files properly. The re-authenticate prompt remains as a fallback for repos with no workflow files.
+- **Sync no longer fails on `workflow` scope, even with many commits ahead** — When a project is ahead of remote and contains `.github/workflows/`, sync (and push) now auto-rewrites local history with `git filter-branch --index-filter` to strip `.github/workflows/` from every commit, then force-pushes (`--force-with-lease`) the rewritten history. Local workflow files on disk are preserved (untracked after the rewrite). The success notification tells the user to re-authenticate when they want to push workflow files properly. The re-authenticate prompt remains as a fallback for repos with no workflow files. Handles 1 commit ahead or 1000s ahead — same path, same result.
 
 ## [0.2.395] - 2026-06-01
 

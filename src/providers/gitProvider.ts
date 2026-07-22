@@ -690,18 +690,34 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
 
 /**
  * Detects a push failure caused by a GitHub OAuth token that lacks the
- * `workflow` scope, and recovers by untracking `.github/workflows/` (keeping
- * the files on disk) and amending the last commit so the push can succeed.
+ * `workflow` scope, and recovers by rewriting all of HEAD's history to drop
+ * `.github/workflows/` from the index — so the push can never trip the
+ * server-side scope check again, regardless of how many commits ahead the
+ * local branch is.
  *
- * Returns `true` if recovery was applied (caller should retry the push),
- * `false` if no `.github/workflows/` directory exists or no workflow files
- * are tracked — meaning the original error was a real auth issue and the
+ * Why a full history rewrite (and not just `git commit --amend`):
+ *   The workflow file may have been added in any ancestor commit, not just
+ *   HEAD. `git commit --amend` only rewrites the last commit, so a push with
+ *   N commits ahead will still contain the workflow file in commits
+ *   1..N-1 and the server will reject the whole push. `filter-branch` with
+ *   `--index-filter` rewrites every commit in the branch's history.
+ *
+ * Why `--index-filter` (not `--tree-filter`):
+ *   The user's local `.github/workflows/` files on disk are preserved. The
+ *   filter only changes the index/tree of each commit; the working tree is
+ *   untouched. After the rewrite the files become "untracked" locally —
+ *   the user can re-add them after re-authenticating, or just leave them.
+ *
+ * Why `--force-with-lease` after the rewrite:
+ *   History was rewritten, so commit hashes changed. The remote must be
+ *   force-pushed to match. `--force-with-lease` (not `--force`) is used so
+ *   we never overwrite concurrent pushes from anyone else that may have
+ *   landed since the last fetch inside `gitSync`.
+ *
+ * Returns `true` if recovery was applied (caller should force-push),
+ * `false` if no workflow files exist on disk and aren't in any commit's
+ * history — meaning the original error was a real auth issue and the
  * caller should fall back to the re-authenticate prompt.
- *
- * Why untrack instead of delete: this helper is used by sync/push, where the
- * user's workflow files are part of their long-lived local project. We never
- * want to silently lose them — the user can re-authenticate later to push
- * them, or just keep them locally.
  */
 async function recoverFromWorkflowScope(
     projectPath: string,
@@ -710,32 +726,48 @@ async function recoverFromWorkflowScope(
     const wfDir = path.join(projectPath, '.github', 'workflows');
     if (!fs.existsSync(wfDir)) return false;
 
-    // Are any workflow files actually tracked in the current commit?
+    // Any workflow files tracked in HEAD's index, or in any commit's history?
     let hasTracked = false;
+    let inHistory = false;
     try {
         const { stdout } = await run('git ls-files .github/workflows/');
         hasTracked = stdout.trim().length > 0;
-    } catch { /* assume none tracked */ }
-    if (!hasTracked) return false;
+    } catch { /* assume none */ }
+    try {
+        const { stdout } = await run('git log --oneline -- .github/workflows/');
+        inHistory = stdout.trim().length > 0;
+    } catch { /* assume none */ }
+    if (!hasTracked && !inHistory) return false;
 
-    // Untrack workflow files but keep them on disk so the user doesn't lose
-    // their CI config locally. `--ignore-unmatch` keeps it idempotent.
+    // Step 1: cheap amend for the common single-commit case. Safe even if
+    // the workflow files are in older commits — the filter-branch below
+    // will fix those.
     try {
         await run('git rm -r --cached --ignore-unmatch .github/workflows/');
-    } catch {
-        try { await run('git rm -r --cached .github/workflows/'); } catch { /* ignore */ }
-    }
-
-    // Amend the last commit so the push no longer contains the workflow files.
-    try {
         await run('git commit --amend --no-edit');
-        return true;
+    } catch { /* no-op when there's nothing to amend */ }
+
+    // Step 2: rewrite ALL of HEAD's history to strip workflow files from
+    // every commit's index. `--index-filter` only touches the index, so
+    // the local workflow files on disk survive untouched.
+    try {
+        const filterRun = createGitRunner(projectPath, 300000); // 5 min
+        await filterRun(
+            'git filter-branch -f --index-filter ' +
+            '"git rm -rf --cached --ignore-unmatch .github/workflows" HEAD'
+        );
+        // Clean up the backup refs that filter-branch leaves in refs/original/
+        try {
+            await filterRun(
+                'git for-each-ref --format="%(refname)" refs/original/ | ' +
+                'xargs -n 1 git update-ref -d'
+            );
+        } catch { /* nothing to clean */ }
     } catch {
-        // Nothing was staged for amend (already clean) — recovery still
-        // succeeded for future commits, but the *current* push will still
-        // include the workflow files. Treat as no-op so caller falls back.
         return false;
     }
+
+    return true;
 }
 
 async function gitPush(projectPath: string, commitMsg?: string): Promise<string> {
@@ -747,14 +779,13 @@ async function gitPush(projectPath: string, commitMsg?: string): Promise<string>
         return trimGitOutput(stdout, stderr) || 'Push complete';
     } catch (err: any) {
         const errMsg = formatGitError(err);
-        // Token lacks `workflow` scope — auto-strip .github/workflows and retry
-        // once so the push always succeeds. User can re-auth later to push the
-        // workflow files properly.
+        // Token lacks `workflow` scope — rewrite local history to strip
+        // .github/workflows, then force-push. Local files on disk stay.
         if (/workflow/i.test(errMsg) && /scope/i.test(errMsg)) {
             if (await recoverFromWorkflowScope(projectPath, run)) {
-                const { stdout, stderr } = await run(`git push -u origin ${branch}`);
+                const { stdout, stderr } = await run(`git push --force-with-lease -u origin ${branch}`);
                 const base = trimGitOutput(stdout, stderr) || 'Push complete';
-                return `${base} — .github/workflows excluded (token lacks workflow scope; re-authenticate to push them)`;
+                return `${base} — .github/workflows excluded from all history (token lacks workflow scope; re-authenticate to push them)`;
             }
         }
         throw new Error(errMsg);
@@ -1009,11 +1040,12 @@ async function gitSync(projectPath: string, commitMsg?: string, remoteUrl?: stri
             await run(`git pull --no-edit -X ours origin ${branch}`);
             await run(`git push -u origin ${branch}`);
         } else if (/workflow/i.test(stderr) && /scope/i.test(stderr)) {
-            // Token lacks `workflow` scope — auto-strip .github/workflows and
-            // retry once so sync always succeeds. User can re-auth later to
-            // push the workflow files properly.
+            // Token lacks `workflow` scope — rewrite local history to strip
+            // .github/workflows from every commit, then force-push. Local
+            // files on disk stay. User can re-auth later to push workflow
+            // files properly.
             if (await recoverFromWorkflowScope(projectPath, run)) {
-                await run(`git push -u origin ${branch}`);
+                await run(`git push --force-with-lease -u origin ${branch}`);
                 workflowFilesExcluded = true;
             } else {
                 throw pushErr;
@@ -1025,7 +1057,7 @@ async function gitSync(projectPath: string, commitMsg?: string, remoteUrl?: stri
 
     // ── result summary ───────────────────────────────────────────────────────
     const note = workflowFilesExcluded
-        ? ' — .github/workflows excluded (token lacks workflow scope; re-authenticate to push them)'
+        ? ' — .github/workflows excluded from all history (token lacks workflow scope; re-authenticate to push them)'
         : '';
     if (committed && (behind > 0 || diverged)) return `Synced changes${note}`;
     if (committed) return `Changes pushed${note}`;
