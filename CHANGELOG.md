@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Sync no longer fails on `workflow` scope** — When a project is ahead of remote and contains `.github/workflows/`, sync (and push) now auto-untracks the workflow files locally, amends the commit, and retries the push. The local files are preserved on disk, and the success notification tells the user to re-authenticate when they want to push workflow files properly. The re-authenticate prompt remains as a fallback for repos with no workflow files.
+
 ## [0.2.395] - 2026-06-01
 
 ### Added

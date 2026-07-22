@@ -688,6 +688,56 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
     return true;
 }
 
+/**
+ * Detects a push failure caused by a GitHub OAuth token that lacks the
+ * `workflow` scope, and recovers by untracking `.github/workflows/` (keeping
+ * the files on disk) and amending the last commit so the push can succeed.
+ *
+ * Returns `true` if recovery was applied (caller should retry the push),
+ * `false` if no `.github/workflows/` directory exists or no workflow files
+ * are tracked — meaning the original error was a real auth issue and the
+ * caller should fall back to the re-authenticate prompt.
+ *
+ * Why untrack instead of delete: this helper is used by sync/push, where the
+ * user's workflow files are part of their long-lived local project. We never
+ * want to silently lose them — the user can re-authenticate later to push
+ * them, or just keep them locally.
+ */
+async function recoverFromWorkflowScope(
+    projectPath: string,
+    run: GitCommandRunner
+): Promise<boolean> {
+    const wfDir = path.join(projectPath, '.github', 'workflows');
+    if (!fs.existsSync(wfDir)) return false;
+
+    // Are any workflow files actually tracked in the current commit?
+    let hasTracked = false;
+    try {
+        const { stdout } = await run('git ls-files .github/workflows/');
+        hasTracked = stdout.trim().length > 0;
+    } catch { /* assume none tracked */ }
+    if (!hasTracked) return false;
+
+    // Untrack workflow files but keep them on disk so the user doesn't lose
+    // their CI config locally. `--ignore-unmatch` keeps it idempotent.
+    try {
+        await run('git rm -r --cached --ignore-unmatch .github/workflows/');
+    } catch {
+        try { await run('git rm -r --cached .github/workflows/'); } catch { /* ignore */ }
+    }
+
+    // Amend the last commit so the push no longer contains the workflow files.
+    try {
+        await run('git commit --amend --no-edit');
+        return true;
+    } catch {
+        // Nothing was staged for amend (already clean) — recovery still
+        // succeeded for future commits, but the *current* push will still
+        // include the workflow files. Treat as no-op so caller falls back.
+        return false;
+    }
+}
+
 async function gitPush(projectPath: string, commitMsg?: string): Promise<string> {
     const run = createGitRunner(projectPath);
     const branch = await getCurrentBranch(projectPath);
@@ -696,7 +746,18 @@ async function gitPush(projectPath: string, commitMsg?: string): Promise<string>
         const { stdout, stderr } = await run(`git push -u origin ${branch}`);
         return trimGitOutput(stdout, stderr) || 'Push complete';
     } catch (err: any) {
-        throw new Error(formatGitError(err));
+        const errMsg = formatGitError(err);
+        // Token lacks `workflow` scope — auto-strip .github/workflows and retry
+        // once so the push always succeeds. User can re-auth later to push the
+        // workflow files properly.
+        if (/workflow/i.test(errMsg) && /scope/i.test(errMsg)) {
+            if (await recoverFromWorkflowScope(projectPath, run)) {
+                const { stdout, stderr } = await run(`git push -u origin ${branch}`);
+                const base = trimGitOutput(stdout, stderr) || 'Push complete';
+                return `${base} — .github/workflows excluded (token lacks workflow scope; re-authenticate to push them)`;
+            }
+        }
+        throw new Error(errMsg);
     }
 }
 
@@ -938,6 +999,7 @@ async function gitSync(projectPath: string, commitMsg?: string, remoteUrl?: stri
     }
 
     // ── push ─────────────────────────────────────────────────────────────────
+    let workflowFilesExcluded = false;
     try {
         await run(`git push -u origin ${branch}`);
     } catch (pushErr: any) {
@@ -946,15 +1008,28 @@ async function gitSync(projectPath: string, commitMsg?: string, remoteUrl?: stri
             // Remote advanced while we were working — pull then retry
             await run(`git pull --no-edit -X ours origin ${branch}`);
             await run(`git push -u origin ${branch}`);
+        } else if (/workflow/i.test(stderr) && /scope/i.test(stderr)) {
+            // Token lacks `workflow` scope — auto-strip .github/workflows and
+            // retry once so sync always succeeds. User can re-auth later to
+            // push the workflow files properly.
+            if (await recoverFromWorkflowScope(projectPath, run)) {
+                await run(`git push -u origin ${branch}`);
+                workflowFilesExcluded = true;
+            } else {
+                throw pushErr;
+            }
         } else {
             throw pushErr;
         }
     }
 
     // ── result summary ───────────────────────────────────────────────────────
-    if (committed && (behind > 0 || diverged)) return 'Synced changes';
-    if (committed) return 'Changes pushed';
-    if (behind > 0 || diverged) return 'Updated from remote';
+    const note = workflowFilesExcluded
+        ? ' — .github/workflows excluded (token lacks workflow scope; re-authenticate to push them)'
+        : '';
+    if (committed && (behind > 0 || diverged)) return `Synced changes${note}`;
+    if (committed) return `Changes pushed${note}`;
+    if (behind > 0 || diverged) return `Updated from remote${note}`;
     return 'Up to date';
 }
 
