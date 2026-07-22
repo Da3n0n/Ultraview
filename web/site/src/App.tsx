@@ -3,8 +3,7 @@ import Hero from './components/Hero';
 import IDEsSection from './components/IDEsSection';
 import FeaturesSection from './components/FeaturesSection';
 import ToolsSection from './components/ToolsSection';
-import SyncSection from './components/SyncSection';
-import GitSection from './components/GitSection';
+import ProjectsSection from './components/ProjectsSection';
 import SecuritySection from './components/SecuritySection';
 import DocsSection from './components/DocsSection';
 import DownloadSection from './components/DownloadSection';
@@ -24,8 +23,7 @@ function App() {
                     <IDEsSection />
                     <FeaturesSection />
                     <ToolsSection />
-                    <SyncSection />
-                    <GitSection />
+                    <ProjectsSection />
                     <SecuritySection />
                     <DownloadSection />
                 </>

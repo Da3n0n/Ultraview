@@ -754,7 +754,7 @@ body::after {
 }
 
 .tools-section,
-.git-section,
+.projects-section,
 .download-section {
     position: relative;
     padding: 104px 0;
@@ -778,7 +778,7 @@ body::after {
 }
 
 [data-theme='light'] .tools-section,
-[data-theme='light'] .git-section,
+[data-theme='light'] .projects-section,
 [data-theme='light'] .download-section {
     background:
         radial-gradient(ellipse at 50% 0%, rgba(207, 63, 145, 0.07), transparent 44%),
@@ -790,11 +790,10 @@ body::after {
 }
 
 .features-section::before,
-.sync-section::before,
 .security-section::before,
 .docs-section::before,
 .tools-section::before,
-.git-section::before,
+.projects-section::before,
 .download-section::before {
     content: '';
     position: absolute;
@@ -809,11 +808,10 @@ body::after {
 }
 
 [data-theme='light'] .features-section::before,
-[data-theme='light'] .sync-section::before,
 [data-theme='light'] .security-section::before,
 [data-theme='light'] .docs-section::before,
 [data-theme='light'] .tools-section::before,
-[data-theme='light'] .git-section::before,
+[data-theme='light'] .projects-section::before,
 [data-theme='light'] .download-section::before {
     background:
         linear-gradient(135deg, transparent 0 52%, rgba(7, 9, 10, 0.025) 52% 52.22%, transparent 52.22%),
@@ -825,8 +823,7 @@ body::after {
 
 .features-section > .container,
 .tools-section > .container,
-.sync-section > .container,
-.git-section > .container,
+.projects-section > .container,
 .security-section > .container,
 .docs-section > .container,
 .download-section > .container {
@@ -1214,6 +1211,374 @@ body::after {
 .git-feature:hover {
     border-color: rgba(255, 94, 168, 0.35);
     transform: translateY(-4px);
+}
+
+.projects-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 22px;
+    margin-bottom: 56px;
+    align-items: stretch;
+}
+
+.projects-visual {
+    display: flex;
+    flex-direction: column;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 34%),
+        linear-gradient(180deg, rgba(18, 22, 25, 0.96), rgba(5, 7, 8, 0.97));
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+    transform: rotate(-0.5deg);
+}
+
+[data-theme='light'] .projects-visual {
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(238, 243, 244, 0.96));
+}
+
+.projects-list-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 360px;
+}
+
+.projects-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.projects-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.projects-actions span {
+    padding: 4px 9px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+}
+
+.project-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: rgba(9, 11, 13, 0.32);
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+[data-theme='light'] .project-row {
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.project-row:hover {
+    border-color: var(--border-hover);
+    background: rgba(84, 214, 187, 0.06);
+}
+
+.project-row-active {
+    border-color: rgba(84, 214, 187, 0.42);
+    background: rgba(84, 214, 187, 0.07);
+    box-shadow: 0 0 0 1px rgba(84, 214, 187, 0.18) inset;
+}
+
+.project-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.project-name {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 850;
+}
+
+.project-path {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tag {
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid transparent;
+}
+
+.tag-account {
+    background: rgba(122, 167, 255, 0.12);
+    color: #b9d0ff;
+    border-color: rgba(122, 167, 255, 0.34);
+}
+
+[data-theme='light'] .tag-account {
+    background: rgba(71, 126, 255, 0.1);
+    color: #23468f;
+    border-color: rgba(71, 126, 255, 0.3);
+}
+
+.tag-branch {
+    background: rgba(246, 167, 216, 0.12);
+    color: #ffd0e9;
+    border-color: rgba(246, 167, 216, 0.32);
+}
+
+[data-theme='light'] .tag-branch {
+    background: rgba(207, 63, 145, 0.1);
+    color: #96236d;
+    border-color: rgba(207, 63, 145, 0.3);
+}
+
+.tag-s3 {
+    background: rgba(121, 242, 208, 0.14);
+    color: #b9ffec;
+    border-color: rgba(121, 242, 208, 0.34);
+}
+
+[data-theme='light'] .tag-s3 {
+    background: rgba(0, 167, 127, 0.1);
+    color: #00624a;
+    border-color: rgba(0, 167, 127, 0.3);
+}
+
+.project-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.proj-action {
+    min-width: 38px;
+    padding: 5px 9px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.proj-action:hover {
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.git-accounts-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 24px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background:
+        linear-gradient(135deg, rgba(255, 94, 168, 0.06), rgba(122, 167, 255, 0.05) 50%, transparent 90%),
+        rgba(17, 22, 26, 0.78);
+    box-shadow: var(--shadow-md);
+}
+
+[data-theme='light'] .git-accounts-panel {
+    background:
+        linear-gradient(135deg, rgba(207, 63, 145, 0.06), rgba(71, 126, 255, 0.05) 50%, transparent 90%),
+        rgba(255, 255, 255, 0.85);
+}
+
+.git-accounts-head h3 {
+    font-size: 22px;
+    font-weight: 900;
+    margin: 12px 0 8px;
+    line-height: 1.18;
+}
+
+.git-accounts-head p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin: 0;
+}
+
+.badge-soft {
+    background: rgba(84, 214, 187, 0.1);
+    border-color: rgba(84, 214, 187, 0.32);
+    color: #91f2df;
+}
+
+[data-theme='light'] .badge-soft {
+    background: rgba(0, 167, 127, 0.1);
+    border-color: rgba(0, 167, 127, 0.3);
+    color: #00624a;
+}
+
+.git-account-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.git-account-row {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: rgba(9, 11, 13, 0.32);
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+[data-theme='light'] .git-account-row {
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.git-account-row:hover {
+    border-color: var(--border-hover);
+    background: rgba(122, 167, 255, 0.06);
+}
+
+.git-mark {
+    display: inline-flex;
+    width: 40px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 900;
+    border: 1px solid transparent;
+}
+
+.git-mark-gh {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.git-mark-gl {
+    background: rgba(246, 167, 216, 0.14);
+    color: #ffd5ec;
+    border-color: rgba(246, 167, 216, 0.34);
+}
+
+.git-mark-ad {
+    background: rgba(122, 167, 255, 0.14);
+    color: #bcd0ff;
+    border-color: rgba(122, 167, 255, 0.34);
+}
+
+[data-theme='light'] .git-mark-gh {
+    background: rgba(7, 9, 10, 0.08);
+    color: #07090a;
+    border-color: rgba(7, 9, 10, 0.18);
+}
+
+[data-theme='light'] .git-mark-gl {
+    background: rgba(207, 63, 145, 0.1);
+    color: #96236d;
+    border-color: rgba(207, 63, 145, 0.3);
+}
+
+[data-theme='light'] .git-mark-ad {
+    background: rgba(71, 126, 255, 0.1);
+    color: #23468f;
+    border-color: rgba(71, 126, 255, 0.3);
+}
+
+.git-account-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.git-account-name {
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 850;
+}
+
+.git-account-email {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.git-account-method {
+    padding: 4px 9px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.projects-feature-grids {
+    display: flex;
+    flex-direction: column;
+    gap: 42px;
+}
+
+.projects-feature-kicker {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 18px;
+}
+
+.projects-feature-kicker::before {
+    content: '';
+    width: 28px;
+    height: 1px;
+    background: var(--border-hover);
 }
 
 .security-card {
@@ -1636,7 +2001,8 @@ body::after {
 
 @media (max-width: 1024px) {
     .hero-container,
-    .sync-container {
+    .sync-container,
+    .projects-split {
         grid-template-columns: 1fr;
         text-align: center;
     }
@@ -1645,6 +2011,14 @@ body::after {
     .sync-content .section-subtitle {
         margin-left: auto;
         margin-right: auto;
+    }
+
+    .projects-visual {
+        transform: none;
+    }
+
+    .git-accounts-head {
+        text-align: left;
     }
 
     .hero-actions,
@@ -1668,6 +2042,15 @@ body::after {
     .tools-grid,
     .git-features {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .project-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .project-actions {
+        justify-content: flex-start;
     }
 }
 
@@ -1731,8 +2114,7 @@ body::after {
 
     .features-section,
     .tools-section,
-    .sync-section,
-    .git-section,
+    .projects-section,
     .security-section,
     .docs-section,
     .download-section {
@@ -1746,6 +2128,14 @@ body::after {
     .docs-layout,
     .docs-list {
         grid-template-columns: 1fr;
+    }
+
+    .git-account-row {
+        grid-template-columns: 44px 1fr;
+    }
+
+    .git-account-method {
+        grid-column: 1 / -1;
     }
 
     .docs-sidebar {

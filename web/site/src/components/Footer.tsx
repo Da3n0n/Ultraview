@@ -14,8 +14,7 @@ function Footer() {
                             <h4>Product</h4>
                             <a href="/#features">Features</a>
                             <a href="/#tools">Tools</a>
-                            <a href="/#sync">Cross-IDE Sync</a>
-                            <a href="/#git">Git Manager</a>
+                            <a href="/#projects">Projects &amp; Git</a>
                             <a href="/docs">Docs</a>
                         </div>
                         <div class="footer-column">

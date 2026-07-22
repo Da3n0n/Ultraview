@@ -49,11 +49,8 @@ function Navbar() {
                     <a href="/#tools" onClick={() => setIsOpen(false)}>
                         Tools
                     </a>
-                    <a href="/#sync" onClick={() => setIsOpen(false)}>
-                        Sync
-                    </a>
-                    <a href="/#git" onClick={() => setIsOpen(false)}>
-                        Git
+                    <a href="/#projects" onClick={() => setIsOpen(false)}>
+                        Projects
                     </a>
                     <a href="/docs" onClick={() => setIsOpen(false)}>
                         Docs

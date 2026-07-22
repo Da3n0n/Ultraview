@@ -3,13 +3,14 @@ function Hero() {
         <section class="hero">
             <div class="container hero-container">
                 <div class="hero-content">
-                    <div class="badge">Cross-IDE workspace control</div>
+                    <div class="badge">Viewers, editors, and project control — in the IDE</div>
                     <h1 class="hero-title">
                         <span class="gradient-text">Every IDE stays in rhythm.</span>
                     </h1>
                     <p class="hero-subtitle">
-                        Ultraview pulls databases, markdown, SVGs, Git accounts, ports, commands,
-                        and project context into one fast cockpit that follows you across editors.
+                        Modern viewers for everything in your workspace — databases, Markdown,
+                        SVGs, 3D models, drawings, Git accounts, and project context — open
+                        directly inside your IDE instead of another tab.
                     </p>
                     <div class="hero-actions">
                         <a href="#download" class="btn btn-primary btn-lg">
@@ -54,7 +55,7 @@ function Hero() {
                         </div>
                         <div class="card-body">
                             <div class="window-toolbar">
-                                <span>Git account: da3n0n/work</span>
+                                <span>Drawing: architecture.uvd</span>
                                 <span class="live-pill">Live</span>
                             </div>
                             <div class="graph-preview">

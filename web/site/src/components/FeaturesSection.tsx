@@ -4,7 +4,7 @@ function FeaturesSection() {
             icon: 'DB',
             title: 'Database Viewer',
             description:
-                'Open SQLite, DuckDB, Access, and SQL files with paginated tables, schema views, stats, and a real query editor.',
+                'Open SQLite, DuckDB, Access, and SQL files as a real viewer — paginated tables, schema views, stats, and a query editor built for the IDE.',
             list: [
                 'SQLite, DuckDB, Access, SQL dumps',
                 'Column types and table stats',
@@ -16,7 +16,7 @@ function FeaturesSection() {
             icon: 'MD',
             title: 'Markdown Studio',
             description:
-                'Write in Rich, Raw, or Split modes with Obsidian and GitHub styling ready inside the editor.',
+                'A modern Markdown viewer with Rich, Raw, and Split modes, Obsidian and GitHub styling, and a live formatting toolbar.',
             list: [
                 'Rich, Raw, and Split modes',
                 'Obsidian and GitHub looks',
@@ -25,22 +25,22 @@ function FeaturesSection() {
             ],
         },
         {
-            icon: 'VG',
-            title: 'SVG Workbench',
+            icon: 'DRAW',
+            title: 'Drawing Studio',
             description:
-                'Edit vector assets with live preview, pan and zoom, syntax-highlighted source, and element inspection.',
+                'A canvas-first drawing viewer with shapes, freehand, sticky notes, and export to PNG — sketches live next to your code.',
             list: [
-                'Pan and zoom canvas',
-                'Syntax-highlighted code',
-                'Element inspector',
-                'Live split editing',
+                'Canvas drawing with tldraw',
+                'Shapes, text, and freehand',
+                'Per-project or global boards',
+                'Export to PNG and SVG',
             ],
         },
         {
             icon: 'CG',
             title: 'Code Graph',
             description:
-                'Map imports, files, and markdown links into an interactive graph that makes your architecture visible.',
+                'A viewer for your architecture — imports, files, and Markdown links mapped into an interactive graph you can pan, zoom, and tune.',
             list: [
                 '20+ file types supported',
                 'Import and export relationships',
@@ -52,7 +52,7 @@ function FeaturesSection() {
             icon: 'RUN',
             title: 'Command Runner',
             description:
-                'Detect runnable commands across npm, yarn, pnpm, bun, just, task, and make in the right working directory.',
+                'A viewer for runnable work — npm, yarn, pnpm, bun, just, task, and make scripts appear with the right working directory.',
             list: [
                 'Auto-detects common runners',
                 'Monorepo aware',
@@ -64,7 +64,7 @@ function FeaturesSection() {
             icon: '3D',
             title: '3D Model Viewer',
             description:
-                'Inspect GLB, GLTF, FBX, OBJ, STL, USDZ, Blend, and more without leaving your IDE.',
+                'A modern 3D viewer inside the IDE — GLB, GLTF, FBX, OBJ, STL, USDZ, Blend, and more, with interactive pan, zoom, and lighting.',
             list: [
                 '15+ formats supported',
                 'Interactive pan and zoom',
@@ -78,13 +78,13 @@ function FeaturesSection() {
             <div class="container">
                 <div class="section-header">
                     <h2 class="section-title">
-                        Less tab-hopping.
+                        Modern viewers,
                         <br />
-                        More making.
+                        right inside the IDE.
                     </h2>
                     <p class="section-subtitle">
-                        The daily developer tools are packed into one deliberate interface, so the
-                        work stays close to the code.
+                        Every common file type in your workspace opens as a purpose-built viewer
+                        — not a plain text tab — so the work stays close to the code.
                     </p>
                 </div>
                 <div class="features-grid">
