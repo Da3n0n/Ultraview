@@ -14,6 +14,8 @@ import { getS3Credentials } from '../s3backup/s3BackupSettings';
 import { ProjectCommand, scanCommands } from '../commands/commandScanner';
 import { createCommandTerminal } from '../utils/commandTerminal';
 import { vendorRepositories } from '../git/vendorRepositories';
+import { assertGitHubBlobSizes } from '../git/gitBlobLimits';
+import { verifyProjectSync, assertNoImportedGitlinks } from '../git/syncVerification';
 
 interface GitStatus {
     isGitRepo: boolean;
@@ -237,9 +239,13 @@ function createGitRunner(
                 env[`GIT_CONFIG_VALUE_${configIndex}`] = `Authorization: Basic ${basic}`;
                 env.GIT_TERMINAL_PROMPT = '0';
             }
+            const args = parseGitArgs(cmd);
+            // Never inherit push.recurseSubmodules=on-demand/only from a repo
+            // or global config. Every push belongs to the selected project.
+            if (args[0] === 'push') args.splice(1, 0, '--recurse-submodules=no');
             childProcess.execFile(
                 'git',
-                parseGitArgs(cmd),
+                args,
                 { cwd: projectPath, env, timeout, maxBuffer: 10 * 1024 * 1024 },
                 (error, stdout, stderr) => {
                     const out = Buffer.isBuffer(stdout) ? stdout.toString('utf8') : (stdout ?? '');
@@ -833,8 +839,8 @@ async function getProjectLocalStatus(
         return {
             isGitRepo: true,
             localChanges: lines.slice(header ? 1 : 0).length,
-            ahead: prevStatus?.ahead ?? 0,
-            behind: prevStatus?.behind ?? 0,
+            ahead: Number(header.match(/\bahead (\d+)/)?.[1] ?? 0),
+            behind: Number(header.match(/\bbehind (\d+)/)?.[1] ?? 0),
             branch: branch || prevStatus?.branch || '',
         };
     } catch {
@@ -1136,6 +1142,8 @@ async function gitCommitLocal(projectPath: string, commitMsg?: string): Promise<
         return false;
     }
 
+    await assertGitHubBlobSizes(projectPath);
+
     // Write commit message to a temp file to avoid shell-escaping issues with
     // multi-line messages on Windows
     const tmpFile = writeCommitMsgFile(msg);
@@ -1391,93 +1399,7 @@ async function recoverFromWorkflowScope(
 }
 
 async function gitPush(projectPath: string, commitMsg?: string): Promise<string> {
-    const run = createGitRunner(projectPath);
-    const branch = await getCurrentBranch(projectPath);
-    await gitCommitLocal(projectPath, commitMsg);
-
-    // Try up to 4 times. Each iteration can either:
-    //   1. Succeed (push lands)
-    //   2. Hit a transient error → withTransientRetry retries with backoff
-    //   3. Hit "Repository moved" → we rewrite origin and the next loop iteration
-    //      uses the new URL automatically
-    //   4. Hit "workflow scope" → we strip .github/workflows and force-push
-    //   5. Anything else → propagate after exhausting redirects
-    let lastErr: any;
-    let workflowFilesExcluded = false;
-    let redirectedFrom: string | undefined;
-    let lfsLocksDisabledFor: string | undefined;
-    for (let attempt = 1; attempt <= 4; attempt++) {
-        try {
-            const { stdout, stderr } = await withTransientRetry(
-                () => run(`git push -u origin ${branch}`),
-                'push'
-            );
-            const base = trimGitOutput(stdout, stderr) || 'Push complete';
-            const parts: string[] = [];
-            if (redirectedFrom) parts.push(`remote was at ${redirectedFrom}, now using ${(await getRemoteUrl(projectPath)) ?? 'new URL'}`);
-            if (workflowFilesExcluded) parts.push('.github/workflows excluded from all history (token lacks workflow scope; re-authenticate to push them)');
-            if (lfsLocksDisabledFor) parts.push(`Git LFS lock verification disabled for ${lfsLocksDisabledFor}`);
-            return parts.length ? `${base} — ${parts.join(' | ')}` : base;
-        } catch (err: any) {
-            lastErr = err;
-            const errMsg = formatGitError(err);
-            const stderr = err?.stderr ?? '';
-            const stdout = err?.stdout ?? '';
-
-            // 1. Repository moved → update origin, retry on next iteration
-            const moved = parseMovedRepository(stderr) || parseMovedRepository(stdout);
-            if (moved) {
-                if (!redirectedFrom) {
-                    try {
-                        redirectedFrom = (await run('git remote get-url origin')).stdout.trim();
-                    } catch { /* ignore */ }
-                }
-                const newUrl = await rewriteOriginRemote(projectPath, moved, run);
-                console.log(`[Ultraview] origin redirected to ${newUrl}`);
-                continue;
-            }
-
-            // Git LFS can abort an otherwise valid push when its optional lock
-            // endpoint is unsupported or repeatedly fails at the HTTP/2 layer.
-            // Transient retries have already been exhausted by this point.
-            if (!lfsLocksDisabledFor && isLfsLockVerificationError(errMsg)) {
-                lfsLocksDisabledFor = await disableUnsupportedLfsLockVerification(run);
-                if (lfsLocksDisabledFor) continue;
-            }
-
-            // 2. Workflow scope → strip .github/workflows and force-push
-            if (/workflow/i.test(errMsg) && /scope/i.test(errMsg)) {
-                if (await recoverFromWorkflowScope(projectPath, run)) {
-                    workflowFilesExcluded = true;
-                    try {
-                        const { stdout, stderr } = await withTransientRetry(
-                            () => run(`git push --force-with-lease -u origin ${branch}`),
-                            'push-force'
-                        );
-                        const base = trimGitOutput(stdout, stderr) || 'Push complete';
-                        return `${base} — .github/workflows excluded from all history (token lacks workflow scope; re-authenticate to push them)`;
-                    } catch (retryErr: any) {
-                        // If the post-recovery push hits "moved" (e.g. a
-                        // redirect that we hadn't seen yet), loop back to
-                        // the top so the redirect handler can fix origin
-                        // first and then we push again.
-                        const rStderr = retryErr?.stderr ?? '';
-                        const rStdout = retryErr?.stdout ?? '';
-                        if (parseMovedRepository(rStderr) || parseMovedRepository(rStdout)) {
-                            lastErr = retryErr;
-                            continue;
-                        }
-                        throw retryErr;
-                    }
-                }
-            }
-
-            // 3. Any other error → bail out
-            throw new Error(errMsg);
-        }
-    }
-    // Should not reach here, but if we do, surface the last error
-    throw new Error(formatGitError(lastErr) || 'Push failed after retries');
+    return gitSyncAll(projectPath, commitMsg);
 }
 
 interface SyncResult {
@@ -1727,9 +1649,9 @@ async function gitSync(
 ): Promise<string> {
     // ── sanity checks ────────────────────────────────────────────────────────
     clearIndexLock(projectPath);
-    if (!(await isGitRepo(projectPath))) return 'Sync complete';
+    if (!(await isGitRepo(projectPath))) throw new Error('Sync requires a Git repository');
 
-    const run = createGitRunner(projectPath, 30000, auth);
+    const run = createGitRunner(projectPath, 120000, auth);
 
     // Self-heal repositories affected by the former filter-branch recovery
     // before status is counted or local changes are committed.
@@ -1743,6 +1665,8 @@ async function gitSync(
 
     // ── commit local changes ─────────────────────────────────────────────────
     const committed = await gitCommitLocal(projectPath, commitMsg);
+
+    await assertNoImportedGitlinks(run);
 
     // ── ensure a remote exists ───────────────────────────────────────────────
     const remoteExists = await hasRemote(projectPath);
@@ -1791,6 +1715,11 @@ async function gitSync(
     let lfsLocksDisabledFor: string | undefined;
     while (!pushDone && pushAttempts < 4) {
         pushAttempts++;
+        // A pull/merge (including a retry) may have introduced new gitlinks.
+        // Import those before publishing the parent commit as well.
+        await syncChangedSubmodules(projectPath, commitMsg, auth);
+        await gitCommitLocal(projectPath, commitMsg);
+        await assertNoImportedGitlinks(run);
         try {
             await withTransientRetry(
                 () => run(`git push -u origin ${branch}`),
@@ -1933,15 +1862,23 @@ async function gitSyncAll(
     remoteUrl?: string,
     auth?: GitAuthContext
 ): Promise<string> {
-    const submodules = await syncChangedSubmodules(projectPath, commitMsg, auth);
-    const result = await gitSync(projectPath, commitMsg, remoteUrl, auth);
-    const finalSubmoduleCount = await checkoutFinalSubmodulePointers(projectPath, auth);
-    const detailCount = submodules.notes.length;
-    if (!detailCount && !finalSubmoduleCount) return result;
-
-    const details = submodules.notes;
-    if (details.length) return `${result} | ${details.join(' | ')}`;
-    return `${result} | ${finalSubmoduleCount} submodule${finalSubmoduleCount === 1 ? '' : 's'} verified`;
+    const run = createGitRunner(projectPath, 120000, auth);
+    const notes: string[] = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const imported = await syncChangedSubmodules(projectPath, commitMsg, auth);
+        notes.push(...imported.notes);
+        await assertNoImportedGitlinks(run);
+        const result = await gitSync(projectPath, commitMsg, remoteUrl, auth);
+        // Preserve recovery notices (for example excluded workflow files)
+        // even when another reconciliation pass is needed.
+        notes.push(result);
+        if (await verifyProjectSync(run)) {
+            return ['Synced and verified with remote', ...new Set(notes)].join(' | ');
+        }
+        // Another machine pushed or local files changed during the operation.
+        // Reconcile again; never replace a real ahead/behind count with zero.
+    }
+    throw new Error('The project kept changing during Sync. Local work is preserved; remote equality could not yet be verified.');
 }
 
 export class GitProvider implements vscode.WebviewViewProvider {
@@ -2914,14 +2851,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
         const hasBackupBucket = await this._hasBackupBucket();
         const project = projects.find((p) => p.id === projectId);
         if (!project) return;
-        const previousStatus = assumeSynced
-            ? { ...this._cachedGitStatuses[project.id], ahead: 0, behind: 0 } as GitStatus
-            : this._cachedGitStatuses[project.id];
+        const previousStatus = this._cachedGitStatuses[project.id];
         const localStatus = await getProjectLocalStatus(project.path, previousStatus);
-        if (assumeSynced) {
-            localStatus.ahead = 0;
-            localStatus.behind = 0;
-        }
         if (refreshSeq !== this._statusRefreshSeq || !this.view) return;
         this._cachedGitStatuses = { ...this._cachedGitStatuses, [project.id]: localStatus };
         this.view.webview.postMessage({
@@ -3405,11 +3336,8 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     const project = projects.find((candidate) => candidate.id === localOnlyProjectId);
                     if (!project) return;
                     const status = await getProjectLocalStatus(project.path);
-                    if (assumeSynced) {
-                        status.ahead = 0;
-                        status.behind = 0;
-                    }
                     if (refreshSeq !== panelStatusRefreshSeq) return;
+                    panelCachedStatuses[project.id] = status;
                     panel.webview.postMessage({
                         ...buildMsg({ [project.id]: status }),
                         onlyProjectId: project.id,

@@ -66,6 +66,16 @@ function commit(directory) { git(directory, 'add', '-A'); git(directory, 'commit
     git(temp, 'clone', root, clone);
     assert.equal(fs.readFileSync(path.join(clone, 'vendor/video space/code.txt'), 'utf8'), 'local edits');
     assert.equal(fs.readFileSync(path.join(clone, 'vendor/video space/nested/nested.txt'), 'utf8'), 'nested content');
+    git(root, '-c', 'protocol.file.allow=always', 'submodule', 'add', source, 'build/dependency');
+    commit(root);
+    const unborn = path.join(root, 'imports/unborn');
+    init(unborn);
+    fs.writeFileSync(path.join(unborn, 'new-source.txt'), 'not committed upstream');
+    const more = await vendorRepositories(root);
+    assert.ok(more.includes('build/dependency'));
+    assert.ok(more.includes('imports/unborn'));
+    assert.ok(!git(root, 'ls-files', '--stage').includes('160000 '));
+    assert.ok(git(root, 'ls-files').includes('imports/unborn/new-source.txt'));
     console.log('Vendor import integration passed: edits, nested repositories, ignored files, metadata backup, repeat sync, clean clone');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
     // This exact temporary directory was created above, outside user projects.

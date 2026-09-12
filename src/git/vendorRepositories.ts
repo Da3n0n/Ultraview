@@ -14,8 +14,11 @@ export async function vendorRepositories(projectPath: string): Promise<string[]>
     const roots: string[] = [];
     const excluded = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__', '.gitnexus', 'dist', 'build', '.next', '.cache', '.hutch', '.cottontail-tmp', 'checkpoints', 'artifacts']);
     const scan = async (directory: string): Promise<void> => {
+        const resolved = await fs.realpath(directory);
+        const relative = path.relative(root, resolved);
+        if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Imported repository resolves outside the project');
         const entries = await fs.readdir(directory, { withFileTypes: true });
-        if (directory !== root && entries.some(entry => entry.name === '.git')) roots.push(directory);
+        if (directory !== root && entries.some(entry => entry.name === '.git') && !roots.includes(directory)) roots.push(directory);
         for (const entry of entries) {
             if (entry.isDirectory() && !entry.isSymbolicLink() && !excluded.has(entry.name)) {
                 await scan(path.join(directory, entry.name));
@@ -31,6 +34,14 @@ export async function vendorRepositories(projectPath: string): Promise<string[]>
         const directory = path.join(root, name);
         const stat = await fs.lstat(directory).catch(() => undefined);
         if (stat?.isDirectory() && !stat.isSymbolicLink()) await scan(directory);
+    }
+    // Declared dependencies are source even under a normally skipped directory.
+    // Never leave a tracked gitlink merely because its folder is called build/.
+    const index = await git(root, ['ls-files', '--stage', '-z']);
+    for (const entry of index.split('\0').filter(item => item.startsWith('160000 '))) {
+        const directory = path.resolve(root, entry.slice(entry.indexOf('\t') + 1));
+        if (!directory.startsWith(root + path.sep)) throw new Error('Submodule escapes project');
+        if (!roots.includes(directory)) await scan(directory);
     }
     if (!roots.length) return [];
     const manifestPath = path.join(root, '.ultraview-vendors.json');
@@ -50,7 +61,8 @@ export async function vendorRepositories(projectPath: string): Promise<string[]>
         const localPath = path.relative(parent, directory).replace(/\\/g, '/');
         const unresolved = await git(directory, ['ls-files', '-u']);
         if (unresolved.trim()) throw new Error(`Resolve conflicts in ${relative} before importing it`);
-        const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+        // A newly imported checkout can have source files but no first commit.
+        const head = (await git(directory, ['rev-parse', '--verify', 'HEAD']).catch(() => '')).trim();
         const upstream = (await git(directory, ['remote', 'get-url', 'origin']).catch(() => '')).trim()
             .replace(/(https?:\/\/)[^/@]+@/i, '$1');
         let upstreamRef = (await git(directory, ['symbolic-ref', 'refs/remotes/origin/HEAD']).catch(() => '')).trim();
