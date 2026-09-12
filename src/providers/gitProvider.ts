@@ -13,6 +13,7 @@ import { SharedStore } from '../sync/sharedStore';
 import { getS3Credentials } from '../s3backup/s3BackupSettings';
 import { ProjectCommand, scanCommands } from '../commands/commandScanner';
 import { createCommandTerminal } from '../utils/commandTerminal';
+import { vendorRepositories } from '../git/vendorRepositories';
 
 interface GitStatus {
     isGitRepo: boolean;
@@ -1895,47 +1896,9 @@ async function syncChangedSubmodules(
     commitMsg?: string,
     auth?: GitAuthContext
 ): Promise<{ paths: string[]; notes: string[] }> {
-    const entries = await initialiseMissingSubmodules(projectPath, auth);
-    const allPaths = entries.map((entry) => entry.absolutePath);
-    const notes: string[] = [];
-
-    // Deepest first is essential: a nested child's new commit becomes a dirty
-    // gitlink in its parent, which is then committed/pushed before the root repo
-    // records the parent's final pointer.
-    for (const submodulePath of [...allPaths].sort((left, right) => pathDepth(right) - pathDepth(left))) {
-        const relativeToRoot = path.relative(projectPath, submodulePath).replace(/\\/g, '/');
-        const { parentPath, relativePath } = findImmediateSubmoduleParent(
-            projectPath,
-            submodulePath,
-            allPaths
-        );
-
-        try {
-            const dirty = await isWorkingTreeDirty(submodulePath);
-            const head = await getHeadCommit(submodulePath);
-            const recorded = await getRecordedGitlink(parentPath, relativePath);
-            const pointerChanged = !!recorded && head !== recorded;
-            if (!dirty && !pointerChanged) continue;
-
-            // A clean detached checkout that points at a commit already present
-            // on a remote only needs its gitlink saved by the parent. Do not
-            // invent a branch or advance it to remote main.
-            if (!dirty && pointerChanged && await isHeadPublished(submodulePath, auth)) {
-                notes.push(`${relativeToRoot}: recorded existing commit ${head.slice(0, 8)}`);
-                continue;
-            }
-
-            await ensureSubmoduleHasBranch(submodulePath);
-            const result = await gitSync(submodulePath, commitMsg, undefined, auth);
-            notes.push(`${relativeToRoot}: ${result}`);
-        } catch (err: any) {
-            const detail = err?.code === 'NO_REMOTE'
-                ? 'it has local changes but no writable origin remote'
-                : formatGitError(err);
-            throw new Error(`Submodule "${relativeToRoot}" could not sync: ${detail}`);
-        }
-    }
-    return { paths: allPaths, notes };
+    await initialiseMissingSubmodules(projectPath, auth);
+    const paths = await vendorRepositories(projectPath);
+    return { paths, notes: paths.map(relative => relative + ': imported into project') };
 }
 
 async function checkoutFinalSubmodulePointers(
@@ -1961,9 +1924,8 @@ async function checkoutFinalSubmodulePointers(
 }
 
 /**
- * One-button transaction for a root repository and its declared submodules.
- * Independent repositories nested inside the project are intentionally ignored:
- * they may be vendored third-party checkouts with unrelated, read-only remotes.
+ * Import nested repositories, then sync only the owning project remote.
+ * Original Git metadata is retained locally outside the worktree for recovery.
  */
 async function gitSyncAll(
     projectPath: string,
