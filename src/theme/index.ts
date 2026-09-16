@@ -294,6 +294,9 @@ function applyTransparentPatch(
   validateOriginalSnapshot(original);
   if (!savedOriginal || !currentIsPatched) {
     saveInstallBackup(context, paths, original);
+    // Keep a pre-enable copy of product.json in sync with the file backup
+    // (same fresh-enable condition) for manual recovery. Never throws.
+    backupProductJsonBestEffort(context);
   }
 
   const patched: InstallSnapshot = {
@@ -316,6 +319,10 @@ function applyTransparentPatch(
 
   validatePatchedSnapshot(patched, effect);
   writeInstallSnapshot(paths, patched, current);
+  // Best-effort: update product.json checksums to the patched files so the
+  // IDE integrity check passes and the "installation appears to be corrupt"
+  // warning stays silent. Never throws; transparency works regardless.
+  syncProductChecksumsBestEffort(paths);
 }
 
 function restoreTransparentPatch(
@@ -335,6 +342,9 @@ function restoreTransparentPatch(
   }
   validateOriginalSnapshot(original);
   writeInstallSnapshot(paths, original, current);
+  // Best-effort: re-sync checksums to the restored originals so the
+  // integrity check passes after disabling too. Never throws.
+  syncProductChecksumsBestEffort(paths);
   return true;
 }
 
@@ -426,6 +436,81 @@ function getBackupDirectory(context: vscode.ExtensionContext): string {
     .digest('hex')
     .slice(0, 20);
   return path.join(context.globalStorageUri.fsPath, BACKUP_FOLDER, installId);
+}
+
+const PRODUCT_JSON_NAME = 'product.json';
+const PRODUCT_BACKUP_NAME = 'product.json.original';
+
+function getProductJsonPath(): string {
+  return path.join(vscode.env.appRoot, PRODUCT_JSON_NAME);
+}
+
+function toChecksumKey(absolutePath: string): string | undefined {
+  // product.json checksum keys are relative to the `out/` build directory
+  // (e.g. `vs/code/electron-browser/workbench/workbench.html`), not to the
+  // app root, so try `out/` first and fall back to the app root itself.
+  for (const base of [path.join(vscode.env.appRoot, 'out'), vscode.env.appRoot]) {
+    const relative = path.relative(base, absolutePath);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      continue;
+    }
+    return relative.split(path.sep).join('/');
+  }
+  return undefined;
+}
+
+function computeChecksumBase64NoPad(content: Buffer): string {
+  // Same scheme as VS Code's product.json checksums (md5, base64, no padding).
+  return crypto.createHash('md5').update(content).digest('base64').replace(/=+$/, '');
+}
+
+function backupProductJsonBestEffort(context: vscode.ExtensionContext): void {
+  try {
+    const productPath = getProductJsonPath();
+    if (!fs.existsSync(productPath)) {
+      return;
+    }
+    const backupDir = getBackupDirectory(context);
+    fs.mkdirSync(backupDir, { recursive: true });
+    fs.copyFileSync(productPath, path.join(backupDir, PRODUCT_BACKUP_NAME));
+  } catch {
+    // Best-effort only: transparency must keep working even if the backup fails.
+  }
+}
+
+function syncProductChecksumsBestEffort(paths: InstallPaths): void {
+  try {
+    const productPath = getProductJsonPath();
+    if (!fs.existsSync(productPath)) {
+      return;
+    }
+    const product = JSON.parse(fs.readFileSync(productPath, 'utf8')) as {
+      checksums?: Record<string, string>;
+    };
+    if (!product || typeof product !== 'object' || !product.checksums || typeof product.checksums !== 'object') {
+      return; // Forks/builds without a checksum manifest: nothing to silence.
+    }
+    // Only touch our own patched files; never mask corruption elsewhere.
+    const files: string[] = [paths.mainJs, paths.workbenchHtml, paths.workbenchJs];
+    let changed = false;
+    for (const file of files) {
+      const key = toChecksumKey(file);
+      if (!key || !(key in product.checksums) || !fs.existsSync(file)) {
+        continue;
+      }
+      const checksum = computeChecksumBase64NoPad(fs.readFileSync(file));
+      if (product.checksums[key] !== checksum) {
+        product.checksums[key] = checksum;
+        changed = true;
+      }
+    }
+    if (changed) {
+      fs.writeFileSync(productPath, JSON.stringify(product, null, '\t'), 'utf8');
+    }
+  } catch {
+    // Best-effort only: a failed checksum sync must never break transparency.
+    // The IDE will simply show its standard warning until the next enable.
+  }
 }
 
 function saveInstallBackup(
