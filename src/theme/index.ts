@@ -460,8 +460,10 @@ function toChecksumKey(absolutePath: string): string | undefined {
 }
 
 function computeChecksumBase64NoPad(content: Buffer): string {
-  // Same scheme as VS Code's product.json checksums (md5, base64, no padding).
-  return crypto.createHash('md5').update(content).digest('base64').replace(/=+$/, '');
+  // Same scheme as the IDE integrity check (SHA-256, base64, no padding —
+  // VS Code switched from MD5 in early 2024). MD5 values can never match,
+  // so writing them makes the warning permanent instead of silencing it.
+  return crypto.createHash('sha256').update(content).digest('base64').replace(/=+$/, '');
 }
 
 function backupProductJsonBestEffort(context: vscode.ExtensionContext): void {
