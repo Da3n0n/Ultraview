@@ -17,12 +17,34 @@ type Release = {
 
 const releases: Release[] = [
     {
+        id: 'release-0-2-457',
+        version: 'v0.2.457',
+        date: 'September 16, 2026',
+        title: 'Silence for transparency',
+        blurb: 'Transparent mode stops tripping the corrupt-install warning, and sync learns to swallow nested repos and oversized files gracefully.',
+        latest: true,
+        groups: [
+            {
+                label: 'New',
+                items: [
+                    'Nested repositories fold into sync — submodule-style checkouts become ordinary tracked files, and their history is never pushed or rewritten.',
+                    'Push guards — commits stop before GitHub would reject an oversized file, and sync verifies itself against a fresh remote read.',
+                ],
+            },
+            {
+                label: 'Fixed',
+                items: [
+                    'No more “installation appears to be corrupt” with transparent mode — checksums now sync in the integrity checker’s own scheme on every enable and disable.',
+                ],
+            },
+        ],
+    },
+    {
         id: 'release-0-2-453',
         version: 'v0.2.453',
         date: 'September 8, 2026',
         title: 'Code intelligence arrives',
         blurb: 'Ultraview grows a brain: index any workspace and explore it as a living map, plus faster scans and self-healing Git.',
-        latest: true,
         groups: [
             {
                 label: 'New',

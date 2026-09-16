@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.457] - 2026-09-16
+
+### Added
+- **Nested repositories fold into sync safely** — Submodule-style nested checkouts are imported as ordinary tracked files through a `.ultraview-vendors.json` manifest (`src/git/vendorRepositories.ts`). Their history is never pushed or rewritten, and every import path is escape-guarded so a nested repo can never pull files outside the project.
+- **Push guards before anything leaves the machine** — Commits stop early when staged files break GitHub's 100 MiB blob limit (`src/git/gitBlobLimits.ts`, LFS pointers stay valid, files remain on disk, no commit created), and sync proves itself against a fresh remote read instead of cached tracking refs (`verifyProjectSync`), refusing to publish gitlinks that still point at separate vendor repositories.
+- **Bundled GitNexus runtime refreshed** — The vendored GitNexus engine, skills, and agents were re-synced from upstream.
+
 ### Fixed
+- **Transparent mode no longer trips “installation appears to be corrupt”** — Enabling or disabling transparency now re-syncs `product.json` checksums for exactly the files Ultraview patches, using the integrity checker's own scheme (SHA-256, base64, no padding — VS Code moved off MD5 in early 2024, so MD5 values could never match). Only existing checksum keys are updated, unrelated entries are never touched, and the whole step is best-effort: if the manifest can't be written, transparency still applies and the IDE simply shows its standard warning.
 - **Transparent Dark theme alignment** — Rebuilt the dark theme on top of the regular transparent theme's complete component palette, then applies one uniform darker workbench tint. Editors, sidebars, panels, custom Ultraview views, text, selections, and controls now share the same visual system instead of every color being flattened to `#0000003e`.
 - **Project Manager glass-card banding** — Account and project cards now use a single clipped translucent surface instead of a low-alpha gradient, preserving their rounded glass appearance without visible gradient bands.
 - **VS Code 1.134 late opaque repaint** — Keeps the new full-window `.monaco-grid-view`, `--modern-ui-shell-background`, and late Monaco editor canvas transparent after the workbench finishes loading. This preserves the Windhawk blur visible during startup instead of covering it one second later.
