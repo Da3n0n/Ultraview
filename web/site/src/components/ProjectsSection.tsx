@@ -99,7 +99,7 @@ function ProjectsSection() {
                         <div class="card-header">
                             <span class="dot red"></span>
                             <span class="dot yellow"></span>
-                            <span class="dot green"></span>
+                            <span class="dot violet"></span>
                             <span class="card-title">Ultraview / projects</span>
                         </div>
                         <div class="card-body projects-list-body">

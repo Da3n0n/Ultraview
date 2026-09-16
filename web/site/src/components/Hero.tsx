@@ -50,7 +50,7 @@ function Hero() {
                         <div class="card-header">
                             <span class="dot red"></span>
                             <span class="dot yellow"></span>
-                            <span class="dot green"></span>
+                            <span class="dot violet"></span>
                             <span class="card-title">Ultraview / workspace pulse</span>
                         </div>
                         <div class="card-body">
