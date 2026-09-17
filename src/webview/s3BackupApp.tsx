@@ -183,7 +183,8 @@ function App() {
         .button.primary { background:rgba(110,231,183,.14); border-color:rgba(110,231,183,.32); color:#6ee7b7; }
         .button:hover:not(:disabled), .mini-button:hover:not(:disabled) { transform:translateY(-1px); background:color-mix(in srgb, var(--surface2) 70%, white 6%); border-color:color-mix(in srgb, var(--border) 55%, var(--accent)); }
         .button:disabled, .mini-button:disabled { opacity:.45; cursor:default; transform:none; }
-        .card { display:grid; gap:8px; padding:12px; border-radius:14px; border:1px solid var(--border); background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015)); box-shadow:inset 0 1px 0 rgba(255,255,255,.03); transition:transform .16s ease,border-color .16s ease; }
+        .card { display:grid; gap:8px; padding:12px; border-radius:14px; border:1px solid var(--border); background:rgba(255,255,255,.025); isolation:isolate; contain:paint; box-shadow:inset 0 1px 0 rgba(255,255,255,.03); transition:transform .16s ease,border-color .16s ease,background .16s ease; }
+        .card:hover { transform:translateY(-1px); border-color:color-mix(in srgb,var(--border) 50%,var(--accent)); background:rgba(255,255,255,.04); }
         .card:hover { transform:translateY(-1px); border-color:color-mix(in srgb,var(--border) 50%,var(--accent)); }
         .project-main { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
         .project-meta { min-width:0; display:grid; gap:3px; }

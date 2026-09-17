@@ -21,8 +21,8 @@ export function buildDokployHtml(isPanel: boolean): string {
     --surface: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 92%, transparent);
     --surface-2: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 78%, var(--vscode-list-hoverBackground, rgba(255,255,255,.05)));
     --surface-3: var(--vscode-list-hoverBackground, rgba(255,255,255,.05));
-    --surface-card: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
-    --surface-card-hover: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
+    --surface-card: rgba(255,255,255,.025);
+    --surface-card-hover: rgba(255,255,255,.04);
     --border: var(--vscode-panel-border, rgba(128,128,128,.22));
     --text: var(--vscode-editor-foreground);
     --muted: var(--vscode-descriptionForeground);
@@ -92,6 +92,7 @@ export function buildDokployHtml(isPanel: boolean): string {
     border: 1px solid var(--border);
     border-radius: 14px;
     background: var(--surface-card);
+    isolation:isolate; contain:paint;
     box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 10px 28px rgba(0,0,0,.14);
   }
   .empty {

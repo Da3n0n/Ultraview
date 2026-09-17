@@ -153,22 +153,22 @@ function App() {
         .port-card {
           display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center;
           padding:12px; border-radius:14px; border:1px solid var(--border);
-          background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+          background:rgba(255,255,255,.025); isolation:isolate; contain:paint;
           box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
           transition: transform .16s ease, border-color .16s ease, background .16s ease;
         }
         .port-card:hover {
           transform: translateY(-1px);
           border-color: color-mix(in srgb, var(--border) 50%, var(--accent));
-          background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
+          background:rgba(255,255,255,.04);
         }
         .port-card.dev {
           border-color: rgba(74,222,128,.2);
-          background: linear-gradient(180deg, rgba(74,222,128,.08), rgba(74,222,128,.03));
+          background: rgba(74,222,128,.055); isolation:isolate; contain:paint;
         }
         .port-card.dev:hover {
           border-color: rgba(74,222,128,.4);
-          background: linear-gradient(180deg, rgba(74,222,128,.1), rgba(74,222,128,.05));
+          background: rgba(74,222,128,.075);
         }
         .port-badge {
           min-width: 52px;

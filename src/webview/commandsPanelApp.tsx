@@ -247,10 +247,11 @@ function App() {
         }
         .project-card {
           display:flex; flex-direction:column; gap:4px; padding:8px 10px; border-radius:12px; border:1px solid var(--border);
-          background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+          background:rgba(255,255,255,.025); isolation:isolate; contain:paint;
           box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
           transition: transform .16s ease, border-color .16s ease, background .16s ease;
         }
+        .project-card:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--border) 50%, var(--accent)); background:rgba(255,255,255,.04); }
         .project-card:not(.expanded) .command-meta {
           display: none;
         }
