@@ -17,12 +17,27 @@ type Release = {
 
 const releases: Release[] = [
     {
+        id: 'release-0-2-458',
+        version: 'v0.2.458',
+        date: 'September 17, 2026',
+        title: 'Banding-free everywhere',
+        blurb: 'The Project Manager background fix rolls out to every panel — commands, ports, buckets, backups, and Dokploy all lose the stripes.',
+        latest: true,
+        groups: [
+            {
+                label: 'Fixed',
+                items: [
+                    'Command sections and all remaining card panels now use the same flat translucent surface as the Project Manager — no gradient banding on any section background. Visual-only, nothing functional changed.',
+                ],
+            },
+        ],
+    },
+    {
         id: 'release-0-2-457',
         version: 'v0.2.457',
         date: 'September 16, 2026',
         title: 'Silence for transparency',
         blurb: 'Transparent mode stops tripping the corrupt-install warning, and sync learns to swallow nested repos and oversized files gracefully.',
-        latest: true,
         groups: [
             {
                 label: 'New',

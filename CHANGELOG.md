@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.458] - 2026-09-17
+
+### Fixed
+- **Command sections and remaining panels match the Project Manager's band-free background** — The gradient-banding fix from the Git account/project cards is now aligned to every other card surface: Commands project sections, Ports cards (including dev-tinted variants), Bucket Manager cards, S3 Backup cards, and Dokploy profile cards. Each uses the same single clipped translucent surface (`rgba(255,255,255,.025)` with `isolation:isolate; contain:paint`) and flat hover state instead of a low-alpha gradient, so no banding appears on any section background. Visual-only fix, nothing functional changed.
+
 ## [0.2.457] - 2026-09-16
 
 ### Added
