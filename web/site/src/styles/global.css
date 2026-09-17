@@ -346,8 +346,17 @@ body::after {
 
 .btn-primary {
     background: linear-gradient(135deg, #ffffff, #d3c2ff 58%, #bed2ff);
-    color: #020405;
+    color: #000;
     box-shadow: 0 12px 34px rgba(255, 255, 255, 0.18), 0 0 42px rgba(139, 92, 246, 0.12);
+}
+
+.btn-primary:visited,
+.btn-primary:hover,
+.btn-primary:active,
+[data-theme='light'] .btn-primary,
+[data-theme='light'] .btn-primary:visited,
+[data-theme='light'] .btn-primary:hover {
+    color: #000;
 }
 
 .btn-primary:hover {
