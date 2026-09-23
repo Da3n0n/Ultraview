@@ -268,7 +268,8 @@ function trimGitOutput(stdout?: string, stderr?: string): string {
 }
 
 function formatGitError(err: any): string {
-    return err?.stderr?.trim() || err?.stdout?.trim() || err?.message || 'Git command failed';
+    const message = err?.stderr?.trim() || err?.stdout?.trim() || err?.message || 'Git command failed';
+    return message.replace(/(https?:\/\/)[^\s/@]+@/gi, '$1[redacted]@');
 }
 
 function strategyLabel(strategy: GitConflictStrategy): 'local' | 'remote' {
@@ -637,7 +638,7 @@ async function mergeRemoteBranch(
     alreadyFetched = false,
     auth?: GitAuthContext
 ): Promise<string[]> {
-    const run = createGitRunner(projectPath, 30000, auth);
+    const run = createGitRunner(projectPath, 120000, auth);
     const notes: string[] = [];
 
     // Fetch with auto-redirect on "Repository moved" (up to 3 attempts).
@@ -1074,6 +1075,10 @@ async function gitPull(projectPath: string): Promise<string> {
     const branch = await getCurrentBranch(projectPath);
 
     try {
+        const direction = await getSyncDirection(projectPath);
+        if (direction.behind >= 50) {
+            throw new Error('The local and remote histories may have been rewritten. Use Sync to choose how to reconcile them.');
+        }
         const committed = await gitCommitLocal(projectPath);
         if (committed) {
             notes.push('committed local changes before pull');
@@ -1411,18 +1416,20 @@ async function getSyncDirection(
     projectPath: string,
     auth?: GitAuthContext
 ): Promise<{ ahead: number; behind: number; diverged: boolean }> {
-    const run = createGitRunner(projectPath, 10000, auth);
+    const run = createGitRunner(projectPath, 120000, auth);
 
     // Fetch with auto-redirect on "Repository moved" so a stale local origin
     // never blocks the status check (and so the badge reflects the real
     // remote state, not whatever the local ref cache remembers).
+    let fetched = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             await withTransientRetry(
                 () => run('git fetch --quiet --prune --tags origin'),
                 'fetch',
-                2
+                3
             );
+            fetched = true;
             break;
         } catch (fetchErr: any) {
             const stderr = fetchErr?.stderr ?? '';
@@ -1432,11 +1439,12 @@ async function getSyncDirection(
                 await rewriteOriginRemote(projectPath, moved, run);
                 continue;
             }
-            // Soft-fail: keep going with whatever refs we already have so a
-            // temporary outage doesn't blank the badge.
-            break;
+            // Sync must use a fresh remote ref. A stale ref can make a
+            // rewritten branch look like hundreds of unrelated commits.
+            throw new Error(`Could not fetch the remote branch: ${formatGitError(fetchErr)}`);
         }
     }
+    if (!fetched) throw new Error('Could not fetch the remote after following its redirect');
 
     try {
         const { stdout } = await run('git rev-list --left-right --count HEAD...@{upstream}');
@@ -1685,15 +1693,39 @@ async function gitSync(
     let behind = 0;
     let diverged = false;
     let workflowFilesExcluded = false;
-    try {
-        const dir = await getSyncDirection(projectPath, auth);
-        ahead = dir.ahead;
-        behind = dir.behind;
-        diverged = dir.diverged;
-    } catch {
-        // getSyncDirection already swallows most errors; if it still throws
-        // (e.g. no remote branch yet after adding a fresh remote) carry on
-        // — we'll just push below.
+    const dir = await getSyncDirection(projectPath, auth);
+    ahead = dir.ahead;
+    behind = dir.behind;
+    diverged = dir.diverged;
+
+    // A history cleanup changes every commit ID after the rewrite point.
+    // Merging in this case would bring the old history back, undoing the
+    // cleanup. Ask before replacing remote history, and retain its former tip
+    // locally so the user can recover it without leaving old commits online.
+    if (behind >= 50) {
+        const choice = await vscode.window.showWarningMessage(
+            `The ${branch} branch has ${ahead} local-only and ${behind} remote-only commits. ` +
+            'A large remote count can follow a history rewrite or an old-history merge. How should Sync reconcile them?',
+            { modal: true, detail: 'Replace remote history keeps the local files and rewritten commits. Merge histories keeps the remote commits and may restore history you removed.' },
+            'Replace remote history',
+            'Merge histories'
+        );
+        if (choice === 'Replace remote history') {
+            const remoteHead = (await run(`git rev-parse origin/${branch}`)).stdout.trim();
+            if (!/^[a-f0-9]{40,64}$/.test(remoteHead)) {
+                throw new Error('Could not verify the remote tip before replacing its history');
+            }
+            const backup = `refs/ultraview/sync-backups/${branch}-${Date.now()}`;
+            await run(`git update-ref ${backup} ${remoteHead}`);
+            await withTransientRetry(
+                () => run(`git push --force-with-lease=refs/heads/${branch}:${remoteHead} -u origin ${branch}`),
+                'sync-rewritten-history'
+            );
+            return `Rewritten history published (previous remote tip saved locally at ${backup})`;
+        }
+        if (choice !== 'Merge histories') {
+            throw new Error('Sync cancelled; the local and remote histories were left intact');
+        }
     }
 
     // ── merge remote changes if needed ──────────────────────────────────────

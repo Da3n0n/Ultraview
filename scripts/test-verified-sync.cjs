@@ -16,7 +16,7 @@ const { vendorRepositories } = load('src/git/vendorRepositories.ts');
 const { verifyProjectSync, assertNoImportedGitlinks } = load('src/git/syncVerification.ts');
 const source = fs.readFileSync('src/providers/gitProvider.ts', 'utf8');
 const parsed = ts.createSourceFile('provider.ts', source, ts.ScriptTarget.Latest, true);
-const names = ['parseGitArgs', 'createGitRunner', 'getProjectLocalStatus', 'gitSync', 'gitSyncAll', 'gitPush'];
+const names = ['parseGitArgs', 'createGitRunner', 'getProjectLocalStatus', 'gitPull', 'gitSync', 'gitSyncAll', 'gitPush'];
 const code = parsed.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text)).map(n => n.getText(parsed)).join('\n');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-verified-sync-'));
 const git = (cwd, ...args) => cp.execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -32,7 +32,7 @@ const context = {
     } },
     clearIndexLock() {}, isGitRepo: async () => true, removeLegacyRewriteArtifacts: async () => {},
     resolveOrAttachHead: async dir => git(dir, 'branch', '--show-current'),
-    recoverInterruptedGitState: async () => {}, hasRemote: async () => true,
+    recoverInterruptedGitState: async () => [], getCurrentBranch: async () => 'main', hasRemote: async () => true,
     gitCommitLocal: async dir => { if (!git(dir, 'status', '--porcelain')) return false; commit(dir); return true; },
     getSyncDirection: async dir => {
         git(dir, 'fetch', '--quiet', 'origin');
@@ -44,6 +44,7 @@ const context = {
     withTransientRetry: fn => fn(), formatGitError: e => e.stderr || e.message,
     parseMovedRepository: () => undefined, isLfsLockVerificationError: () => false,
     assertNoImportedGitlinks, verifyProjectSync,
+    vscode: { window: { showWarningMessage: async () => 'Replace remote history' } },
 };
 vm.createContext(context);
 vm.runInContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
@@ -85,6 +86,27 @@ vm.runInContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptT
     };
     await context.gitSyncAll(root); assert.equal(checks, 2);
     assert.equal(git(root, 'rev-parse', 'HEAD'), git(remote, 'rev-parse', 'main'));
+    // A rewritten history must not be merged back in by Pull. Sync can
+    // publish the rewritten branch only with a lease and a local backup ref.
+    const regularDirection = context.getSyncDirection;
+    fs.writeFileSync(path.join(root, 'rewritten.txt'), 'local rewrite'); commit(root);
+    git(peer, 'pull', '--ff-only');
+    fs.writeFileSync(path.join(peer, 'old-history.txt'), 'remote history'); commit(peer); git(peer, 'push');
+    const remoteBeforeRewrite = git(remote, 'rev-parse', 'main');
+    context.getSyncDirection = async dir => {
+        git(dir, 'fetch', '--quiet', 'origin');
+        // The old-history merge may make the rewritten local branch appear
+        // merely behind even though publishing it still requires a lease.
+        return { ahead: 0, behind: 60, diverged: false };
+    };
+    await assert.rejects(context.gitPull(root), /Use Sync/);
+    context.verifyProjectSync = verifyProjectSync;
+    assert.match(await context.gitSyncAll(root), /Rewritten history published/);
+    assert.equal(git(root, 'rev-parse', 'HEAD'), git(remote, 'rev-parse', 'main'));
+    assert.equal(git(root, 'for-each-ref', '--format=%(objectname)', 'refs/ultraview/sync-backups'), remoteBeforeRewrite);
+    context.getSyncDirection = async () => { throw new Error('offline'); };
+    await assert.rejects(context.gitSyncAll(root), /offline/);
+    context.getSyncDirection = regularDirection;
     context.verifyProjectSync = async () => false;
     await assert.rejects(context.gitSyncAll(root), /kept changing/);
     // Network failure is never translated into a successful verification.
@@ -92,5 +114,5 @@ vm.runInContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptT
         if (command.startsWith('git branch')) return { stdout: 'main', stderr: '' };
         throw new Error('offline');
     }), /offline/);
-    console.log('Verified sync passed: parent-only pushes, edited vendor, recursion disabled, divergence, truthful badges, remote race retry, failure stays failure');
+    console.log('Verified sync passed: parent-only pushes, edited vendor, recursion disabled, divergence, rewrite backup and lease, pull guard, remote race retry, failure stays failure');
 })().catch(e => { console.error(e); process.exitCode = 1; }).finally(() => fs.rmSync(temp, { recursive: true, force: true }));

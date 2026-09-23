@@ -209,19 +209,19 @@ function App() {
                 );
             if (gitStatus.localChanges > 0)
                 chips.push(
-                    <span key="local" className="git-chip local">
+                    <span key="local" className="git-chip local" title="Changed files that are not committed yet">
                         ● {gitStatus.localChanges} local
                     </span>
                 );
             if (gitStatus.ahead > 0)
                 chips.push(
-                    <span key="ahead" className="git-chip ahead">
+                    <span key="ahead" className="git-chip ahead" title="Local commits absent from the remote; rewritten history can make this count large">
                         ↑ {gitStatus.ahead} ahead
                     </span>
                 );
             if (gitStatus.behind > 0)
                 chips.push(
-                    <span key="behind" className="git-chip behind">
+                    <span key="behind" className="git-chip behind" title="Remote commits absent locally; rewritten history can make this count large">
                         ↓ {gitStatus.behind} behind
                     </span>
                 );
@@ -239,14 +239,14 @@ function App() {
                 <div className="git-inline">{chips}</div>
                 <div className="project-actions-row">
                     {/* Pull button — only when remote has commits we don't have */}
-                    {gitStatus && gitStatus.behind > 0 && (
+                    {gitStatus && gitStatus.behind > 0 && gitStatus.behind < 50 && (
                         <button
                             className="mini-button pull"
                             disabled={isPending || isChecking}
                             onClick={() => runProjectCommand('gitPull', project.id)}
                             title="Pull remote changes (no local conflicts)"
                         >
-                            ↓ Pull {gitStatus.behind}
+                            ↓ Pull
                         </button>
                     )}
                     {/* Push button — when local has uncommitted changes OR local commits not on remote */}
@@ -255,9 +255,9 @@ function App() {
                             className="mini-button push"
                             disabled={isPending || isChecking}
                             onClick={() => runProjectCommand('gitPush', project.id)}
-                            title="Push local commits to remote"
+                            title="Commit local files and publish local commits; Sync also receives remote changes"
                         >
-                            ↑ Push {gitStatus.ahead + gitStatus.localChanges}
+                            ↑ Push
                         </button>
                     )}
                     {/* Sync button — always available, handles all cases (commit + pull + push) */}
