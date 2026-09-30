@@ -16,6 +16,8 @@ import { createCommandTerminal } from '../utils/commandTerminal';
 import { vendorRepositories } from '../git/vendorRepositories';
 import { assertGitHubBlobSizes } from '../git/gitBlobLimits';
 import { verifyProjectSync, assertNoImportedGitlinks } from '../git/syncVerification';
+import { pickProjectBranch } from '../git/projectBranches';
+import { mergeProjectBranches } from '../git/projectMerge';
 
 interface GitStatus {
     isGitRepo: boolean;
@@ -2547,6 +2549,34 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                 }
+                case 'gitMerge':
+                case 'gitBranch': {
+                    const project = this.manager.listProjects().find((p) => p.id === msg.id);
+                    try {
+                        if (project) {
+                            await runExclusiveProjectGitOp(project.path, async () => {
+                                if (msg.type === 'gitMerge') {
+                                    const result = await mergeProjectBranches(project.path);
+                                    if (result) vscode.window.showInformationMessage(result);
+                                } else await pickProjectBranch(project.path);
+                            });
+                        }
+                    } catch (err: any) {
+                        vscode.window.showErrorMessage(`${msg.type === 'gitMerge' ? 'Merge' : 'Branch change'} failed: ${err?.stderr || err?.message || String(err)}`);
+                    } finally {
+                        try {
+                            if (project) {
+                                delete this._cachedGitStatuses[project.id];
+                                delete this._remoteStatusCheckedAt[project.id];
+                                await this._postLocalProjectState(project.id);
+                                await this._postSingleProjectState(project.id);
+                            }
+                        } finally {
+                            notifyGitOpDone(this.view?.webview, msg.id);
+                        }
+                    }
+                    break;
+                }
                 case 'gitSync': {
                     const project = this.manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
@@ -4022,6 +4052,34 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             else void postPanelState();
                         } finally {
                             notifyGitOpDone(panel.webview, project.id);
+                        }
+                    }
+                    break;
+                }
+                case 'gitMerge':
+                case 'gitBranch': {
+                    const project = manager.listProjects().find((p) => p.id === msg.id);
+                    try {
+                        if (project) {
+                            await runExclusiveProjectGitOp(project.path, async () => {
+                                if (msg.type === 'gitMerge') {
+                                    const result = await mergeProjectBranches(project.path);
+                                    if (result) vscode.window.showInformationMessage(result);
+                                } else await pickProjectBranch(project.path);
+                            });
+                        }
+                    } catch (err: any) {
+                        vscode.window.showErrorMessage(`${msg.type === 'gitMerge' ? 'Merge' : 'Branch change'} failed: ${err?.stderr || err?.message || String(err)}`);
+                    } finally {
+                        try {
+                            if (project) {
+                                delete panelCachedStatuses[project.id];
+                                panelRemoteCheckedAt.delete(project.id);
+                                await postPanelState(project.id);
+                                await postPanelState();
+                            }
+                        } finally {
+                            notifyGitOpDone(panel.webview, msg.id);
                         }
                     }
                     break;
