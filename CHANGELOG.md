@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.461] - 2026-09-30
+
+### Fixed
+- **Old release tags no longer block Sync** — Project Manager now fetches branches without changing release tags. Sync and status checks work even when an older tag differs locally and on the remote.
+- **Clearer fetch errors** — Git's explanation is retained when a branch fetch fails, making connection or authentication problems easier to understand.
+
 ## [0.2.460] - 2026-09-30
 
 ### Fixed

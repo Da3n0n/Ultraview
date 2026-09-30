@@ -16,7 +16,7 @@ const { vendorRepositories } = load('src/git/vendorRepositories.ts');
 const { verifyProjectSync, assertNoImportedGitlinks } = load('src/git/syncVerification.ts');
 const source = fs.readFileSync('src/providers/gitProvider.ts', 'utf8');
 const parsed = ts.createSourceFile('provider.ts', source, ts.ScriptTarget.Latest, true);
-const names = ['parseGitArgs', 'createGitRunner', 'getProjectLocalStatus', 'gitPull', 'gitSync', 'gitSyncAll', 'gitPush'];
+const names = ['parseGitArgs', 'createGitRunner', 'trimGitOutput', 'mergeRemoteBranch', 'getProjectLocalStatus', 'getProjectGitStatus', 'getSyncDirection', 'gitPull', 'gitSync', 'gitSyncAll', 'gitPush'];
 const code = parsed.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text)).map(n => n.getText(parsed)).join('\n');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-verified-sync-'));
 const git = (cwd, ...args) => cp.execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -27,7 +27,8 @@ function init(dir, bare = false) {
 function commit(dir) { git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'fixture'); }
 const commands = [];
 const context = {
-    Buffer, process, console, childProcess: { execFile(command, args, options, cb) {
+    remoteStatusJobs: new Map(), activeRemoteStatusJobs: 0, remoteStatusWaiters: [],
+    Buffer, process, console, path, childProcess: { execFile(command, args, options, cb) {
         commands.push({ cwd: options.cwd, args }); cp.execFile(command, args, options, cb);
     } },
     clearIndexLock() {}, isGitRepo: async () => true, removeLegacyRewriteArtifacts: async () => {},
@@ -55,6 +56,17 @@ vm.runInContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptT
     const externalHead = git(vendor, 'rev-parse', 'HEAD');
     fs.writeFileSync(path.join(root, 'app.txt'), 'app'); commit(root);
     git(root, 'remote', 'add', 'origin', remote); git(root, 'push', '-u', 'origin', 'main');
+    // The branch can be healthy while a rewritten release tag differs. The
+    // old quiet --tags fetch fails with no explanation in this exact state.
+    git(root, 'tag', 'conflicting-release'); git(root, 'push', 'origin', 'refs/tags/conflicting-release');
+    fs.writeFileSync(path.join(root, 'tag-local.txt'), 'local work'); commit(root);
+    git(root, 'tag', '-f', 'conflicting-release');
+    const localTag = git(root, 'rev-parse', 'refs/tags/conflicting-release');
+    const remoteTag = git(remote, 'rev-parse', 'refs/tags/conflicting-release');
+    assert.notEqual(localTag, remoteTag);
+    assert.throws(() => git(root, 'fetch', '--quiet', '--prune', '--tags', 'origin'));
+    assert.equal((await context.getSyncDirection(root)).ahead, 1);
+    assert.equal((await context.getProjectGitStatus(root)).ahead, 1);
     git(root, '-c', 'protocol.file.allow=always', 'submodule', 'add', vendor, 'vendor/editor'); commit(root);
     fs.writeFileSync(path.join(root, 'vendor/editor/source.txt'), 'customized');
     git(root, 'config', 'push.recurseSubmodules', 'on-demand');
@@ -66,6 +78,8 @@ vm.runInContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptT
     assert.equal(git(vendor, 'rev-parse', 'HEAD'), externalHead);
     assert.ok(commands.filter(c => c.args[0] === 'push').every(c => c.cwd === root && c.args.includes('--recurse-submodules=no')));
     assert.equal(git(root, 'show', 'HEAD:vendor/editor/source.txt'), 'customized');
+    assert.equal(git(root, 'rev-parse', 'refs/tags/conflicting-release'), localTag);
+    assert.equal(git(remote, 'rev-parse', 'refs/tags/conflicting-release'), remoteTag);
     // Fresh verification detects a remote move even when local refs were stale.
     const peer = path.join(temp, 'peer'); git(temp, 'clone', remote, peer);
     git(peer, 'config', 'user.name', 'Test'); git(peer, 'config', 'user.email', 'test@example.invalid');
@@ -114,5 +128,5 @@ vm.runInContext(ts.transpileModule(code, { compilerOptions: { target: ts.ScriptT
         if (command.startsWith('git branch')) return { stdout: 'main', stderr: '' };
         throw new Error('offline');
     }), /offline/);
-    console.log('Verified sync passed: parent-only pushes, edited vendor, recursion disabled, divergence, rewrite backup and lease, pull guard, remote race retry, failure stays failure');
+    console.log('Verified sync passed: conflicting tags preserved, production status/direction/merge, parent-only pushes, edited vendor, recursion disabled, divergence, rewrite backup and lease, pull guard, remote race retry, failure stays failure');
 })().catch(e => { console.error(e); process.exitCode = 1; }).finally(() => fs.rmSync(temp, { recursive: true, force: true }));

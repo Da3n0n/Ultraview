@@ -17,12 +17,28 @@ type Release = {
 
 const releases: Release[] = [
     {
+        id: 'release-0-2-461',
+        version: 'v0.2.461',
+        date: 'September 30, 2026',
+        title: 'Old release tags no longer block Sync',
+        blurb: 'Project Manager syncs your branch even when an older release tag differs locally and on the remote.',
+        latest: true,
+        groups: [
+            {
+                label: 'Fixed',
+                items: [
+                    'Sync and status checks fetch branches without changing release tags, so conflicting old tags no longer stop them.',
+                    'Fetch errors retain Git’s explanation, making connection or authentication problems easier to understand.',
+                ],
+            },
+        ],
+    },
+    {
         id: 'release-0-2-460',
         version: 'v0.2.460',
         date: 'September 30, 2026',
         title: 'Transparency after the latest VS Code update',
         blurb: 'Transparent mode can be enabled again on VS Code 1.140, with exact backups and safe restore preserved.',
-        latest: true,
         groups: [
             {
                 label: 'Fixed',

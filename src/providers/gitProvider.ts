@@ -647,7 +647,7 @@ async function mergeRemoteBranch(
     for (let attempt = 1; !alreadyFetched && attempt <= 3; attempt++) {
         try {
             await withTransientRetry(
-                () => run(`git fetch --quiet origin ${branch}`),
+                () => run(`git fetch --no-tags --no-recurse-submodules origin ${branch}`),
                 'fetch'
             );
             break;
@@ -877,7 +877,7 @@ async function getProjectGitStatus(projectPath: string, localStatus?: GitStatus)
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
                 await withTransientRetry(
-                    () => run('git fetch --quiet --prune --tags origin'),
+                    () => run('git fetch --no-tags --no-recurse-submodules --prune origin'),
                     'status-fetch'
                 );
                 break;
@@ -1425,7 +1425,9 @@ async function getSyncDirection(
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             await withTransientRetry(
-                () => run('git fetch --quiet --prune --tags origin'),
+                // Branch sync must not reconcile release tags. Rewritten tags
+                // can reject an otherwise successful fetch; quiet hides why.
+                () => run('git fetch --no-tags --no-recurse-submodules --prune origin'),
                 'fetch',
                 3
             );
