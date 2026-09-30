@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const ts = require('typescript');
 
-const [mainJsPath, workbenchHtmlPath, workbenchJsPath] = process.argv.slice(2);
+const [mainJsPath, workbenchHtmlPath, workbenchJsPath, launcherJsPath] = process.argv.slice(2);
 if (!mainJsPath || !workbenchHtmlPath || !workbenchJsPath) {
   throw new Error('Pass the VS Code main.js, workbench.html, and workbench.js paths.');
 }
@@ -30,7 +30,7 @@ for (const key of Object.keys(paths)) {
 
 const vscodeMock = { env: { appRoot: tempRoot } };
 let source = fs.readFileSync(path.join(__dirname, '..', 'src', 'theme', 'index.ts'), 'utf8');
-source += `\nexport const __themeHarness = { applyTransparentPatch, restoreTransparentPatch };`;
+source += `\nexport const __themeHarness = { applyTransparentPatch, restoreTransparentPatch, resolveInstallPaths };`;
 const compiled = ts.transpileModule(source, {
   compilerOptions: {
     esModuleInterop: true,
@@ -59,6 +59,22 @@ assert.strictEqual(darkTheme.include, './ultraview-transparent-color-theme.json'
 assert.strictEqual(darkTheme.type, 'dark');
 
 try {
+  // Exercise both the legacy bundle and the 1.140 compile-cache launcher.
+  assert.strictEqual(harness.resolveInstallPaths(tempRoot).mainJs, paths.mainJs);
+  harness.applyTransparentPatch(context, paths, 'acrylic');
+  assert.strictEqual(harness.restoreTransparentPatch(context, paths), true);
+  for (const key of Object.keys(paths)) {
+    assert.deepStrictEqual(fs.readFileSync(paths[key]), originals[key]);
+  }
+  const launcherPath = paths.mainJs;
+  const launcher = launcherJsPath ? fs.readFileSync(launcherJsPath, 'utf8') : 'await import("./mainImpl.js");';
+  const implementationPath = path.join(path.dirname(launcherPath), 'mainImpl.js');
+  fs.writeFileSync(launcherPath, launcher);
+  assert.throws(() => harness.resolveInstallPaths(tempRoot), /Could not locate.*mainImpl/);
+  fs.writeFileSync(implementationPath, originals.mainJs);
+  assert.strictEqual(harness.resolveInstallPaths(tempRoot).mainJs, implementationPath);
+  paths.mainJs = implementationPath;
+
   harness.applyTransparentPatch(context, paths, 'acrylic');
   const patchedMain = fs.readFileSync(paths.mainJs, 'utf8');
   assert.match(patchedMain, /backgroundMaterial:"acrylic"\/\*ultraview-transparent-patched\*\//);
@@ -85,6 +101,7 @@ try {
     assert.deepStrictEqual(fs.readFileSync(paths[key]), originals[key]);
   }
   assert.strictEqual(harness.restoreTransparentPatch(context, paths), false);
+  assert.strictEqual(fs.readFileSync(launcherPath, 'utf8'), launcher);
   console.log('Ultraview transparency enable/disable round trip passed.');
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });

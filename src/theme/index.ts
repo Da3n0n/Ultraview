@@ -190,12 +190,23 @@ async function setWorkbenchTheme(themeName: string): Promise<void> {
 }
 
 function resolveInstallPaths(appRoot: string): InstallPaths {
+  let mainJs = resolveFile(appRoot, [
+    ['out', 'main.js'],
+    ['out', 'vs', 'code', 'electron-main', 'main.js'],
+    ['out', 'vs', 'code', 'electron-main', 'main.bundle.js'],
+  ], ['main.js', 'main.bundle.js']);
+  // VS Code 1.140 moved the window implementation behind a compile-cache
+  // launcher. Follow only its known local import, never an arbitrary path.
+  if (/\bimport\s*\(\s*['"]\.\/mainImpl\.js['"]\s*\)/.test(fs.readFileSync(mainJs, 'utf8'))) {
+    const implementation = path.join(path.dirname(mainJs), 'mainImpl.js');
+    if (!fs.existsSync(implementation)) {
+      throw new Error('Could not locate the VS Code mainImpl.js imported by main.js. No files were changed.');
+    }
+    mainJs = implementation;
+  }
+
   return {
-    mainJs: resolveFile(appRoot, [
-      ['out', 'main.js'],
-      ['out', 'vs', 'code', 'electron-main', 'main.js'],
-      ['out', 'vs', 'code', 'electron-main', 'main.bundle.js'],
-    ], ['main.js', 'main.bundle.js']),
+    mainJs,
     workbenchHtml: resolveFile(appRoot, [
       ['out', 'vs', 'code', 'electron-browser', 'workbench', 'workbench.html'],
       ['out', 'vs', 'code', 'browser', 'workbench', 'workbench.html'],
