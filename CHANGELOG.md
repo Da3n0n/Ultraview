@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.460] - 2026-09-30
+
+### Fixed
+- **Transparent mode works with VS Code 1.140** — Fixed the “main process backup failed structural validation” error that prevented transparency from being enabled after the latest VS Code update. Exact backups and safe disable/restore are preserved.
+- **Apply the fix** — After updating Ultraview, reload VS Code, run **Ultraview: Enable Transparent**, then fully close and reopen VS Code.
+
+## [0.2.459] - 2026-09-23
+
+### Improved
+- **Safer sync after Git history changes** — When local and remote histories differ greatly, Sync lets you choose whether to merge them or replace the remote history. Replacing saves the previous remote history locally for recovery.
+- **More reliable remote checks** — Sync checks the latest remote state and allows more time for slow connections. If the remote cannot be reached, it reports the problem instead of relying on outdated information.
+- **Clearer Project Manager controls** — Push and Pull buttons use simpler labels, and status hints explain local changes and ahead/behind counts. Git error messages hide credentials contained in web addresses.
+
 ## [0.2.458] - 2026-09-17
 
 ### Fixed

@@ -17,12 +17,45 @@ type Release = {
 
 const releases: Release[] = [
     {
+        id: 'release-0-2-460',
+        version: 'v0.2.460',
+        date: 'September 30, 2026',
+        title: 'Transparency after the latest VS Code update',
+        blurb: 'Transparent mode can be enabled again on VS Code 1.140, with exact backups and safe restore preserved.',
+        latest: true,
+        groups: [
+            {
+                label: 'Fixed',
+                items: [
+                    'Fixed the “main process backup failed structural validation” error that blocked transparent mode after the latest VS Code update.',
+                    'After updating Ultraview, reload VS Code, run “Ultraview: Enable Transparent”, then fully close and reopen VS Code.',
+                ],
+            },
+        ],
+    },
+    {
+        id: 'release-0-2-459',
+        version: 'v0.2.459',
+        date: 'September 23, 2026',
+        title: 'Safer sync, clearer status',
+        blurb: 'Sync handles major Git history changes more carefully, and the Project Manager makes status easier to understand.',
+        groups: [
+            {
+                label: 'Improved',
+                items: [
+                    'When local and remote histories differ greatly, Sync lets you choose to merge them or replace the remote history. Replacing saves the previous remote history locally for recovery.',
+                    'Remote checks allow more time for slow connections and report connection failures instead of using outdated information.',
+                    'Simpler Push and Pull labels, clearer status hints, and Git error messages that hide credentials contained in web addresses.',
+                ],
+            },
+        ],
+    },
+    {
         id: 'release-0-2-458',
         version: 'v0.2.458',
         date: 'September 17, 2026',
         title: 'Banding-free everywhere',
         blurb: 'The Project Manager background fix rolls out to every panel — commands, ports, buckets, backups, and Dokploy all lose the stripes.',
-        latest: true,
         groups: [
             {
                 label: 'Fixed',
