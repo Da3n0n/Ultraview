@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.461] - 2026-09-30
 
 ### Fixed
-- **Old release tags no longer block Sync** — Project Manager now fetches branches without changing release tags. Sync and status checks work even when an older tag differs locally and on the remote.
+- **Project Manager Sync button fixed** — Fixed the “Could not fetch the remote branch” error caused by older release tags differing locally and on GitHub. Sync now updates your branch without changing those tags, and status checks use the same fix.
 - **Clearer fetch errors** — Git's explanation is retained when a branch fetch fails, making connection or authentication problems easier to understand.
 
 ## [0.2.460] - 2026-09-30

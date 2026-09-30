@@ -20,14 +20,14 @@ const releases: Release[] = [
         id: 'release-0-2-461',
         version: 'v0.2.461',
         date: 'September 30, 2026',
-        title: 'Old release tags no longer block Sync',
-        blurb: 'Project Manager syncs your branch even when an older release tag differs locally and on the remote.',
+        title: 'Project Manager Sync button fixed',
+        blurb: 'Older release tags no longer stop the Sync button from updating your project.',
         latest: true,
         groups: [
             {
                 label: 'Fixed',
                 items: [
-                    'Sync and status checks fetch branches without changing release tags, so conflicting old tags no longer stop them.',
+                    'Fixed the “Could not fetch the remote branch” error caused by older release tags differing locally and on GitHub. Sync now updates your branch without changing those tags, and status checks use the same fix.',
                     'Fetch errors retain Git’s explanation, making connection or authentication problems easier to understand.',
                 ],
             },
