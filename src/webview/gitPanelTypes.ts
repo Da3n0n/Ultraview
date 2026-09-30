@@ -6,6 +6,8 @@ export interface GitStatusState {
   ahead: number;
   behind: number;
   branch: string;
+  branchWorkBase?: string;
+  unmergedBranches?: number;
 }
 
 export interface GitAccountState extends GitAccount {
@@ -33,5 +35,5 @@ export type GitPanelInboundMessage =
 
 export type GitPanelOutboundMessage =
   | { type: 'ready' | 'refresh' | 'refreshProjects' | 'addProject' | 'addCurrentProject' | 'addRepo' | 'addAccount' | 'openPanel' | 'openS3Backup' | 'backupAll' }
-  | { type: 'open' | 'delete' | 'gitPull' | 'gitPush' | 'gitSync' | 's3BackupProject' | 'projectCommands' | 'refreshSingleProject'; id: string }
+  | { type: 'open' | 'delete' | 'gitPull' | 'gitPush' | 'gitSync' | 'gitBranch' | 'gitMerge' | 'gitMergeSync' | 'gitBranchWork' | 's3BackupProject' | 'projectCommands' | 'refreshSingleProject'; id: string }
   | { type: 'switchAccount' | 'authOptions' | 'removeAccount' | 'reAuthAccount'; accountId: string };

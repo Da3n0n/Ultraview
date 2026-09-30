@@ -17,12 +17,53 @@ type Release = {
 
 const releases: Release[] = [
     {
+        id: 'release-unreleased',
+        version: 'Unreleased',
+        date: 'In development',
+        title: 'Clearer branch work and flexible switching',
+        blurb: 'Coming next: carry edits between branches, review work outside main, and merge then publish in one flow.',
+        groups: [
+            {
+                label: 'Improved',
+                items: [
+                    'Choose to carry uncommitted edits to another branch, or save them in a stash before switching. Git stops switches that would overwrite work; saved edits can be recovered from the branch menu with a backup retained.',
+                    'Separate uncommitted files, commits to push/pull, and local branch work outside main. Inspect another branch or compare the current files with main without switching branches.',
+                    'Merge & Sync confirms the source and destination, then publishes the destination after a successful merge. Plain Sync continues to publish the selected checkout without automatically combining other branches.',
+                ],
+            },
+        ],
+    },
+    {
+        id: 'release-0-2-462',
+        version: 'v0.2.462',
+        date: 'September 30, 2026',
+        title: 'Branch switching and merging in Project Manager',
+        blurb: 'Create, switch, and merge branches from the Project Manager, then Sync the selected branch.',
+        latest: true,
+        groups: [
+            {
+                label: 'New',
+                items: [
+                    'Click the branch badge to switch local branches, check out a known origin branch, or create a new branch from the current checkout. Available in the sidebar and full panel.',
+                    'Merge lets you choose a destination and source, then confirms the direction. The source branch is kept; click Sync afterward to publish the destination.',
+                ],
+            },
+            {
+                label: 'Improved',
+                items: [
+                    'Sync, Push, and Pull follow the checked-out branch, and status refreshes after branch operations. “Synced” compares each branch with its own remote, rather than with main or another local branch.',
+                    'Branch operations share the existing Git-operation lock. Switching existing branches and merging require a clean working tree; new branches retain local work without inheriting the previous upstream.',
+                    'Merge conflicts abort the attempted merge and report the conflicting files.',
+                ],
+            },
+        ],
+    },
+    {
         id: 'release-0-2-461',
         version: 'v0.2.461',
         date: 'September 30, 2026',
         title: 'Project Manager Sync button fixed',
         blurb: 'Older release tags no longer stop the Sync button from updating your project.',
-        latest: true,
         groups: [
             {
                 label: 'Fixed',

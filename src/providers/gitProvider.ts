@@ -16,6 +16,9 @@ import { createCommandTerminal } from '../utils/commandTerminal';
 import { vendorRepositories } from '../git/vendorRepositories';
 import { assertGitHubBlobSizes } from '../git/gitBlobLimits';
 import { verifyProjectSync, assertNoImportedGitlinks } from '../git/syncVerification';
+import { pickProjectBranch } from '../git/projectBranches';
+import { mergeProjectBranches } from '../git/projectMerge';
+import { showBranchWork } from '../git/branchWork';
 
 interface GitStatus {
     isGitRepo: boolean;
@@ -23,6 +26,8 @@ interface GitStatus {
     ahead: number; // commits ahead of remote
     behind: number; // commits behind remote
     branch: string;
+    branchWorkBase?: string;
+    unmergedBranches?: number;
 }
 
 type GitConflictStrategy = 'ours' | 'theirs';
@@ -837,12 +842,26 @@ async function getProjectLocalStatus(
         if (branch.startsWith('No commits yet on ')) branch = branch.slice('No commits yet on '.length);
         if (branch === 'HEAD (no branch)' || branch.startsWith('HEAD ')) branch = '';
 
+        // Separate committed work on other local branches from this checkout's Sync status.
+        let branchWorkBase: string | undefined;
+        let unmergedBranches: number | undefined;
+        for (const base of ['main', 'master']) {
+            try {
+                const { stdout: branches } = await run(`git for-each-ref --no-merged=refs/heads/${base} --format=%(refname) refs/heads/`);
+                branchWorkBase = base;
+                unmergedBranches = branches.split(/\r?\n/).filter(Boolean).length;
+                break;
+            } catch { /* This repository may not have a main/master branch yet. */ }
+        }
+
         return {
             isGitRepo: true,
             localChanges: lines.slice(header ? 1 : 0).length,
             ahead: Number(header.match(/\bahead (\d+)/)?.[1] ?? 0),
             behind: Number(header.match(/\bbehind (\d+)/)?.[1] ?? 0),
             branch: branch || prevStatus?.branch || '',
+            branchWorkBase,
+            unmergedBranches,
         };
     } catch {
         return empty;
@@ -2547,6 +2566,48 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                 }
+                case 'gitMergeSync':
+                case 'gitBranchWork':
+                case 'gitMerge':
+                case 'gitBranch': {
+                    const project = this.manager.listProjects().find((p) => p.id === msg.id);
+                    try {
+                        if (project) {
+                            await runExclusiveProjectGitOp(project.path, async () => {
+                                if (msg.type === 'gitBranchWork') await showBranchWork(project.path);
+                                else if (msg.type === 'gitMerge' || msg.type === 'gitMergeSync') {
+                                    const publish = msg.type === 'gitMergeSync';
+                                    const result = await mergeProjectBranches(project.path, publish);
+                                    if (result && publish) {
+                                        const account = project.accountId ? await this.accounts.getAccountWithToken(project.accountId) : undefined;
+                                        let synced: string;
+                                        try {
+                                            synced = await gitSyncAll(project.path, undefined, project.repoUrl, authContextFromAccount(account));
+                                        } catch (err: any) {
+                                            throw new Error(`The merge is saved locally, but Sync did not finish. ${err?.code === 'NO_REMOTE' ? 'Click Sync to connect a remote and publish the destination.' : formatGitError(err)}`);
+                                        }
+                                        this.store.write({ lastSyncAt: Date.now() });
+                                        vscode.window.showInformationMessage(`${project.name}: ${synced}`);
+                                    } else if (result) vscode.window.showInformationMessage(result);
+                                } else await pickProjectBranch(project.path);
+                            });
+                        }
+                    } catch (err: any) {
+                        vscode.window.showErrorMessage(`${msg.type === 'gitBranchWork' ? 'Branch comparison' : msg.type === 'gitMergeSync' ? 'Merge & Sync' : msg.type === 'gitMerge' ? 'Merge' : 'Branch change'} failed: ${formatGitError(err)}`);
+                    } finally {
+                        try {
+                            if (project) {
+                                delete this._cachedGitStatuses[project.id];
+                                delete this._remoteStatusCheckedAt[project.id];
+                                await this._postLocalProjectState(project.id);
+                                await this._postSingleProjectState(project.id);
+                            }
+                        } finally {
+                            notifyGitOpDone(this.view?.webview, msg.id);
+                        }
+                    }
+                    break;
+                }
                 case 'gitSync': {
                     const project = this.manager.listProjects().find((p) => p.id === msg.id);
                     if (project) {
@@ -4022,6 +4083,48 @@ export class GitProvider implements vscode.WebviewViewProvider {
                             else void postPanelState();
                         } finally {
                             notifyGitOpDone(panel.webview, project.id);
+                        }
+                    }
+                    break;
+                }
+                case 'gitMergeSync':
+                case 'gitBranchWork':
+                case 'gitMerge':
+                case 'gitBranch': {
+                    const project = manager.listProjects().find((p) => p.id === msg.id);
+                    try {
+                        if (project) {
+                            await runExclusiveProjectGitOp(project.path, async () => {
+                                if (msg.type === 'gitBranchWork') await showBranchWork(project.path);
+                                else if (msg.type === 'gitMerge' || msg.type === 'gitMergeSync') {
+                                    const publish = msg.type === 'gitMergeSync';
+                                    const result = await mergeProjectBranches(project.path, publish);
+                                    if (result && publish) {
+                                        const account = project.accountId ? await accounts.getAccountWithToken(project.accountId) : undefined;
+                                        let synced: string;
+                                        try {
+                                            synced = await gitSyncAll(project.path, undefined, project.repoUrl, authContextFromAccount(account));
+                                        } catch (err: any) {
+                                            throw new Error(`The merge is saved locally, but Sync did not finish. ${err?.code === 'NO_REMOTE' ? 'Click Sync to connect a remote and publish the destination.' : formatGitError(err)}`);
+                                        }
+                                        store.write({ lastSyncAt: Date.now() });
+                                        vscode.window.showInformationMessage(`${project.name}: ${synced}`);
+                                    } else if (result) vscode.window.showInformationMessage(result);
+                                } else await pickProjectBranch(project.path);
+                            });
+                        }
+                    } catch (err: any) {
+                        vscode.window.showErrorMessage(`${msg.type === 'gitBranchWork' ? 'Branch comparison' : msg.type === 'gitMergeSync' ? 'Merge & Sync' : msg.type === 'gitMerge' ? 'Merge' : 'Branch change'} failed: ${formatGitError(err)}`);
+                    } finally {
+                        try {
+                            if (project) {
+                                delete panelCachedStatuses[project.id];
+                                panelRemoteCheckedAt.delete(project.id);
+                                await postPanelState(project.id);
+                                await postPanelState();
+                            }
+                        } finally {
+                            notifyGitOpDone(panel.webview, msg.id);
                         }
                     }
                     break;

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Improved
+- **Carry edits across branches** — When switching with uncommitted files, choose to carry them to the destination or save them in a stash before switching. Git stops switches that would overwrite edits; saved edits can be recovered from the branch menu on a new branch from their original base, with a backup retained.
+- **Separate branch work from Sync status** — The Project Manager labels uncommitted files and commits to push/pull separately, and shows when local branches contain work outside main. Branch work lets you inspect another branch's contributions or compare the current files on disk with main without switching branches.
+- **Merge and publish in one flow** — Merge & Sync confirms the source and destination, merges the selected branch, and publishes the destination after a successful merge. Plain Sync continues to publish the selected checkout without automatically combining other branches.
+
+## [0.2.462] - 2026-09-30
+
+### Added
+- **Switch and create branches from Project Manager** — Click the branch badge to select a local branch, check out a known origin branch, or create a new branch from the current checkout. Available in both the sidebar and full panel.
+- **Merge branches from Project Manager** — The Merge button beside the branch badge lets you choose a destination and source, then confirms the direction before bringing the source branch's commits into the destination. The source branch is kept; click Sync afterward to publish the destination.
+
+### Improved
+- **Sync follows the selected branch** — Sync, Push, and Pull use the checked-out branch. Status badges refresh after branch operations; each branch's synced status compares it with its own remote, rather than with main or another local branch.
+- **Safer branch operations** — Branch switching and merging share the existing Git-operation lock. Switching existing branches and merging require a clean working tree. New branches retain local work without inheriting the previous branch's upstream; merge conflicts abort the attempted merge and report the conflicting files.
+
 ## [0.2.461] - 2026-09-30
 
 ### Fixed
