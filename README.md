@@ -8,7 +8,7 @@ Install it once, stay synced across **VS Code**, **Antigravity**, **Cursor**, an
 
 ### **Database Viewer**
 
-Open SQLite, DuckDB, Access, and SQL files with a clean, paginated table view — no external client needed.
+Open SQLite, DuckDB, Access, and SQL files with a clean, paginated table view.
 
 d### **Markdown Editor**
 
