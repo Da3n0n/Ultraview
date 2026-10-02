@@ -289,6 +289,11 @@ function App() {
         }
         .card:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--border) 50%, var(--accent)); background:rgba(255,255,255,.04); }
         .card.active { border-color: rgba(110,231,183,.5); box-shadow: 0 0 0 1px rgba(110,231,183,.16), inset 0 1px 0 rgba(255,255,255,.03); }
+        .projects-grid .card { position:relative; padding-right:36px; }
+        .project-remove { position:absolute; top:7px; right:7px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:5px; background:transparent; color:var(--muted); font:18px/1 sans-serif; cursor:pointer; }
+        .project-remove:hover:not(:disabled) { color:var(--vscode-errorForeground, #ff6b6b); background:var(--surface2); }
+        .project-remove:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+        .project-remove:disabled { opacity:.45; cursor:default; }
         .project-main, .account-main { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
         .project-meta, .account-meta { min-width:0; display:grid; gap:4px; }
         .project-name, .account-name { font-size:13px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -493,6 +498,19 @@ function App() {
                                         key={project.id}
                                         className={`card${isActive ? ' active' : ''}`}
                                     >
+                                        <button
+                                            type="button"
+                                            className="project-remove"
+                                            title="Remove project"
+                                            aria-label={`Remove project ${project.name}`}
+                                            disabled={!!pendingProjects[project.id]}
+                                            onClick={() => getVscode()?.postMessage({
+                                                type: 'delete',
+                                                id: project.id,
+                                            } satisfies GitPanelOutboundMessage)}
+                                        >
+                                            ×
+                                        </button>
                                         <div className="project-main">
                                             <div className="project-meta">
                                                 <div className="project-name">{project.name}</div>
@@ -539,17 +557,6 @@ function App() {
                                                     }
                                                 >
                                                     Open
-                                                </button>
-                                                <button
-                                                    className="mini-button"
-                                                    onClick={() =>
-                                                        getVscode()?.postMessage({
-                                                            type: 'delete',
-                                                            id: project.id,
-                                                        } satisfies GitPanelOutboundMessage)
-                                                    }
-                                                >
-                                                    Remove
                                                 </button>
                                             </div>
                                         </div>

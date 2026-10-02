@@ -2290,6 +2290,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 }
                 case 'delete': {
                     const id = msg.id;
+                    const project = this.manager.listProjects().find((p) => p.id === id);
+                    if (!project) break;
+                    const action = await vscode.window.showWarningMessage(
+                        `Are you sure you want to remove "${project.name}"?`,
+                        { modal: true, detail: 'This removal cannot be undone. The project will be removed from Project Manager; its files will remain on disk.' },
+                        'Remove Project'
+                    );
+                    if (action !== 'Remove Project') break;
                     this.manager.removeProject(id);
                     this.postState();
                     break;
@@ -3579,6 +3587,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     break;
                 }
                 case 'delete': {
+                    const project = manager.listProjects().find((p) => p.id === msg.id);
+                    if (!project) break;
+                    const action = await vscode.window.showWarningMessage(
+                        `Are you sure you want to remove "${project.name}"?`,
+                        { modal: true, detail: 'This removal cannot be undone. The project will be removed from Project Manager; its files will remain on disk.' },
+                        'Remove Project'
+                    );
+                    if (action !== 'Remove Project') break;
                     manager.removeProject(msg.id);
                     postPanelState();
                     break;
