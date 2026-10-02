@@ -35,8 +35,6 @@ let storeReady: Promise<void> | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
     const getCustomComments = () => customComments ??= new CustomComments(context);
-    const configureS3BackupCredentials = async (ctx: vscode.ExtensionContext) =>
-        (await import('./providers/s3BackupProvider')).configureS3BackupCredentials(ctx);
     let bucketProvider: Promise<import('./providers/bucketManagerProvider').BucketManagerProvider> | undefined;
     const getBucketProvider = () => bucketProvider ??= import('./providers/bucketManagerProvider')
         .then(({ BucketManagerProvider }) => new BucketManagerProvider(context));
@@ -401,81 +399,6 @@ export async function activate(context: vscode.ExtensionContext) {
         }),
         vscode.commands.registerCommand('ultraview.openBucketManager', async () => {
             (await import('./providers/bucketManagerProvider')).BucketManagerProvider.openAsPanel(context);
-        }),
-        vscode.commands.registerCommand('ultraview.configureS3Backup', async () => {
-            await configureS3BackupCredentials(context);
-            gitProvider.postState();
-        }),
-        vscode.commands.registerCommand('ultraview.s3BackupProjectById', async (projectId: string) => {
-            await storeReady;
-            const { getS3Credentials, backupProject } = await import('./s3backup');
-            const creds = await getS3Credentials(context);
-            if (!creds) {
-                const pick = await vscode.window.showErrorMessage(
-                    'No S3 credentials configured.',
-                    'Configure Now'
-                );
-                if (pick === 'Configure Now') {
-                    await configureS3BackupCredentials(context);
-                }
-                return;
-            }
-            const { GitProjects } = await import('./git/gitProjects');
-            const manager = new GitProjects(context, sharedStore);
-            const project = manager.listProjects().find((p) => p.id === projectId);
-            if (!project) return;
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: `S3 Backup: ${project.name}`, cancellable: false },
-                async (progress) => {
-                    try {
-                        const result = await backupProject(project.name, project.path, creds, (m) => progress.report({ message: m }));
-                        vscode.window.showInformationMessage(`✓ Backed up ${project.name} (${result.fileCount} files) to ${creds.bucket}`);
-                    } catch (e: any) {
-                        vscode.window.showErrorMessage(`S3 backup failed for ${project.name}: ${e?.message ?? e}`);
-                    }
-                }
-            );
-        }),
-        vscode.commands.registerCommand('ultraview.s3BackupAll', async () => {
-            await storeReady;
-            const { getS3Credentials, backupProject } = await import('./s3backup');
-            const creds = await getS3Credentials(context);
-            if (!creds) {
-                const pick = await vscode.window.showErrorMessage(
-                    'No S3 backup bucket configured.',
-                    'Configure Now'
-                );
-                if (pick === 'Configure Now') {
-                    await configureS3BackupCredentials(context);
-                }
-                return;
-            }
-            const allProjects = new GitProjects(context, sharedStore).listProjects();
-            if (!allProjects.length) {
-                vscode.window.showInformationMessage('No projects to back up.');
-                return;
-            }
-            await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: 'S3 Backup: All Projects', cancellable: false },
-                async (progress) => {
-                    let done = 0;
-                    const errors: string[] = [];
-                    for (const project of allProjects) {
-                        progress.report({ message: `(${done + 1}/${allProjects.length}) ${project.name}` });
-                        try {
-                            await backupProject(project.name, project.path, creds, (m) => progress.report({ message: m }));
-                        } catch (e: any) {
-                            errors.push(`${project.name}: ${e?.message ?? e}`);
-                        }
-                        done++;
-                    }
-                    if (errors.length) {
-                        vscode.window.showWarningMessage(`Backup done with ${errors.length} error(s): ${errors[0]}`);
-                    } else {
-                        vscode.window.showInformationMessage(`✓ Backed up all ${done} project(s) to ${creds.bucket}`);
-                    }
-                }
-            );
         }),
         vscode.commands.registerCommand('ultraview.openDokploy', async () => {
             await openDokployInEditor();

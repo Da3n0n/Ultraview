@@ -24,7 +24,6 @@ const emptyState: PanelState = {
     accounts: [],
     activeAccountId: null,
     activeProjectId: null,
-    hasBackupBucket: false,
 };
 
 function authToneClass(status?: string): string {
@@ -85,7 +84,6 @@ function App() {
                     accounts: msg.accounts,
                     activeAccountId: msg.activeAccountId,
                     activeProjectId: msg.activeProjectId,
-                    hasBackupBucket: msg.hasBackupBucket,
                 };
                 const nextMetadataSignature = JSON.stringify(nextState);
                 if (nextMetadataSignature !== metadataSignature.current) {
@@ -458,31 +456,6 @@ function App() {
                             >
                                 &#x21BB;
                             </button>
-                            {state.hasBackupBucket ? (
-                                <button
-                                    className="button"
-                                    title="Backup all projects to S3"
-                                    onClick={() =>
-                                        getVscode()?.postMessage({
-                                            type: 'backupAll' satisfies GitPanelOutboundMessage['type'],
-                                        })
-                                    }
-                                >
-                                    ☁ Backup All
-                                </button>
-                            ) : (
-                                <button
-                                    className="button"
-                                    title="Connect a backup bucket"
-                                    onClick={() =>
-                                        getVscode()?.postMessage({
-                                            type: 'openS3Backup' satisfies GitPanelOutboundMessage['type'],
-                                        })
-                                    }
-                                >
-                                    ☁ Connect Backup
-                                </button>
-                            )}
                             <button
                                 className="button"
                                 onClick={() =>
@@ -577,18 +550,6 @@ function App() {
                                                     }
                                                 >
                                                     Remove
-                                                </button>
-                                                <button
-                                                    className="mini-button"
-                                                    title="Backup to S3"
-                                                    onClick={() =>
-                                                        getVscode()?.postMessage({
-                                                            type: 's3BackupProject',
-                                                            id: project.id,
-                                                        } satisfies GitPanelOutboundMessage)
-                                                    }
-                                                >
-                                                    ☁ Backup
                                                 </button>
                                             </div>
                                         </div>

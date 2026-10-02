@@ -10,7 +10,6 @@ import { GitAccounts } from '../git/gitAccounts';
 import { GitAccount, GitProfile, GitProvider as GitProviderType, AuthMethod } from '../git/types';
 import { applyLocalAccount, clearLocalAccount, getRemoteUrl, withUsername } from '../git/gitCredentials';
 import { SharedStore } from '../sync/sharedStore';
-import { getS3Credentials } from '../s3backup/s3BackupSettings';
 import { ProjectCommand, scanCommands } from '../commands/commandScanner';
 import { createCommandTerminal } from '../utils/commandTerminal';
 import { vendorRepositories } from '../git/vendorRepositories';
@@ -1943,9 +1942,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
     private _remoteStatusCheckedAt: Record<string, number> = {};
     /** Monotonic guard so older async status refreshes cannot overwrite newer results */
     private _statusRefreshSeq = 0;
-    /** Cached S3 credential check result to avoid repeated keychain reads */
-    private _s3CredsCached: boolean | null = null;
-    private _s3CredsCachedAt = 0;
     /** Lightweight native watchers provide instant local badges for every saved project. */
     private _projectWatchers = new Map<string, { projectPath: string; watcher: fs.FSWatcher }>();
     private _dirtyProjectIds = new Set<string>();
@@ -2283,21 +2279,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 }
                 case 'openPanel': {
                     vscode.commands.executeCommand('ultraview.openGitProjects');
-                    break;
-                }
-                case 'openS3Backup': {
-                    vscode.commands.executeCommand('ultraview.configureS3Backup');
-                    break;
-                }
-                case 'backupAll': {
-                    vscode.commands.executeCommand('ultraview.s3BackupAll');
-                    break;
-                }
-                case 's3BackupProject': {
-                    const project = this.manager.listProjects().find((p) => p.id === msg.id);
-                    if (project) {
-                        vscode.commands.executeCommand('ultraview.s3BackupProjectById', msg.id);
-                    }
                     break;
                 }
                 case 'projectCommands': {
@@ -2701,23 +2682,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
         // a duplicate all-project Git scan here during the same load.
     }
 
-    /** Returns whether an S3 backup bucket is configured, caching the result for 60 s. */
-    private async _hasBackupBucket(): Promise<boolean> {
-        const now = Date.now();
-        if (this._s3CredsCached !== null && now - this._s3CredsCachedAt < 60_000) {
-            return this._s3CredsCached;
-        }
-        this._s3CredsCached = !!(await getS3Credentials(this.context));
-        this._s3CredsCachedAt = now;
-        return this._s3CredsCached;
-    }
-
-    /** Invalidate the S3 creds cache (call whenever credentials are changed). */
-    private _invalidateS3Cache(): void {
-        this._s3CredsCached = null;
-        this._s3CredsCachedAt = 0;
-    }
-
     /** Send account/project metadata with existing badges and no Git processes. */
     private async _postCachedState(): Promise<void> {
         if (!this.view?.visible) return;
@@ -2731,7 +2695,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
         const accounts = this.accounts.listAccounts();
         const activeAccountId = activeProject?.accountId
             || (activeRepo ? this.accounts.getLocalAccount(activeRepo)?.id : undefined);
-        const hasBackupBucket = await this._hasBackupBucket();
         if (!this.view?.visible) return;
         this.view.webview.postMessage({
             type: 'state',
@@ -2745,7 +2708,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
             activeAccountId: activeAccountId || null,
             activeProjectId: activeProject?.id || null,
             gitStatuses: this._cachedGitStatuses,
-            hasBackupBucket,
         });
     }
 
@@ -2779,8 +2741,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
 
             const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
 
-            // Use cached S3 cred check — avoids keychain reads on every refresh
-            const hasBackupBucket = await this._hasBackupBucket();
 
             const buildMsg = (gitStatuses: Record<string, GitStatus>) => ({
                 type: 'state',
@@ -2791,7 +2751,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 activeAccountId: activeAccountId || null,
                 activeProjectId: activeProject?.id || null,
                 gitStatuses,
-                hasBackupBucket,
             });
 
             // Pass 1: send cached statuses immediately — badges visible right away
@@ -2940,7 +2899,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
             authStatus: this.accounts.getAccountAuthStatus(acc),
         }));
         const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
-        const hasBackupBucket = await this._hasBackupBucket();
         const project = projects.find((p) => p.id === projectId);
         if (!project) return;
         const previousStatus = this._cachedGitStatuses[project.id];
@@ -2957,7 +2915,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
             activeProjectId: activeProject?.id || null,
             gitStatuses: { [project.id]: localStatus },
             onlyProjectId: projectId,
-            hasBackupBucket,
         });
     }
 
@@ -2980,7 +2937,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
             authStatus: this.accounts.getAccountAuthStatus(acc),
         }));
         const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
-        const hasBackupBucket = await this._hasBackupBucket();
         const gitStatuses: Record<string, GitStatus> = {};
         const project = projects.find((p) => p.id === projectId);
         if (project) {
@@ -2999,7 +2955,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
             activeProjectId: activeProject?.id || null,
             gitStatuses,
             onlyProjectId: projectId,
-            hasBackupBucket,
         });
     }
 
@@ -3407,7 +3362,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 }));
 
                 const activeRepoName = vscode.workspace.workspaceFolders?.[0]?.name ?? '';
-                const hasBackupBucket = !!(await getS3Credentials(context));
 
                 const buildMsg = (gitStatuses: Record<string, GitStatus>) => ({
                     type: 'state',
@@ -3418,7 +3372,6 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     activeAccountId: activeAccountId || null,
                     activeProjectId: activeProject?.id || null,
                     gitStatuses,
-                    hasBackupBucket,
                 });
 
                 // Send state immediately so the list updates instantly

@@ -47,7 +47,7 @@ Easily manage and kill open ports and processes within a simple UI. Identify loc
 
 ### **S3 Bucket Manager**
 
-Browse, upload, download, and manage your S3 buckets directly from VS Code. Configure AWS credentials once and backup files across all your projects with a single click.
+Browse, upload, download, and manage your S3 buckets directly from VS Code. Configure AWS credentials to manage bucket files from the editor.
 
 ### **Dokploy Sidebar**
 
@@ -166,7 +166,7 @@ The project list is sorted by most-recently opened — the project you open floa
 
 ### Quick Project Commands
 
-Every project row includes a compact `>_` command button next to **Open**, **Remove**, and **Backup**.
+Every project row includes a compact `>_` command button next to **Open** and **Remove**.
 
 -   **Run without opening**: Click `>_` to scan that saved project folder directly, even when it is not the current VS Code workspace.
 -   **QuickPick launcher**: Choose from the same detected runnable commands used by the Commands panel.

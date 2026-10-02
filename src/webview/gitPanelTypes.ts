@@ -25,7 +25,6 @@ export interface GitPanelStateMessage {
   activeProjectId: string | null;
   gitStatuses: Record<string, GitStatusState>;
   onlyProjectId?: string;
-  hasBackupBucket: boolean;
 }
 
 export type GitPanelInboundMessage =
@@ -34,6 +33,6 @@ export type GitPanelInboundMessage =
   | { type: 'projectAdded' | 'projectRemoved' | 'accountAdded' | 'accountRemoved' | 'accountUpdated' | 'sshKeyGenerated' };
 
 export type GitPanelOutboundMessage =
-  | { type: 'ready' | 'refresh' | 'refreshProjects' | 'addProject' | 'addCurrentProject' | 'addRepo' | 'addAccount' | 'openPanel' | 'openS3Backup' | 'backupAll' }
-  | { type: 'open' | 'delete' | 'gitPull' | 'gitPush' | 'gitSync' | 'gitBranch' | 'gitMerge' | 'gitMergeSync' | 'gitBranchWork' | 's3BackupProject' | 'projectCommands' | 'refreshSingleProject'; id: string }
+  | { type: 'ready' | 'refresh' | 'refreshProjects' | 'addProject' | 'addCurrentProject' | 'addRepo' | 'addAccount' | 'openPanel' }
+  | { type: 'open' | 'delete' | 'gitPull' | 'gitPush' | 'gitSync' | 'gitBranch' | 'gitMerge' | 'gitMergeSync' | 'gitBranchWork' | 'projectCommands' | 'refreshSingleProject'; id: string }
   | { type: 'switchAccount' | 'authOptions' | 'removeAccount' | 'reAuthAccount'; accountId: string };

@@ -544,11 +544,6 @@
                 "icon": "$(browser)"
             },
             {
-                "command": "ultraview.configureS3Backup",
-                "title": "Ultraview: Configure S3 Backup Credentials",
-                "icon": "$(gear)"
-            },
-            {
                 "command": "ultraview.openBucketManager",
                 "title": "Ultraview: Open Bucket Manager as Editor",
                 "icon": "$(database)"
