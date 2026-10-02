@@ -1,6 +1,6 @@
 ﻿# Ultraview — the ultra code extension
 
-Ultraview packs a full suite of viewers, editors, and developer tools directly inside VS Code, Cursor, Windsurf, or any VS Code-compatible IDE.
+Ultraview packs a full suite of viewers, editors, and developer tools directly inside VS Code, Cursor, Windsurf, or any VS Code-compatible code editor.
 
 Install it once, stay synced across **VS Code**, **Antigravity**, **Cursor**, and **Windsurf**.
 
