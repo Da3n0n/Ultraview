@@ -10,7 +10,7 @@ Install it once, stay synced across **VS Code**, **Antigravity**, **Cursor**, an
 
 Open SQLite, DuckDB, Access, and SQL files with a clean, paginated table view.
 
-d### **Markdown Editor**
+**Markdown Editor**
 
 Full-featured WYSIWYG editor with Rich, Raw, and Split modes. Supports Obsidian and GitHub styles with a rich toolda
 
