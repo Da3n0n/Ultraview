@@ -173,7 +173,7 @@ function App() {
     );
     const pendingCount = useMemo(() => Object.keys(pendingProjects).length, [pendingProjects]);
 
-    const runProjectCommand = (type: 'gitPull' | 'gitPush' | 'gitSync' | 'gitBranch' | 'gitMerge' | 'gitMergeSync' | 'gitBranchWork', id: string) => {
+    const runProjectCommand = (type: 'gitSync', id: string) => {
         if (pendingProjects[id]) return;
         setPendingProjects((current) => ({ ...current, [id]: true }));
         getVscode()?.postMessage({ type, id } satisfies GitPanelOutboundMessage);
@@ -193,7 +193,7 @@ function App() {
         if (isPending) {
             chips.push(
                 <span key="working" className="git-chip checking">
-                    ⟳ Working…
+                    ⟳ Syncing…
                 </span>
             );
         } else if (isChecking && !gitStatus) {
@@ -204,51 +204,35 @@ function App() {
             );
         } else if (gitStatus) {
             chips.push(
-                <button key="branch" type="button" className="git-chip branch"
-                    disabled={isPending}
-                    title="Switch branch or create a new branch"
-                    aria-label={`Switch or create branch (current: ${gitStatus.branch || 'detached HEAD'})`}
-                    onClick={() => runProjectCommand('gitBranch', project.id)}>
-                    ⎇ {gitStatus.branch || 'detached HEAD'} ▾
-                </button>
+                <span key="branch" className="git-chip branch" title="Current branch">
+                    ⎇ {gitStatus.branch || 'detached HEAD'}
+                </span>
             );
-            chips.push(
-                <button key="merge" type="button" className="git-chip branch"
-                    disabled={isPending}
-                    title="Bring changes from one branch into another"
-                    onClick={() => runProjectCommand('gitMerge', project.id)}>
-                    ⤵ Merge…
-                </button>
-            );
-            if ((gitStatus.unmergedBranches ?? 0) > 0) chips.push(
-                <button key="branch-work" type="button" className="git-chip branch"
-                    title="Local branches contain commits not in the baseline branch. Review them with Branch work, or choose Merge & Sync to bring a branch over and publish it."
-                    onClick={() => runProjectCommand('gitBranchWork', project.id)}>
-                    ⎇ {gitStatus.unmergedBranches} {gitStatus.unmergedBranches === 1 ? 'branch' : 'branches'} with work outside {gitStatus.branchWorkBase}
-                </button>
-            );
-            if (gitStatus.localChanges > 0)
+            if (gitStatus.localChanges > 0 || gitStatus.ahead > 0) {
+                const localDetails = [
+                    gitStatus.localChanges > 0
+                        ? `${gitStatus.localChanges} changed ${gitStatus.localChanges === 1 ? 'file' : 'files'}`
+                        : '',
+                    gitStatus.ahead > 0
+                        ? `${gitStatus.ahead} ${gitStatus.ahead === 1 ? 'commit' : 'commits'} to upload`
+                        : '',
+                ].filter(Boolean).join(' · ');
                 chips.push(
-                    <span key="local" className="git-chip local" title={`Uncommitted files in this checkout. Sync will commit them on ${gitStatus.branch || 'the selected branch'}.`}>
-                        ● {gitStatus.localChanges} uncommitted
+                    <span key="local" className="git-chip local" title="Sync commits changed files and uploads local commits to the remote.">
+                        ↑ Local: {localDetails}
                     </span>
                 );
-            if (gitStatus.ahead > 0)
-                chips.push(
-                    <span key="ahead" className="git-chip ahead" title="Local commits absent from the remote; rewritten history can make this count large">
-                        ↑ {gitStatus.ahead} to push
-                    </span>
-                );
+            }
             if (gitStatus.behind > 0)
                 chips.push(
-                    <span key="behind" className="git-chip behind" title="Remote commits absent locally; rewritten history can make this count large">
-                        ↓ {gitStatus.behind} to pull
+                    <span key="behind" className="git-chip behind" title="Sync downloads these remote commits into the current branch.">
+                        ↓ Remote: {gitStatus.behind} {gitStatus.behind === 1 ? 'commit' : 'commits'} to download
                     </span>
                 );
             if (gitStatus.localChanges === 0 && gitStatus.ahead === 0 && gitStatus.behind === 0) {
                 chips.push(
-                    <span key="synced" className="git-chip synced" title="No pending changes for this branch’s remote. Other branches can still contain work that has not been merged here; use Branch work to compare.">
-                        ✓ no pending sync
+                    <span key="synced" className="git-chip synced" title="The current branch matches its remote, with no uncommitted changes.">
+                        ✓ Synced
                     </span>
                 );
             }
@@ -256,48 +240,15 @@ function App() {
 
         return (
             <>
-                <div className="git-inline">{chips}</div>
-                <div className="project-actions-row">
-                    <button className="mini-button" disabled={isPending}
-                        onClick={() => runProjectCommand('gitBranchWork', project.id)}
-                        title="See commits on other branches that are not in main, or compare the current files with main">
-                        Branch work…
-                    </button>
-                    <button className="mini-button" disabled={isPending}
-                        onClick={() => runProjectCommand('gitMergeSync', project.id)}
-                        title="Choose a branch to merge into a destination such as main, then publish that destination">
-                        Merge &amp; Sync…
-                    </button>
-                    {/* Pull button — only when remote has commits we don't have */}
-                    {gitStatus && gitStatus.behind > 0 && gitStatus.behind < 50 && (
-                        <button
-                            className="mini-button pull"
-                            disabled={isPending || isChecking}
-                            onClick={() => runProjectCommand('gitPull', project.id)}
-                            title="Pull remote changes (no local conflicts)"
-                        >
-                            ↓ Pull
-                        </button>
-                    )}
-                    {/* Push button — when local has uncommitted changes OR local commits not on remote */}
-                    {gitStatus && (gitStatus.localChanges > 0 || gitStatus.ahead > 0) && (
-                        <button
-                            className="mini-button push"
-                            disabled={isPending || isChecking}
-                            onClick={() => runProjectCommand('gitPush', project.id)}
-                            title="Commit local files and publish local commits; Sync also receives remote changes"
-                        >
-                            ↑ Push
-                        </button>
-                    )}
-                    {/* Sync button — always available, handles all cases (commit + pull + push) */}
+                <div className="project-sync-row">
+                    <div className="git-inline" role="status">{chips}</div>
                     <button
                         className="mini-button sync"
                         disabled={isPending}
                         onClick={() => runProjectCommand('gitSync', project.id)}
-                        title={`Commit this checkout, receive remote updates, and publish ${gitStatus?.branch || 'the selected branch'}. Other branches are merged separately.`}
+                        title={`Sync ${gitStatus?.branch || 'the current branch'}: upload local changes and download remote changes.`}
                     >
-                        {isPending ? '⟳ Working…' : '⟲ Sync'}
+                        {isPending ? '⟳ Syncing…' : '⟲ Sync'}
                     </button>
                 </div>
             </>
@@ -349,17 +300,12 @@ function App() {
         .git-inline { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size:10px; color:var(--muted); min-height:22px; }
         .git-chip { padding:2px 7px; border-radius:999px; border:1px solid transparent; font-weight:700; }
         .git-chip.branch { background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.2); }
-        button.git-chip.branch { color:inherit; font:inherit; font-weight:700; cursor:pointer; }
-        button.git-chip.branch:hover { border-color:var(--accent); background:rgba(148,163,184,.22); }
-        button.git-chip.branch:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
         .git-chip.local { background:rgba(251,191,36,.14); border-color:rgba(251,191,36,.28); color:#fbbf24; }
-        .git-chip.ahead { background:rgba(74,222,128,.14); border-color:rgba(74,222,128,.28); color:#4ade80; }
         .git-chip.behind { background:rgba(96,165,250,.14); border-color:rgba(96,165,250,.28); color:#60a5fa; }
         .git-chip.synced { background:rgba(110,231,183,.12); border-color:rgba(110,231,183,.24); color:#6ee7b7; }
         .git-chip.checking { background:rgba(148,163,184,.08); border-color:rgba(148,163,184,.16); color:var(--muted); font-weight:400; }
-        .project-actions-row { display:flex; gap:6px; flex-wrap:wrap; min-height:26px; align-items:center; }
-        .mini-button.push { background:rgba(251,191,36,.12); border-color:rgba(251,191,36,.28); color:#fbbf24; }
-        .mini-button.pull { background:rgba(96,165,250,.12); border-color:rgba(96,165,250,.28); color:#60a5fa; }
+        .project-sync-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+        .project-sync-row .mini-button.sync { margin-left:auto; flex-shrink:0; }
         .mini-button.sync { background:rgba(192,132,252,.12); border-color:rgba(192,132,252,.28); color:#c084fc; }
         .status-dot { width:9px; height:9px; border-radius:999px; flex-shrink:0; margin-top:4px; }
         .status-dot-valid { background:#6ee7b7; }
