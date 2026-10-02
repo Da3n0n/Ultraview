@@ -504,10 +504,10 @@ function App() {
                                         className={`card${isActive ? ' active' : ''}`}
                                         role="group"
                                         tabIndex={0}
-                                        aria-label={`${project.name}. Double-click or press Enter to open project.`}
+                                        aria-label={`${project.name}. Click or press Enter to open project.`}
                                         aria-keyshortcuts="Enter"
-                                        title="Double-click to open project"
-                                        onDoubleClick={(event) => {
+                                        title="Click to open project"
+                                        onClick={(event) => {
                                             if ((event.target as HTMLElement).closest('button')) return;
                                             if (pendingProjects[project.id]) return;
                                             getVscode()?.postMessage({ type: 'open', id: project.id } satisfies GitPanelOutboundMessage);
