@@ -12,7 +12,7 @@ Open SQLite, DuckDB, Access, and SQL files with a clean, paginated table view.
 
 **Markdown Editor**
 
-Full-featured WYSIWYG editor with Rich, Raw, and Split modes. Supports Obsidian and GitHub styles with a rich toolda
+Full-featured WYSIWYG editor with Rich, Raw, and Split modes. Supports Obsidian and GitHub styles with a rich tooling
 
 ### **SVG Editor**
 
