@@ -23,7 +23,7 @@ import { Model3dProvider } from './model3dViewer';
 import { registerThemeCommands } from './theme';
 import { forceDelete } from './utils/forceDelete';
 import { openUrlInVsCodeBrowser } from './utils/browser';
-import { applyLocalAccount } from './git/gitCredentials';
+import { applyLocalAccount, migratePlaintextRemote } from './git/gitCredentials';
 import { DrawingProvider } from './drawings/drawingProvider';
 import { DrawingManager } from './drawings/drawingManager';
 import { GitNexusProvider } from './providers/gitNexusProvider';
@@ -52,6 +52,21 @@ export async function activate(context: vscode.ExtensionContext) {
     } });
 
     const gitProvider = new GitProvider(context, sharedStore);
+    // Older versions wrote git tokens into remote URLs (.git/config). Move any that remain into
+    // the OS credential store, for every known project and open folder (runs once per start).
+    void storeReady
+        .then(async () => {
+            const nodeFs = require('fs') as typeof import('fs');
+            const nodePath = require('path') as typeof import('path');
+            const paths = new Set<string>([
+                ...new GitProjects(context, sharedStore).listProjects().map((p) => p.path),
+                ...(vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+            ]);
+            for (const repo of paths) {
+                if (repo && nodeFs.existsSync(nodePath.join(repo, '.git'))) await migratePlaintextRemote(repo);
+            }
+        })
+        .catch((error) => console.warn('[Ultraview] Credential migration skipped:', error));
     const drawingManager = new DrawingManager(context, sharedStore);
     const drawingProvider = new DrawingProvider(context, drawingManager);
     const gitNexusRuntime = new GitNexusRuntime(context);

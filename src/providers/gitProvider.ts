@@ -8,7 +8,7 @@ import { buildGitHtml } from '../git/gitUi';
 import { GitProjects } from '../git/gitProjects';
 import { GitAccounts } from '../git/gitAccounts';
 import { GitAccount, GitProfile, GitProvider as GitProviderType, AuthMethod } from '../git/types';
-import { applyLocalAccount, clearLocalAccount, getRemoteUrl } from '../git/gitCredentials';
+import { applyLocalAccount, clearLocalAccount, getRemoteUrl, withUsername } from '../git/gitCredentials';
 import { SharedStore } from '../sync/sharedStore';
 import { getS3Credentials } from '../s3backup/s3BackupSettings';
 import { ProjectCommand, scanCommands } from '../commands/commandScanner';
@@ -313,31 +313,27 @@ function parseMovedRepository(stderr: string): string | undefined {
 }
 
 /**
- * Updates the 'origin' remote URL to a new location. Re-embeds any credentials
- * that were on the existing origin URL so auth continues to work after the
- * redirect. Returns the new URL (without credentials) for display purposes.
+ * Updates the 'origin' remote URL to a new location, keeping the username that
+ * selects the stored login (tokens are never written into the URL; they live in
+ * the OS credential store). Returns the new URL for display purposes.
  */
 async function rewriteOriginRemote(
     projectPath: string,
     newUrl: string,
     run: GitCommandRunner
 ): Promise<string> {
-    // Preserve any embedded credentials from the existing origin URL
-    let credentialedNew = newUrl;
+    // Keep only the username of the existing origin URL (selects the stored login).
+    let target = newUrl;
     try {
         const { stdout } = await run('git remote get-url origin');
-        const current = stdout.trim();
-        const credMatch = current.match(/^https:\/\/([^@\/:]+):([^@]+)@/);
-        if (credMatch && newUrl.startsWith('https://')) {
-            credentialedNew = newUrl.replace(
-                'https://',
-                `https://${credMatch[1]}:${credMatch[2]}@`
-            );
+        const userMatch = stdout.trim().match(/^https:\/\/([^@\/:]+)(?::[^@]*)?@/);
+        if (userMatch && newUrl.startsWith('https://')) {
+            target = withUsername(newUrl, decodeURIComponent(userMatch[1]));
         }
     } catch {
-        /* no existing origin / no credentials — push as-is */
+        /* no existing origin — use the new URL as-is */
     }
-    await run(`git remote set-url origin "${credentialedNew.replace(/"/g, '\\"')}"`);
+    await run(`git remote set-url origin "${target.replace(/"/g, '\\"')}"`);
     return newUrl;
 }
 
@@ -2165,8 +2161,9 @@ export class GitProvider implements vscode.WebviewViewProvider {
                     await run('git commit -m "Initial commit"');
 
                     progress.report({ message: 'Pushing to remote…' });
-                    const credUrl = cloneUrl.replace('https://', `https://${accWithToken.username}:${accWithToken.token}@`);
-                    await run(`git remote add origin "${credUrl}"`);
+                    await run(`git remote add origin "${withUsername(cloneUrl, accWithToken.username)}"`);
+                    // Stores the token in the OS credential store for this repo (never in .git/config).
+                    await applyLocalAccount(folder, accWithToken, accWithToken.token!);
                     await run('git push -u origin HEAD');
 
                     // Register in project manager
@@ -4543,14 +4540,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
                         await run(`git config user.email "${userEmail}"`);
                         await run('git commit -m "Initial commit"');
 
-                        // Embed credentials in remote URL — most reliable auth method on Windows
-                        const credCloneUrl = cloneUrl.replace(
-                            'https://',
-                            `https://${accWithToken.username}:${accWithToken.token}@`
-                        );
-                        await run(`git remote add origin "${credCloneUrl}"`);
+                        // Token-free remote; applyLocalAccount stores the login in the OS credential store.
+                        await run(`git remote add origin "${withUsername(cloneUrl, accWithToken.username)}"`);
 
-                        // Register project, set identity and re-embed creds via applyLocalAccount
+                        // Register project, set identity and store the login via applyLocalAccount
                         manager.addProject({
                             name: safeName,
                             path: fullPath,
@@ -4690,9 +4683,20 @@ export class GitProvider implements vscode.WebviewViewProvider {
                                 const b64 = Buffer.from(
                                     `${accWithToken.username}:${accWithToken.token}`
                                 ).toString('base64');
+                                // Header via environment config: other processes can read a
+                                // command line, and nothing here is written to .git/config.
                                 await execAsync(
-                                    `git -c http.extraHeader="Authorization: Basic ${b64}" clone --no-tags --recurse-submodules "${rawUrl}" "${safeCloneName}"`,
-                                    { cwd: cloneDestPath, env: process.env }
+                                    `git clone --no-tags --recurse-submodules "${rawUrl}" "${safeCloneName}"`,
+                                    {
+                                        cwd: cloneDestPath,
+                                        env: {
+                                            ...process.env,
+                                            GIT_TERMINAL_PROMPT: '0',
+                                            GIT_CONFIG_COUNT: '1',
+                                            GIT_CONFIG_KEY_0: 'http.extraHeader',
+                                            GIT_CONFIG_VALUE_0: `Authorization: Basic ${b64}`,
+                                        },
+                                    }
                                 );
                                 cloned = true;
                             } catch {
@@ -4786,14 +4790,10 @@ export class GitProvider implements vscode.WebviewViewProvider {
                         }
 
                         // ── 3. Add origin and push ────────────────────────────────────
-                        // Embed credentials in remote URL — most reliable auth method on Windows
-                        const credRemoteUrl = newRemoteUrl.replace(
-                            'https://',
-                            `https://${accWithToken.username}:${accWithToken.token}@`
-                        );
-                        await run(`git remote add origin "${credRemoteUrl}"`);
+                        // Token-free remote; applyLocalAccount stores the login in the OS credential store.
+                        await run(`git remote add origin "${withUsername(newRemoteUrl, accWithToken.username)}"`);
 
-                        // ── 4. Register project, set identity, re-embed creds ────────
+                        // ── 4. Register project, set identity, store the login ───────
                         manager.addProject({
                             name: safeCloneName,
                             path: cloneFullPath,
