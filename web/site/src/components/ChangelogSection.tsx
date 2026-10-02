@@ -17,43 +17,21 @@ type Release = {
 
 const releases: Release[] = [
     {
-        id: 'release-unreleased',
-        version: 'Unreleased',
-        date: 'In development',
-        title: 'Clearer branch work and flexible switching',
-        blurb: 'Coming next: carry edits between branches, review work outside main, and merge then publish in one flow.',
-        groups: [
-            {
-                label: 'Improved',
-                items: [
-                    'Choose to carry uncommitted edits to another branch, or save them in a stash before switching. Git stops switches that would overwrite work; saved edits can be recovered from the branch menu with a backup retained.',
-                    'Separate uncommitted files, commits to push/pull, and local branch work outside main. Inspect another branch or compare the current files with main without switching branches.',
-                    'Merge & Sync confirms the source and destination, then publishes the destination after a successful merge. Plain Sync continues to publish the selected checkout without automatically combining other branches.',
-                ],
-            },
-        ],
-    },
-    {
-        id: 'release-0-2-462',
-        version: 'v0.2.462',
-        date: 'September 30, 2026',
-        title: 'Branch switching and merging in Project Manager',
-        blurb: 'Create, switch, and merge branches from the Project Manager, then Sync the selected branch.',
+        id: 'release-0-2-467',
+        version: 'v0.2.467',
+        date: 'October 2, 2026',
+        title: 'A simpler Project Manager',
+        blurb: 'One Sync button, single-click project opening, and compact removal controls for projects and accounts.',
         latest: true,
         groups: [
             {
-                label: 'New',
-                items: [
-                    'Click the branch badge to switch local branches, check out a known origin branch, or create a new branch from the current checkout. Available in the sidebar and full panel.',
-                    'Merge lets you choose a destination and source, then confirms the direction. The source branch is kept; click Sync afterward to publish the destination.',
-                ],
-            },
-            {
                 label: 'Improved',
                 items: [
-                    'Sync, Push, and Pull follow the checked-out branch, and status refreshes after branch operations. “Synced” compares each branch with its own remote, rather than with main or another local branch.',
-                    'Branch operations share the existing Git-operation lock. Switching existing branches and merging require a clean working tree; new branches retain local work without inheriting the previous upstream.',
-                    'Merge conflicts abort the attempted merge and report the conflicting files.',
+                    'One Sync button uploads local changes and downloads remote updates. Status shows “Synced”, separate local and remote change counts, or “Syncing…” while running.',
+                    'Click a project card to open it, matching account selection. The Open button is removed; the buttons inside each card keep their own actions. Focus a project card and press Enter to open it with the keyboard.',
+                    'Projects and accounts have a small × in the top-right corner instead of a Remove button. A VS Code confirmation names the item and warns that removal cannot be undone. Project files stay on disk; account removal also removes saved SSH keys.',
+                    'Project cards now use a single Sync action with the current branch shown as a read-only label.',
+                    'S3 project backups are removed, including per-project Backup, Backup All, Connect Backup, the backup panel, commands, and implementation. The separate S3 Bucket Manager remains available for browsing and managing files.',
                 ],
             },
         ],

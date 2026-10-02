@@ -2,22 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.2.467] - 2026-10-02
 
 ### Improved
-- **Carry edits across branches** — When switching with uncommitted files, choose to carry them to the destination or save them in a stash before switching. Git stops switches that would overwrite edits; saved edits can be recovered from the branch menu on a new branch from their original base, with a backup retained.
-- **Separate branch work from Sync status** — The Project Manager labels uncommitted files and commits to push/pull separately, and shows when local branches contain work outside main. Branch work lets you inspect another branch's contributions or compare the current files on disk with main without switching branches.
-- **Merge and publish in one flow** — Merge & Sync confirms the source and destination, merges the selected branch, and publishes the destination after a successful merge. Plain Sync continues to publish the selected checkout without automatically combining other branches.
+- **Simpler project sync** — Each project now has one Sync button to upload local changes and download remote updates. Status shows **Synced** when up to date, or separate local and remote change counts, with **Syncing…** while running.
+- **Open projects with one click** — Click anywhere on a project card to open it, matching account selection. The Open button is removed; Sync, refresh, commands, and removal buttons keep their own actions. Keyboard users can focus a card and press Enter.
+- **Compact removal controls** — Projects and accounts use a small **×** in the top-right corner instead of a Remove button. A VS Code confirmation names the item and warns that removal cannot be undone. Project files remain on disk; removing an account also removes its saved SSH keys.
 
-## [0.2.462] - 2026-09-30
-
-### Added
-- **Switch and create branches from Project Manager** — Click the branch badge to select a local branch, check out a known origin branch, or create a new branch from the current checkout. Available in both the sidebar and full panel.
-- **Merge branches from Project Manager** — The Merge button beside the branch badge lets you choose a destination and source, then confirms the direction before bringing the source branch's commits into the destination. The source branch is kept; click Sync afterward to publish the destination.
-
-### Improved
-- **Sync follows the selected branch** — Sync, Push, and Pull use the checked-out branch. Status badges refresh after branch operations; each branch's synced status compares it with its own remote, rather than with main or another local branch.
-- **Safer branch operations** — Branch switching and merging share the existing Git-operation lock. Switching existing branches and merging require a clean working tree. New branches retain local work without inheriting the previous branch's upstream; merge conflicts abort the attempted merge and report the conflicting files.
+### Removed
+- **Extra Git controls** — Removed branch switching, branch work, Merge, Merge & Sync, Push, and Pull buttons from project cards. The current branch remains a read-only label.
+- **S3 project backups** — Removed per-project Backup, Backup All, Connect Backup, the backup panel, backup commands, and backup implementation. The separate S3 Bucket Manager remains available for browsing and managing files.
 
 ## [0.2.461] - 2026-09-30
 
