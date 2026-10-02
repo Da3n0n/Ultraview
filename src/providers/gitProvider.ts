@@ -2326,6 +2326,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 case 'removeAccount': {
                     const accountId = msg.accountId;
                     if (accountId) {
+                        const account = this.accounts.getAccount(accountId);
+                        if (!account) break;
+                        const action = await vscode.window.showWarningMessage(
+                            `Are you sure you want to remove account "${account.username}" (${account.provider})?`,
+                            { modal: true, detail: 'This removal cannot be undone. The saved account and its associated SSH keys will be removed from Ultraview.' },
+                            'Remove Account'
+                        );
+                        if (action !== 'Remove Account') break;
                         const keys = this.accounts
                             .listSshKeys()
                             .filter((k) => k.accountId === accountId);
@@ -3847,6 +3855,14 @@ export class GitProvider implements vscode.WebviewViewProvider {
                 case 'removeAccount': {
                     const accountId = msg.accountId;
                     if (accountId) {
+                        const account = accounts.getAccount(accountId);
+                        if (!account) break;
+                        const action = await vscode.window.showWarningMessage(
+                            `Are you sure you want to remove account "${account.username}" (${account.provider})?`,
+                            { modal: true, detail: 'This removal cannot be undone. The saved account and its associated SSH keys will be removed from Ultraview.' },
+                            'Remove Account'
+                        );
+                        if (action !== 'Remove Account') break;
                         const keys = accounts
                             .listSshKeys()
                             .filter((k) => k.accountId === accountId);
