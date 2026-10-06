@@ -2,7 +2,8 @@ import type { PortProcess } from '../ports/portManager';
 
 export interface PortsPanelStateMessage {
   type: 'state';
-  ports: PortProcess[];
+  ports?: PortProcess[];
+  error?: string;
   devOnly: boolean;
 }
 

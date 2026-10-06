@@ -16,26 +16,36 @@ function normalize(value: string | number | undefined): string {
 function App() {
     const [ports, setPorts] = useState<PortProcess[]>([]);
     const [loaded, setLoaded] = useState(false);
+    const [error, setError] = useState<string>();
     const [killing, setKilling] = useState<Record<number, boolean>>({});
     const [killingAll, setKillingAll] = useState(false);
 
     useEffect(() => {
-        getVscode()?.postMessage({ type: 'ready', devOnly: false });
-
         const handleMessage = (event: MessageEvent<PortsPanelInboundMessage>) => {
             const message = event.data;
             if (!message || message.type !== 'state') return;
             setLoaded(true);
-            setPorts(message.ports ?? []);
+            setError(message.error);
+            if (!message.error) setPorts(message.ports ?? []);
             setKilling({});
             setKillingAll(false);
         };
 
         window.addEventListener('message', handleMessage as EventListener);
-        return () => window.removeEventListener('message', handleMessage as EventListener);
+        getVscode()?.postMessage({ type: 'ready', devOnly: false });
+        const refreshVisible = () => {
+            if (!document.hidden) getVscode()?.postMessage({ type: 'refresh', devOnly: false });
+        };
+        const timer = window.setInterval(refreshVisible, 5000);
+        document.addEventListener('visibilitychange', refreshVisible);
+        return () => {
+            window.removeEventListener('message', handleMessage as EventListener);
+            document.removeEventListener('visibilitychange', refreshVisible);
+            window.clearInterval(timer);
+        };
     }, []);
 
-    const devPorts = useMemo(() => ports.filter((port) => port.isDev), [ports]);
+    const devPorts = useMemo(() => ports.filter((port) => port.isDev && port.pid > 4), [ports]);
 
     const refresh = () => {
         getVscode()?.postMessage({ type: 'refresh', devOnly: false });
@@ -49,7 +59,7 @@ function App() {
     const killAllDev = () => {
         if (devPorts.length === 0) return;
         setKillingAll(true);
-        getVscode()?.postMessage({ type: 'killAll', ports: devPorts.map((port) => port.pid) });
+        getVscode()?.postMessage({ type: 'killAll', ports: [...new Set(devPorts.map((port) => port.pid))] });
     };
 
     const renderPortCard = (port: PortProcess) => (
@@ -67,7 +77,7 @@ function App() {
             <button
                 className="danger-button"
                 onClick={() => killOne(port.pid)}
-                disabled={Boolean(killing[port.pid])}
+                disabled={Boolean(killing[port.pid]) || Boolean(error) || port.pid <= 4}
             >
                 {killing[port.pid] ? 'Killing...' : 'Kill'}
             </button>
@@ -284,7 +294,7 @@ function App() {
                             whiteSpace: 'nowrap',
                         }}
                         onClick={killAllDev}
-                        disabled={killingAll || devPorts.length === 0}
+                        disabled={killingAll || Boolean(error) || devPorts.length === 0}
                     >
                         {killingAll ? 'Killing...' : `Kill Dev (${devPorts.length})`}
                     </button>
@@ -302,7 +312,8 @@ function App() {
             <div className="content">
                 <section className="list-card">
                     {!loaded && <div className="empty">Scanning ports...</div>}
-                    {loaded && ports.length === 0 && (
+                    {error && <div className="empty" role="alert">Port scan failed: {error}. {ports.length > 0 && 'Showing the last successful scan.'}</div>}
+                    {loaded && !error && ports.length === 0 && (
                         <div className="empty">No listening ports found.</div>
                     )}
                     {ports.length > 0 && (
@@ -313,7 +324,7 @@ function App() {
 
             <div className="statusbar">
                 <span>{ports.length} shown</span>
-                <span>Filtered system noise</span>
+                <span>{error ? 'Scan failed' : 'All TCP listeners · refreshes every 5s'}</span>
             </div>
         </div>
     );

@@ -2,6 +2,8 @@ import * as cp from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(cp.exec);
+const execFileAsync = promisify(cp.execFile);
+const scanOptions = { windowsHide: true, timeout: 15000, maxBuffer: 8 * 1024 * 1024 };
 
 export interface PortProcess {
     port: number;
@@ -239,31 +241,57 @@ export async function getOpenPorts(devOnly: boolean = false): Promise<PortProces
         for (const p of ports) {
             p.isDev = isDevServerProcess(p.name) || isDevPort(p.port);
         }
-        ports = ports.filter((p) => !isNoiseProcess(p.name));
         if (devOnly) {
             return ports.filter((p) => isRelevantPortProcess(p));
         }
         return ports;
     } catch (err) {
         console.error('Failed to get ports', err);
-        return [];
+        throw err;
     }
 }
 
 async function getPortsWin32(): Promise<PortProcess[]> {
-    const { stdout } = await execAsync('netstat -ano -p tcp');
+    let results: PortProcess[] = [];
+    let netstatError: unknown;
+    try {
+        const { stdout } = await execFileAsync('netstat.exe', ['-ano', '-p', 'tcp'], scanOptions);
+        results = parseWindowsListeners(stdout);
+    } catch (error) {
+        netstatError = error;
+    }
+    // Empty/unrecognised output must be checked with an independent source.
+    if (results.length === 0) {
+        try {
+            results = await getWindowsTcpListeners();
+        } catch (nativeError) {
+            throw new Error(`Windows port scan failed: netstat: ${netstatError ? String(netstatError) : 'no listeners returned'}; PowerShell: ${String(nativeError)}`);
+        }
+    }
+    const deduped = dedupe(results);
+    const pidNameMap = await getWindowsPidNameMap();
+    for (const res of deduped) {
+        const resolvedName = pidNameMap.get(res.pid);
+        if (resolvedName) res.name = resolvedName;
+    }
+    return deduped;
+}
+
+function parseWindowsListeners(stdout: string): PortProcess[] {
     const lines = stdout.split('\n');
     const results: PortProcess[] = [];
     for (const line of lines) {
-        if (line.includes('LISTENING')) {
+        // A TCP listener has an unspecified remote endpoint with port zero.
+        // Avoid depending on localized state labels such as LISTENING.
+        if (/^\s*TCP\s/i.test(line)) {
             const parts = line.trim().split(/\s+/);
-            if (parts.length >= 5) {
+            if (parts.length >= 5 && /:0$/.test(parts[2])) {
                 const portPart = parts[1].split(':').pop();
-                const pidPart = parts[4];
+                const pidPart = parts[parts.length - 1];
                 if (portPart && pidPart) {
-                    const port = parseInt(portPart, 10);
-                    const pid = parseInt(pidPart, 10);
-                    if (!isNaN(port) && !isNaN(pid) && port > 0) {
+                    const port = Number(portPart);
+                    const pid = Number(pidPart);
+                    if (Number.isInteger(port) && port > 0 && port <= 65535 && Number.isInteger(pid) && pid >= 0) {
                         results.push({ name: 'Unknown (Windows)', port, pid });
                     }
                 }
@@ -271,20 +299,21 @@ async function getPortsWin32(): Promise<PortProcess[]> {
         }
     }
 
-    const deduped = dedupe(results);
-    const pidNameMap = await getWindowsPidNameMap();
-    for (const res of deduped) {
-        const resolvedName = pidNameMap.get(res.pid);
-        if (resolvedName) {
-            res.name = resolvedName;
-        }
-    }
-    return deduped;
+    return results;
+}
+
+async function getWindowsTcpListeners(): Promise<PortProcess[]> {
+    const script = "$ErrorActionPreference='Stop'; @(Get-NetTCPConnection -State Listen | Select-Object LocalPort,OwningProcess) | ConvertTo-Json -Compress";
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], scanOptions);
+    const parsed = JSON.parse(stdout.trim() || '[]');
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    return rows.map(row => ({ port: Number(row.LocalPort), pid: Number(row.OwningProcess), name: 'Unknown (Windows)' }))
+        .filter(row => Number.isInteger(row.port) && row.port > 0 && row.port <= 65535 && Number.isInteger(row.pid) && row.pid >= 0);
 }
 
 async function getWindowsPidNameMap(): Promise<Map<number, string>> {
     try {
-        const { stdout } = await execAsync('tasklist /fo csv /nh');
+        const { stdout } = await execFileAsync('tasklist.exe', ['/fo', 'csv', '/nh'], scanOptions);
         const lines = stdout.split(/\r?\n/).filter(Boolean);
         const map = new Map<number, string>();
 
@@ -442,10 +471,11 @@ async function getPortsLinux(): Promise<PortProcess[]> {
 }
 
 function dedupe(arr: PortProcess[]) {
-    const map = new Map<number, PortProcess>();
+    const map = new Map<string, PortProcess>();
     for (const item of arr) {
-        if (item.port && !map.has(item.port)) {
-            map.set(item.port, item);
+        const key = `${item.port}:${item.pid}`;
+        if (item.port && !map.has(key)) {
+            map.set(key, item);
         }
     }
     return Array.from(map.values()).sort((a, b) => a.port - b.port);

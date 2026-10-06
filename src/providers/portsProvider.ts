@@ -3,6 +3,30 @@ import * as path from 'path';
 import { buildPortsHtml } from '../ports/portsHtml';
 import { getOpenPorts, killProcess, killProcesses } from '../ports/portManager';
 
+// Share in-flight scans across sidebar/panel refreshes and reject stale replies.
+const pendingScans = new Map<boolean, Promise<Awaited<ReturnType<typeof getOpenPorts>>>>();
+const stateRequests = new WeakMap<vscode.Webview, number>();
+async function postPortsState(webview: vscode.Webview, devOnly: boolean): Promise<void> {
+    const request = (stateRequests.get(webview) ?? 0) + 1;
+    stateRequests.set(webview, request);
+    let scan = pendingScans.get(devOnly);
+    if (!scan) {
+        scan = getOpenPorts(devOnly);
+        pendingScans.set(devOnly, scan);
+        void scan.finally(() => pendingScans.delete(devOnly)).catch(() => {});
+    }
+    try {
+        const ports = await scan;
+        if (stateRequests.get(webview) === request) {
+            await webview.postMessage({ type: 'state', ports, devOnly });
+        }
+    } catch (error) {
+        if (stateRequests.get(webview) === request) {
+            await webview.postMessage({ type: 'state', devOnly, error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+}
+
 export class PortsProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'ultraview.ports';
     private view?: vscode.WebviewView;
@@ -30,24 +54,17 @@ export class PortsProvider implements vscode.WebviewViewProvider {
                 case 'ready':
                 case 'refresh':
                     devOnly = msg.devOnly || false;
-                    try {
-                        const ports = await getOpenPorts(devOnly);
-                        panel.webview.postMessage({ type: 'state', ports, devOnly });
-                    } catch {
-                        panel.webview.postMessage({ type: 'state', ports: [], devOnly });
-                    }
+                    await postPortsState(panel.webview, devOnly);
                     break;
                 case 'kill':
                     try {
                         await killProcess(msg.pid);
                         vscode.window.showInformationMessage(`Successfully killed process ${msg.pid}`);
                         await new Promise(r => setTimeout(r, 1000));
-                        const ports = await getOpenPorts(devOnly);
-                        panel.webview.postMessage({ type: 'state', ports, devOnly });
+                        await postPortsState(panel.webview, devOnly);
                     } catch (e: any) {
                         vscode.window.showErrorMessage(`Failed to kill process ${msg.pid}: ${e?.message}`);
-                        const ports = await getOpenPorts(devOnly);
-                        panel.webview.postMessage({ type: 'state', ports, devOnly });
+                        await postPortsState(panel.webview, devOnly);
                     }
                     break;
                 case 'killAll':
@@ -55,12 +72,10 @@ export class PortsProvider implements vscode.WebviewViewProvider {
                         await killProcesses(msg.ports || []);
                         vscode.window.showInformationMessage(`Killed ${msg.ports?.length || 0} processes`);
                         await new Promise(r => setTimeout(r, 1000));
-                        const ports = await getOpenPorts(devOnly);
-                        panel.webview.postMessage({ type: 'state', ports, devOnly });
+                        await postPortsState(panel.webview, devOnly);
                     } catch (e: any) {
                         vscode.window.showErrorMessage(`Failed to kill processes: ${e?.message}`);
-                        const ports = await getOpenPorts(devOnly);
-                        panel.webview.postMessage({ type: 'state', ports, devOnly });
+                        await postPortsState(panel.webview, devOnly);
                     }
                     break;
             }
@@ -125,11 +140,6 @@ export class PortsProvider implements vscode.WebviewViewProvider {
 
     private async postState() {
         if (!this.view) return;
-        try {
-            const ports = await getOpenPorts(this.devOnly);
-            this.view.webview.postMessage({ type: 'state', ports, devOnly: this.devOnly });
-        } catch (e) {
-            this.view.webview.postMessage({ type: 'state', ports: [], devOnly: this.devOnly });
-        }
+        await postPortsState(this.view.webview, this.devOnly);
     }
 }
