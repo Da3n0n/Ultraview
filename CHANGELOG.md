@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.469] - 2026-10-06
+
+### Fixed
+- **IPv6 dev servers appear in Ports & Processes** — Windows port discovery now includes both IPv4 and IPv6 TCP listeners. Vite servers listening on IPv6 localhost (`::1`), including ports 5174 and 5175, are no longer omitted.
+- **Complete scans on refresh** — Manual and automatic refresh use the complete scan in both the sidebar and editor panel, showing running IPv6 servers with their process names and IDs.
+
 ## [0.2.467] - 2026-10-02
 
 ### Improved

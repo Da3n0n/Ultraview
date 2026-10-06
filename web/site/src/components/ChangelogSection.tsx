@@ -17,12 +17,28 @@ type Release = {
 
 const releases: Release[] = [
     {
+        id: 'release-0-2-469',
+        version: 'v0.2.469',
+        date: 'October 6, 2026',
+        title: 'Ports & Processes finds IPv6 dev servers',
+        blurb: 'Windows dev servers listening on IPv6 localhost now appear in Ports & Processes, including Vite servers on ports 5174 and 5175.',
+        latest: true,
+        groups: [
+            {
+                label: 'Fixed',
+                items: [
+                    'Port discovery now includes both IPv4 and IPv6 TCP listeners. Vite servers using IPv6 localhost (::1) no longer disappear from the list.',
+                    'Manual refresh and automatic refresh use the complete scan in both the sidebar and editor panel, so running IPv6 servers appear with their process names and IDs.',
+                ],
+            },
+        ],
+    },
+    {
         id: 'release-0-2-467',
         version: 'v0.2.467',
         date: 'October 2, 2026',
         title: 'A simpler Project Manager',
         blurb: 'One Sync button, single-click project opening, and compact removal controls for projects and accounts.',
-        latest: true,
         groups: [
             {
                 label: 'Improved',
