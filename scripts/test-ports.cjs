@@ -15,6 +15,9 @@ function load(responses) {
         ...cp,
         execFile(file, args, options, callback) {
             calls.push(file);
+            if (file === 'netstat.exe') {
+                assert.deepEqual(Array.from(args), ['-ano'], 'Scan both IPv4 and IPv6; -p tcp hides IPv6 Vite listeners');
+            }
             assert.equal(options.windowsHide, true);
             assert.ok(options.timeout > 0);
             assert.ok(options.maxBuffer >= 8 * 1024 * 1024);
@@ -40,15 +43,18 @@ function load(responses) {
         '  TCP    127.0.0.1:5175    0.0.0.0:0    LISTENING    123',
         '  TCP    [::1]:5175       [::]:0       ABHÖREN      456',
         '  TCP    [::]:5175        [::]:0       LISTENING    123',
+        '  TCP    [::1]:5174       [::]:0       LISTENING    456',
+        '  UDP    [::]:5176        *:*          456',
         '  TCP    127.0.0.1:5174    127.0.0.1:5175    ESTABLISHED    999',
         '  TCP    0.0.0.0:8080    0.0.0.0:0    LISTENING    4',
     ].join('\r\n');
     const scanner = load({ 'netstat.exe': fixture, 'tasklist.exe': '"node.exe","123"\r\n"node.exe","456"\r\n"System","4"' });
     const ports = await scanner.getOpenPorts();
-    assert.equal(ports.length, 3, 'Keep both owners and system listeners, dedupe only the same PID/port');
+    assert.equal(ports.length, 4, 'Keep both owners and system listeners, dedupe only the same PID/port, exclude UDP');
+    assert.ok(ports.some(p => p.port === 5174 && p.pid === 456 && p.name === 'node.exe' && p.isDev), 'IPv6-only Vite listener must be visible');
     assert.deepEqual(Array.from(ports.filter(p => p.port === 5175), p => p.pid), [123, 456]);
     assert.ok(ports.filter(p => p.port === 5175).every(p => p.isDev && p.name === 'node.exe'));
-    assert.equal((await scanner.getOpenPorts(true)).length, 2, 'Explicit dev filter remains available');
+    assert.equal((await scanner.getOpenPorts(true)).length, 3, 'Explicit dev filter remains available');
 
     for (const netstatOutput of [new Error('netstat unavailable'), '', 'unrecognised output']) {
         const fallback = load({
@@ -114,18 +120,24 @@ function load(responses) {
     if (process.argv.includes('--live')) {
         const context = { exports: {}, process, console, require };
         vm.runInNewContext(source, context);
-        const server = net.createServer();
+        const servers = [];
         try {
-            await new Promise((resolve, reject) => {
-                server.once('error', reject);
-                server.listen(0, '127.0.0.1', resolve);
-            });
-            const port = server.address().port;
+            for (const host of ['127.0.0.1', '::1']) {
+                const server = net.createServer();
+                servers.push(server);
+                await new Promise((resolve, reject) => {
+                    server.once('error', reject);
+                    server.listen(0, host, resolve);
+                });
+            }
             const found = await context.exports.getOpenPorts();
-            assert.ok(found.some(p => p.port === port && p.pid === process.pid), `Live listener ${port} must be visible`);
-            console.log(`Live Windows listener ${port}, PID ${process.pid}, discovered successfully.`);
+            for (const server of servers) {
+                const { address, port } = server.address();
+                assert.ok(found.some(p => p.port === port && p.pid === process.pid), `Live listener ${address}:${port} must be visible`);
+                console.log(`Live Windows listener ${address}:${port}, PID ${process.pid}, discovered successfully.`);
+            }
         } finally {
-            await new Promise(resolve => server.close(resolve));
+            await Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
         }
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -255,7 +255,9 @@ async function getPortsWin32(): Promise<PortProcess[]> {
     let results: PortProcess[] = [];
     let netstatError: unknown;
     try {
-        const { stdout } = await execFileAsync('netstat.exe', ['-ano', '-p', 'tcp'], scanOptions);
+        // On Windows, -p tcp excludes IPv6 TCP (including Vite on ::1).
+        // Scan all protocols; parseWindowsListeners keeps only TCP listeners.
+        const { stdout } = await execFileAsync('netstat.exe', ['-ano'], scanOptions);
         results = parseWindowsListeners(stdout);
     } catch (error) {
         netstatError = error;
