@@ -29,6 +29,9 @@ const releases: Release[] = [
                 items: [
                     'Port discovery now includes both IPv4 and IPv6 TCP listeners. Vite servers using IPv6 localhost (::1) no longer disappear from the list.',
                     'Manual refresh and automatic refresh use the complete scan in both the sidebar and editor panel, so running IPv6 servers appear with their process names and IDs.',
+                    'The panel refreshes every five seconds while visible and when reopened. Overlapping refreshes share a scan and cannot replace newer results with an older reply.',
+                    'Failed scans show an error and preserve the last successful list. Windows discovery also handles localized output and falls back to a native scan when needed.',
+                    'All TCP listeners remain visible, including separate processes sharing a port. Protected system processes have disabled Kill controls, and Kill Dev targets each process only once.',
                 ],
             },
         ],

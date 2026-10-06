@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **IPv6 dev servers appear in Ports & Processes** — Windows port discovery now includes both IPv4 and IPv6 TCP listeners. Vite servers listening on IPv6 localhost (`::1`), including ports 5174 and 5175, are no longer omitted.
 - **Complete scans on refresh** — Manual and automatic refresh use the complete scan in both the sidebar and editor panel, showing running IPv6 servers with their process names and IDs.
+- **Reliable automatic refresh** — The panel refreshes every five seconds while visible and when reopened. Overlapping refreshes share a scan and cannot overwrite newer results with an older reply.
+- **Clear scan failures** — Failed scans show an error and preserve the last successful list. Windows discovery handles localized output and falls back to a native scan when needed.
+- **Complete listener lists and safer Kill controls** — All TCP listeners remain visible, including separate processes sharing a port. Protected system processes have disabled Kill controls, and Kill Dev targets each process only once.
 
 ## [0.2.467] - 2026-10-02
 
