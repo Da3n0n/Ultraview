@@ -17,12 +17,28 @@ type Release = {
 
 const releases: Release[] = [
     {
+        id: 'release-0-2-470',
+        version: 'v0.2.470',
+        date: 'October 7, 2026',
+        title: 'Markdown remembers your editor mode',
+        blurb: 'Choose Rich, Raw, or Split once and keep that mode across Markdown files and editor reloads.',
+        latest: true,
+        groups: [
+            {
+                label: 'Fixed',
+                items: [
+                    'The Markdown editor remembers your last selected Rich, Raw, or Split mode when switching files. Newly opened files and existing Markdown tabs follow the same selection.',
+                    'Your last selected Markdown mode is restored after reloading VS Code or restarting the extension. The configured default view applies until you select a mode.',
+                ],
+            },
+        ],
+    },
+    {
         id: 'release-0-2-469',
         version: 'v0.2.469',
         date: 'October 6, 2026',
         title: 'Ports & Processes finds IPv6 dev servers',
         blurb: 'Windows dev servers listening on IPv6 localhost now appear in Ports & Processes, including Vite servers on ports 5174 and 5175.',
-        latest: true,
         groups: [
             {
                 label: 'Fixed',
