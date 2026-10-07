@@ -16,7 +16,7 @@ const { vendorRepositories } = load('src/git/vendorRepositories.ts');
 const { verifyProjectSync, assertNoImportedGitlinks } = load('src/git/syncVerification.ts');
 const source = fs.readFileSync('src/providers/gitProvider.ts', 'utf8');
 const parsed = ts.createSourceFile('provider.ts', source, ts.ScriptTarget.Latest, true);
-const names = ['parseGitArgs', 'createGitRunner', 'trimGitOutput', 'mergeRemoteBranch', 'getProjectLocalStatus', 'getProjectGitStatus', 'getSyncDirection', 'gitPull', 'gitSync', 'gitSyncAll', 'gitPush'];
+const names = ['pushWithTransientRecovery', 'isTransientGitError', 'parseGitArgs', 'createGitRunner', 'trimGitOutput', 'mergeRemoteBranch', 'getProjectLocalStatus', 'getProjectGitStatus', 'getSyncDirection', 'gitPull', 'gitSync', 'gitSyncAll', 'gitPush'];
 const code = parsed.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text)).map(n => n.getText(parsed)).join('\n');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-verified-sync-'));
 const git = (cwd, ...args) => cp.execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();

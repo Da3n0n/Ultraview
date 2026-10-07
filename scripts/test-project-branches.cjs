@@ -27,7 +27,7 @@ const { pickProjectBranch } = load('src/git/projectBranches.ts', { vscode: { win
 const { verifyProjectSync, assertNoImportedGitlinks } = load('src/git/syncVerification.ts');
 const source = fs.readFileSync('src/providers/gitProvider.ts', 'utf8');
 const parsed = ts.createSourceFile('provider.ts', source, ts.ScriptTarget.Latest, true);
-const names = ['parseGitArgs', 'createGitRunner', 'trimGitOutput', 'getProjectLocalStatus',
+const names = ['pushWithTransientRecovery', 'isTransientGitError', 'parseGitArgs', 'createGitRunner', 'trimGitOutput', 'getProjectLocalStatus',
     'getProjectGitStatus', 'getCurrentBranch', 'getSyncDirection', 'mergeRemoteBranch', 'gitSync', 'gitSyncAll', 'gitPush', 'gitPull'];
 const code = parsed.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text))
     .map(n => n.getText(parsed)).join('\n');

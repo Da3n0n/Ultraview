@@ -344,7 +344,10 @@ async function rewriteOriginRemote(
 function isTransientGitError(stderr: string, message: string): boolean {
     const text = `${stderr || ''}\n${message || ''}`.toLowerCase();
     if (!text) return false;
-    if (/internal server error|500|502|503|504|service unavailable|bad gateway|gateway timeout/.test(text)) return true;
+    // Do not mistake a filename, object count, or request ID containing 500
+    // for an HTTP error. Permanent policy/auth failures must stay actionable.
+    if (/authentication failed|permission denied|repository not found|protected branch|pre-receive hook declined|hook declined|gh00[136]|file .*exceeds|large files detected|workflow.*scope|git-receive-pack not permitted|ssl certificate problem/.test(text)) return false;
+    if (/internal server error|service unavailable|bad gateway|gateway timeout|(?:returned error:|http(?:\/\S+)?(?: error| status(?: code)?)?[: ]+)\s*(?:429|500|502|503|504)\b/.test(text)) return true;
     if (/connection (reset|refused|aborted|closed|dropped)/.test(text)) return true;
     if (/timed? ?out|timeout/.test(text) && !/stream timeout/i.test(text)) return true;
     if (/could not resolve host|temporary failure in name resolution/.test(text)) return true;
@@ -386,14 +389,15 @@ async function disableUnsupportedLfsLockVerification(run: GitCommandRunner): Pro
 }
 
 /**
- * Wraps a git operation with up to 3 retries on transient errors. Uses
- * exponential backoff (500ms, 1s, 2s). Non-transient errors propagate
- * immediately so the caller can run real recovery (e.g. workflow scope fix).
+ * Retry transient failures with capped exponential backoff. Background reads
+ * keep their short default; interactive sync can allow a longer recovery window.
+ * Non-transient errors propagate immediately for the appropriate recovery.
  */
 async function withTransientRetry<T>(
     op: () => Promise<T>,
     label: string,
-    maxAttempts: number = 3
+    maxAttempts: number = 3,
+    initialDelayMs: number = 500
 ): Promise<T> {
     let lastErr: any;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -401,16 +405,35 @@ async function withTransientRetry<T>(
             return await op();
         } catch (err: any) {
             lastErr = err;
-            const stderr = err?.stderr ?? err?.message ?? '';
+            const stderr = `${err?.stderr ?? ''}\n${err?.stdout ?? ''}`;
             if (!isTransientGitError(stderr, err?.message ?? '')) {
                 throw err;
             }
             if (attempt >= maxAttempts) break;
-            const delayMs = 500 * Math.pow(2, attempt - 1);
+            const delayMs = Math.min(15000, initialDelayMs * Math.pow(2, attempt - 1));
+            console.log(`[Ultraview] ${label}: temporary remote/network failure; retry ${attempt + 1}/${maxAttempts} in ${delayMs}ms`);
             await new Promise((r) => setTimeout(r, delayMs));
         }
     }
     throw lastErr;
+}
+
+/** A lost push response may follow a successful remote update. Verify before retrying. */
+async function pushWithTransientRecovery(run: GitCommandRunner, branch: string): Promise<void> {
+    await withTransientRetry(async () => {
+        try {
+            await run(`git push -u origin ${branch}`);
+        } catch (err: any) {
+            if (!isTransientGitError(`${err?.stderr ?? ''}\n${err?.stdout ?? ''}`, err?.message ?? '')) throw err;
+            let verified = false;
+            try {
+                verified = await verifyProjectSync(run);
+            } catch { /* The remote may still be unavailable; retry the original push. */ }
+            if (!verified) throw err;
+            // -u may not have completed locally when the response was lost.
+            await run(`git branch --set-upstream-to=origin/${branch} ${branch}`);
+        }
+    }, 'sync-push', 6, 2000);
 }
 
 /** Write commit message to a temp file and return its path. */
@@ -1753,8 +1776,8 @@ async function gitSync(
     // Robust push loop that handles, in order:
     //   1. "Repository moved" → update origin, retry
     //   2. Transient errors  → withTransientRetry handles backoff
-    //   3. "non-fast-forward"→ pull + retry (one pass)
-    //   4. "workflow scope"   → strip .github/workflows + force-push
+    //   3. "non-fast-forward"→ fetch + merge + retry
+    //   4. "workflow scope"   → actionable authentication guidance
     //   5. Anything else     → bubble up after exhausting redirects/recoveries
     let pushAttempts = 0;
     let pushDone = false;
@@ -1769,11 +1792,7 @@ async function gitSync(
         await gitCommitLocal(projectPath, commitMsg);
         await assertNoImportedGitlinks(run);
         try {
-            await withTransientRetry(
-                () => run(`git push -u origin ${branch}`),
-                'sync-push',
-                2
-            );
+            await pushWithTransientRecovery(run, branch);
             pushDone = true;
         } catch (pushErr: any) {
             lastPushErr = pushErr;
@@ -1798,8 +1817,15 @@ async function gitSync(
                 if (lfsLocksDisabledFor) continue;
             }
 
+            // A remote rejection can mean a server outage, policy failure,
+            // or permissions issue. Only actual branch races need a merge.
+            if (isTransientGitError(`${stderr}\n${stdout}`, pushErr?.message ?? '')) {
+                throw new Error('The remote is still unavailable after automatic retries. ' +
+                    'Your local commits are preserved. Click Sync again when the remote recovers. ' + errMsg);
+            }
+
             // 2. Non-fast-forward → pull then retry
-            if (/rejected|non-fast-forward/i.test(stderr)) {
+            if (/\[rejected\].*\((?:non-fast-forward|fetch first)\)|updates were rejected because (?:the remote contains work|the tip of your current branch is behind)|cannot lock ref .*is at .*but expected/i.test(`${stderr}\n${stdout}`)) {
                 // Another machine won the race. Fetch its new commit, merge it
                 // without dropping either side, then retry the push. Repeating
                 // this loop converges even when several machines sync at once.
@@ -1920,7 +1946,7 @@ async function gitSyncAll(
         // Preserve recovery notices (for example excluded workflow files)
         // even when another reconciliation pass is needed.
         notes.push(result);
-        if (await verifyProjectSync(run)) {
+        if (await withTransientRetry(() => verifyProjectSync(run), 'sync-verification', 6, 2000)) {
             return ['Synced and verified with remote', ...new Set(notes)].join(' | ');
         }
         // Another machine pushed or local files changed during the operation.

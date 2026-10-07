@@ -29,7 +29,7 @@ function load(file) {
 }
 const { verifyProjectSync, assertNoImportedGitlinks } = load('src/git/syncVerification.ts');
 const provider = ts.createSourceFile('provider.ts', fs.readFileSync('src/providers/gitProvider.ts', 'utf8'), ts.ScriptTarget.Latest, true);
-const names = ['parseGitArgs', 'createGitRunner', 'trimGitOutput', 'getProjectLocalStatus', 'getCurrentBranch', 'getSyncDirection', 'mergeRemoteBranch', 'gitSync', 'gitSyncAll'];
+const names = ['pushWithTransientRecovery', 'isTransientGitError', 'parseGitArgs', 'createGitRunner', 'trimGitOutput', 'getProjectLocalStatus', 'getCurrentBranch', 'getSyncDirection', 'mergeRemoteBranch', 'gitSync', 'gitSyncAll'];
 const syncCode = provider.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text))
     .map(n => n.getText(provider)).join('\n');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'uv-project-merge-'));
