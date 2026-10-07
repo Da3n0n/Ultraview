@@ -25,7 +25,7 @@ const releases: Release[] = [
         latest: true,
         groups: [
             {
-                label: 'Fixed',
+                label: 'Improved',
                 items: [
                     'The Markdown editor remembers your last selected Rich, Raw, or Split mode when switching files. Newly opened files and existing Markdown tabs follow the same selection.',
                     'Your last selected Markdown mode is restored after reloading VS Code or restarting the extension. The configured default view applies until you select a mode.',

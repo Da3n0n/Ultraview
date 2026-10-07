@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.2.470] - 2026-10-07
 
-### Fixed
+### Improved
 - **Markdown editor remembers your view mode** — Select Rich, Raw, or Split and keep that mode when switching Markdown files. Newly opened files and existing Markdown tabs follow your last selection.
 - **View mode survives reloads** — Your last selected Markdown mode is restored after reloading VS Code or restarting the extension. The configured default view applies until you select a mode.
 
