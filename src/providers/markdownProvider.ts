@@ -2,12 +2,22 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MarkdownDocument, buildEditorPage } from '../markdown';
+import type { MarkdownToExtensionMessage, MarkdownViewMode } from '../webview/markdown/types';
+
+const MARKDOWN_VIEW_MODE_KEY = 'markdown.viewMode';
 
 export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDocument> {
+  private readonly panels = new Set<vscode.WebviewPanel>();
+  private viewMode?: MarkdownViewMode;
   private readonly _onDidChangeCustomDocument = new vscode.EventEmitter<vscode.CustomDocumentEditEvent<MarkdownDocument>>();
   onDidChangeCustomDocument = this._onDidChangeCustomDocument.event;
 
-  constructor(private readonly ctx: vscode.ExtensionContext) { }
+  constructor(private readonly ctx: vscode.ExtensionContext) {
+    const savedMode = ctx.globalState.get<MarkdownViewMode>(MARKDOWN_VIEW_MODE_KEY);
+    if (savedMode === 'rich' || savedMode === 'raw' || savedMode === 'split') {
+      this.viewMode = savedMode;
+    }
+  }
 
   openCustomDocument(
     uri: vscode.Uri,
@@ -35,8 +45,23 @@ export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDoc
       void panel.webview.postMessage({ type: 'setContent', content: raw });
     };
 
-    panel.webview.onDidReceiveMessage((msg: { type: string; content?: string }) => {
+    this.panels.add(panel);
+    panel.webview.onDidReceiveMessage((msg: MarkdownToExtensionMessage) => {
       switch (msg.type) {
+        case 'ready':
+          if (this.viewMode) {
+            void panel.webview.postMessage({ type: 'setViewMode', viewMode: this.viewMode });
+          }
+          break;
+        case 'setViewMode':
+          if (msg.viewMode === 'rich' || msg.viewMode === 'raw' || msg.viewMode === 'split') {
+            this.viewMode = msg.viewMode;
+            void this.ctx.globalState.update(MARKDOWN_VIEW_MODE_KEY, this.viewMode);
+            for (const editor of this.panels) {
+              void editor.webview.postMessage({ type: 'setViewMode', viewMode: this.viewMode });
+            }
+          }
+          break;
         case 'save':
           if (msg.content !== undefined) {
             lastSelfWriteTime = Date.now();
@@ -49,13 +74,16 @@ export class MarkdownProvider implements vscode.CustomEditorProvider<MarkdownDoc
 
     const initialContent = fs.readFileSync(filePath, 'utf8');
     document.setContent(initialContent);
-    panel.webview.html = buildEditorPage(this.ctx.extensionPath, panel.webview, initialContent);
+    panel.webview.html = buildEditorPage(this.ctx.extensionPath, panel.webview, initialContent, this.viewMode);
 
     const watcher = fs.watch(filePath, () => {
       if (Date.now() - lastSelfWriteTime < 500) return;
       updateContent();
     });
-    panel.onDidDispose(() => watcher.close());
+    panel.onDidDispose(() => {
+      this.panels.delete(panel);
+      watcher.close();
+    });
   }
 
   saveCustomDocument(_document: MarkdownDocument, _cancellation: vscode.CancellationToken): Thenable<void> {

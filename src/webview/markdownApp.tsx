@@ -63,7 +63,7 @@ function App() {
     const lastRichHtmlRef = useRef('');
     const isEditingRichRef = useRef(false);
     const [content, setContent] = useState(() => state.initialContent ?? '');
-    const [viewMode, setViewMode] = useState<MarkdownViewMode>(settings.defaultView || 'split');
+    const [viewMode, setViewMode] = useState<MarkdownViewMode>(state.viewMode || settings.defaultView || 'split');
     const [isApplyingRemoteUpdate, setIsApplyingRemoteUpdate] = useState(false);
 
     const previewHtml = useMemo(() => marked.parse(content) as string, [content]);
@@ -89,6 +89,10 @@ function App() {
     useEffect(() => {
         const handleMessage = (event: MessageEvent<MarkdownToWebviewMessage>) => {
             const msg = event.data;
+            if (msg?.type === 'setViewMode') {
+                setViewMode(msg.viewMode);
+                return;
+            }
             if (msg?.type !== 'setContent') return;
             setIsApplyingRemoteUpdate(true);
             setContent(msg.content);
@@ -97,6 +101,7 @@ function App() {
         };
 
         window.addEventListener('message', handleMessage);
+        getVscode()?.postMessage({ type: 'ready' });
         return () => window.removeEventListener('message', handleMessage);
     }, []);
 
@@ -277,7 +282,10 @@ function App() {
                         <button
                             key={option.value}
                             className={`markdown-mode-button${viewMode === option.value ? ' active' : ''}`}
-                            onClick={() => setViewMode(option.value)}
+                            onClick={() => {
+                                setViewMode(option.value);
+                                getVscode()?.postMessage({ type: 'setViewMode', viewMode: option.value });
+                            }}
                         >
                             {option.label}
                         </button>

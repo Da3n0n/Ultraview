@@ -5,16 +5,21 @@ export type MarkdownViewMode = 'rich' | 'split' | 'raw';
 export interface MarkdownWebviewState {
   settings: MarkdownSettings;
   initialContent: string;
+  viewMode?: MarkdownViewMode;
 }
 
-export interface MarkdownToWebviewMessage {
+export type MarkdownToWebviewMessage = {
   type: 'setContent';
   content: string;
-}
+} | {
+  type: 'setViewMode';
+  viewMode: MarkdownViewMode;
+};
 
 export interface MarkdownToExtensionMessage {
-  type: 'ready' | 'save';
+  type: 'ready' | 'save' | 'setViewMode';
   content?: string;
+  viewMode?: MarkdownViewMode;
 }
 
 export interface VsCodeApi {
