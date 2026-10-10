@@ -17,12 +17,31 @@ type Release = {
 
 const releases: Release[] = [
     {
+        id: 'release-0-2-471',
+        version: 'v0.2.471',
+        date: 'October 10, 2026',
+        title: 'Sync recovers from temporary remote failures',
+        blurb: 'Automatic retries and remote verification help Sync recover from GitHub outages and lost push responses while keeping your local commits safe.',
+        latest: true,
+        groups: [
+            {
+                label: 'Fixed',
+                items: [
+                    'Pushes automatically retry temporary GitHub server errors, rate limits, and connection failures with increasing delays, up to six attempts.',
+                    'GitHub “Internal Server Error” rejections no longer trigger conflict recovery. Merge recovery only runs for actual branch divergence; authentication and repository policy errors keep their own explanations.',
+                    'If a push loses its response after reaching the remote, Sync checks whether your changes arrived and restores branch tracking when confirmed.',
+                    'Temporary connection failures during the final remote check are retried before reporting the result. Sync only reports success after verifying the project is up to date.',
+                    'If the remote remains unavailable after automatic retries, Sync explains that your local commits are preserved and you can try again when the service recovers.',
+                ],
+            },
+        ],
+    },
+    {
         id: 'release-0-2-470',
         version: 'v0.2.470',
         date: 'October 7, 2026',
         title: 'Markdown remembers your editor mode',
         blurb: 'Choose Rich, Raw, or Split once and keep that mode across Markdown files and editor reloads.',
-        latest: true,
         groups: [
             {
                 label: 'Improved',

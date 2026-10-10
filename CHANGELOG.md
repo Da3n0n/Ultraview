@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.471] - 2026-10-10
+
+### Fixed
+- **Sync recovers from temporary remote failures** — Pushes automatically retry temporary GitHub server errors, rate limits, and connection failures with increasing delays, up to six attempts.
+- **Server errors no longer trigger conflict recovery** — GitHub “Internal Server Error” rejections are handled as temporary failures. Merge recovery only runs for actual branch divergence; authentication and repository policy errors keep their own explanations.
+- **Lost push responses are verified** — If a push loses its response after reaching the remote, Sync checks whether your changes arrived and restores branch tracking when confirmed.
+- **Final sync verification retries** — Temporary connection failures during the final remote check are retried before reporting the result. Sync only reports success after verifying the project is up to date.
+- **Local commits stay safe during outages** — If the remote remains unavailable after automatic retries, Sync explains that your local commits are preserved and you can try again when the service recovers.
+
 ## [0.2.470] - 2026-10-07
 
 ### Improved
