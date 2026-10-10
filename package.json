@@ -768,6 +768,7 @@
             }
         ]
     },
+    "homepage": "https://ultraview.dev",
     "repository": {
         "type": "git",
         "url": "https://github.com/Da3n0n/UltraView.git"
